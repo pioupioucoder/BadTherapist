@@ -1,245 +1,664 @@
+
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Bad Therapist</title>
-  <style>
-    * { margin:0; padding:0; box-sizing:border-box; }
-    html, body { width:100%; height:100%; overflow:hidden; background:#171614; }
-    #gc { display:block; width:100%; height:calc(100vh - 70px); cursor:grab; touch-action:none; }
-    #gc:active { cursor:grabbing; }
-    #hud {
-      position:fixed; left:0; right:0; bottom:0; height:70px; z-index:10;
-      display:flex; align-items:center; justify-content:space-around; gap:12px;
-      padding:0 16px; background:#211f1c; border-top:1px solid #45413b;
-    }
-    #jL, #jR { display:block; background:#171614; border-radius:9px; touch-action:none; }
-    #paramBar { position:fixed; top:12px; left:50%; transform:translateX(-50%); z-index:20; }
-    .pBtn {
-      border:1px solid #71675a; border-radius:20px; padding:7px 15px;
-      color:#d1c5b5; background:rgba(25,23,20,.88); font:11px 'Courier New',monospace;
-      letter-spacing:1px; cursor:pointer; backdrop-filter:blur(5px);
-    }
-    .pBtn.active { color:#fff0d8; border-color:#c5a77c; background:rgba(65,52,39,.94); }
-    #coordPanel {
-      display:none; position:fixed; top:12px; left:12px; z-index:30;
-      min-width:170px; padding:9px 12px; border:1px solid #71675a; border-radius:8px;
-      background:rgba(22,20,18,.9); color:#d1c5b5; font:12px/1.7 'Courier New',monospace;
-      backdrop-filter:blur(5px);
-    }
-    .coord-title { color:#a9967e; font-size:10px; letter-spacing:2px; margin-bottom:4px; }
-    .coord-val { color:#f0dfc5; font-weight:bold; }
-    #copyBtn {
-      width:100%; margin-top:6px; padding:4px; cursor:pointer; border-radius:4px;
-      border:1px solid #756047; background:#34291e; color:#e0c49d;
-      font:10px 'Courier New',monospace; letter-spacing:1px;
-    }
-    #toast {
-      position:fixed; left:50%; bottom:86px; transform:translateX(-50%); z-index:40;
-      padding:7px 16px; border:1px solid #756047; border-radius:20px;
-      background:#29231c; color:#e7d0ad; font:11px 'Courier New',monospace;
-      opacity:0; transition:opacity .25s; pointer-events:none; white-space:nowrap;
-    }
-    @media (max-width:480px) {
-      #hud { padding:0 8px; gap:8px; }
-      #jL,#jR { width: min(120px, 43vw); }
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Bad Therapist</title>
+
+<style>
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #111722;
+}
+
+#gc {
+  display: block;
+  width: 100%;
+  height: calc(100% - 70px);
+  touch-action: none;
+}
+
+#hud {
+  position: fixed;
+  bottom: 0;
+  width: 100%;
+  height: 70px;
+  background: #171720;
+  border-top: 1px solid #393541;
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+}
+
+#jL, #jR {
+  width: 120px;
+  height: 60px;
+  touch-action: none;
+}
+
+#paramBar {
+  position: fixed;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+}
+
+.pBtn {
+  background: rgba(23,23,32,.9);
+  color: #d9c5b5;
+  border: 1px solid #625047;
+  border-radius: 20px;
+  padding: 9px 17px;
+  font: 11px monospace;
+  letter-spacing: 1px;
+}
+
+#coordPanel {
+  display: none;
+  position: fixed;
+  top: 60px;
+  left: 12px;
+  padding: 12px;
+  background: rgba(23,23,32,.95);
+  border: 1px solid #625047;
+  border-radius: 8px;
+  color: #ddd0c3;
+  font: 12px/1.8 monospace;
+  z-index: 20;
+}
+
+#copyBtn {
+  display: block;
+  width: 100%;
+  padding: 5px;
+  margin-top: 7px;
+  background: #302733;
+  color: white;
+  border: 1px solid #625047;
+}
+</style>
 </head>
+
 <body>
-  <canvas id="gc"></canvas>
 
-  <div id="paramBar">
-    <button class="pBtn" id="btnCoords" onclick="toggleCoords()">📍 COORDINATES</button>
-  </div>
-  <div id="coordPanel">
-    <div class="coord-title">POSITION 3D</div>
-    <div>X : <span class="coord-val" id="cx">0.00</span></div>
-    <div>Z : <span class="coord-val" id="cz">0.00</span></div>
-    <div>Y : <span class="coord-val" id="cy">1.70</span></div>
-    <button id="copyBtn" onclick="copyCoords()">⧉ COPY</button>
-  </div>
-  <div id="toast">✓ Copied!</div>
+<canvas id="gc"></canvas>
 
-  <div id="hud">
-    <canvas id="jL" width="120" height="60"></canvas>
-    <canvas id="jR" width="120" height="60"></canvas>
-  </div>
+<div id="paramBar">
+  <button class="pBtn" id="coordButton">📍 COORDINATES</button>
+</div>
 
-  <script type="importmap">
-    { "imports": { "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.module.js" } }
-  </script>
+<div id="coordPanel">
+  BAD THERAPIST<br>
+  X: <span id="cx">0</span><br>
+  Y: <span id="cy">1.7</span><br>
+  Z: <span id="cz">0</span>
+  <button id="copyBtn">COPY</button>
+</div>
 
-  <script type="module">
-    import * as THREE from 'three';
-    import { buildBuildingWorld } from './immeuble.js';
+<div id="hud">
+  <canvas id="jL" width="120" height="60"></canvas>
+  <canvas id="jR" width="120" height="60"></canvas>
+</div>
 
-    const canvas = document.getElementById('gc');
-    const renderer = new THREE.WebGLRenderer({ canvas, antialias:true, powerPreference:'low-power' });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.25));
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    renderer.outputEncoding = THREE.sRGBEncoding;
-    renderer.setClearColor(0x77716a);
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.module.js"
+  }
+}
+</script>
 
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x77716a);
-    scene.fog = new THREE.FogExp2(0x77716a, 0.012);
+<script type="module">
 
-    const camera = new THREE.PerspectiveCamera(65, 1, 0.1, 500);
-    camera.position.set(0, 1.7, 13);
-    camera.rotation.order = 'YXZ';
-    camera.rotation.set(0, 0, 0);
+import * as THREE from 'three';
+import { buildWorld } from './immeuble.js';
 
-    const world = buildBuildingWorld(scene);
+// ==========================================
+// 1. SCENE
+// ==========================================
 
-    // Lumière diffuse de nuit : gris chaud, sans dominante bleue.
-    const moon = new THREE.DirectionalLight(0xd2c8b8, 0.34);
-    moon.position.set(-35, 55, 25);
-    moon.castShadow = true;
-    moon.shadow.mapSize.set(1024, 1024);
-    moon.shadow.camera.left = -45; moon.shadow.camera.right = 45;
-    moon.shadow.camera.top = 45; moon.shadow.camera.bottom = -45;
-    moon.shadow.camera.near = 1; moon.shadow.camera.far = 140;
-    moon.shadow.bias = -0.0005;
-    scene.add(moon);
-    scene.add(new THREE.AmbientLight(0xaaa096, 0.43));
-    const hemi = new THREE.HemisphereLight(0xc5beb3, 0x39332d, 0.35);
-    scene.add(hemi);
+const canvas = document.getElementById('gc');
 
-    let jLx=0, jLy=0, jRx=0, jRy=0;
-    function setupJoy(id, onMove) {
-      const cv=document.getElementById(id);
-      let active=false, baseX=0, baseY=0;
-      function getPos(e) {
-        const r=cv.getBoundingClientRect();
-        const t=e.touches ? e.touches[0] : e;
-        return {x:t.clientX-r.left, y:t.clientY-r.top};
-      }
-      function start(e) {
-        e.preventDefault(); const p=getPos(e);
-        baseX=p.x; baseY=p.y; active=true; onMove(0,0);
-        if(e.type==='mousedown') {
-          window.addEventListener('mousemove',move);
-          window.addEventListener('mouseup',end);
-        } else {
-          window.addEventListener('touchmove',move,{passive:false});
-          window.addEventListener('touchend',end);
-          window.addEventListener('touchcancel',end);
-        }
-      }
-      function move(e) {
-        if(!active) return; e.preventDefault();
-        const p=getPos(e); let dx=(p.x-baseX)/45, dy=(p.y-baseY)/22;
-        const mag=Math.hypot(dx,dy);
-        if(mag>1){dx/=mag;dy/=mag;}
-        onMove(dx,dy);
-      }
-      function end() {
-        if(!active)return; active=false; onMove(0,0);
-        window.removeEventListener('mousemove',move);
-        window.removeEventListener('mouseup',end);
-        window.removeEventListener('touchmove',move);
-        window.removeEventListener('touchend',end);
-        window.removeEventListener('touchcancel',end);
-      }
-      cv.addEventListener('mousedown',start);
-      cv.addEventListener('touchstart',start,{passive:false});
+const renderer = new THREE.WebGLRenderer({
+  canvas,
+  antialias: true,
+  powerPreference: 'low-power'
+});
+
+renderer.setPixelRatio(
+  Math.min(window.devicePixelRatio || 1, 1.5)
+);
+
+renderer.outputEncoding = THREE.sRGBEncoding;
+
+const scene = new THREE.Scene();
+scene.fog = null;
+
+const camera = new THREE.PerspectiveCamera(
+  65, 1, 0.1, 5000
+);
+
+camera.position.set(0, 1.7, 13);
+camera.rotation.order = 'YXZ';
+
+// ==========================================
+// 2. SHARED SKY — BAD THERAPIST
+// ==========================================
+
+// Le ciel est créé ici une seule fois.
+// Tous les futurs décors utiliseront cette scène.
+
+const skyUniforms = {
+  uTime: { value: 0 }
+};
+
+const skyMaterial = new THREE.ShaderMaterial({
+
+  uniforms: skyUniforms,
+
+  side: THREE.BackSide,
+
+  depthWrite: false,
+
+  vertexShader: `
+    varying vec3 vDirection;
+
+    void main() {
+      vDirection = position;
+
+      gl_Position = projectionMatrix *
+                    modelViewMatrix *
+                    vec4(position, 1.0);
     }
-    setupJoy('jL',(x,y)=>{jLx=x;jLy=y;});
-    setupJoy('jR',(x,y)=>{jRx=x;jRy=y;});
+  `,
 
-    function drawJoy(id,dx,dy) {
-      const cv=document.getElementById(id),ctx=cv.getContext('2d');
-      const w=cv.width,h=cv.height;
-      ctx.clearRect(0,0,w,h);
-      ctx.fillStyle='#302d29'; ctx.beginPath(); ctx.ellipse(w/2,h/2,56,26,0,0,Math.PI*2); ctx.fill();
-      ctx.strokeStyle='#655d53'; ctx.lineWidth=1.5; ctx.stroke();
-      const x=w/2+dx*38,y=h/2+dy*16;
-      const g=ctx.createRadialGradient(x-3,y-3,1,x,y,14);
-      g.addColorStop(0,'#c0b7aa'); g.addColorStop(1,'#514b43');
-      ctx.fillStyle=g; ctx.beginPath(); ctx.ellipse(x,y,15,10,0,0,Math.PI*2); ctx.fill();
-      ctx.strokeStyle='#171614'; ctx.stroke();
+  fragmentShader: `
+
+    varying vec3 vDirection;
+
+    uniform float uTime;
+
+    float hash(vec2 p) {
+      return fract(
+        sin(dot(p, vec2(127.1,311.7))) *
+        43758.5453
+      );
     }
 
-    let camYaw=0, camPitch=0, dragging=false, lastX=0,lastY=0;
-    canvas.addEventListener('mousedown',e=>{dragging=true;lastX=e.clientX;lastY=e.clientY;});
-    document.addEventListener('mouseup',()=>dragging=false);
-    document.addEventListener('mousemove',e=>{
-      if(!dragging)return;
-      camYaw-=(e.clientX-lastX)*0.004;
-      camPitch-=(e.clientY-lastY)*0.003;
-      camPitch=THREE.MathUtils.clamp(camPitch,-0.65,0.7);
-      lastX=e.clientX;lastY=e.clientY;
-    });
-    canvas.addEventListener('touchstart',e=>{
-      dragging=true;lastX=e.touches[0].clientX;lastY=e.touches[0].clientY;
-    },{passive:true});
-    canvas.addEventListener('touchend',()=>dragging=false,{passive:true});
-    canvas.addEventListener('touchmove',e=>{
-      if(!dragging)return;
-      camYaw-=(e.touches[0].clientX-lastX)*0.004;
-      camPitch-=(e.touches[0].clientY-lastY)*0.003;
-      camPitch=THREE.MathUtils.clamp(camPitch,-0.65,0.7);
-      lastX=e.touches[0].clientX;lastY=e.touches[0].clientY;
-    },{passive:true});
+    float noise(vec2 p) {
 
-    let showCoords=false;
-    window.toggleCoords=()=>{
-      showCoords=!showCoords;
-      document.getElementById('coordPanel').style.display=showCoords?'block':'none';
-      document.getElementById('btnCoords').classList.toggle('active',showCoords);
+      vec2 i = floor(p);
+      vec2 f = fract(p);
+
+      f = f*f*(3.0-2.0*f);
+
+      float a = hash(i);
+      float b = hash(i+vec2(1.0,0.0));
+      float c = hash(i+vec2(0.0,1.0));
+      float d = hash(i+vec2(1.0,1.0));
+
+      return mix(
+        mix(a,b,f.x),
+        mix(c,d,f.x),
+        f.y
+      );
+    }
+
+    float fbm(vec2 p) {
+
+      float value = 0.0;
+      float amplitude = 0.5;
+
+      for(int i=0;i<5;i++) {
+
+        value += noise(p)*amplitude;
+
+        p *= 2.0;
+        amplitude *= 0.5;
+      }
+
+      return value;
+    }
+
+    void main() {
+
+      vec3 dir = normalize(vDirection);
+
+      float h = dir.y;
+
+      // Couleurs du ciel
+      vec3 topColor = vec3(0.055,0.075,0.115);
+      vec3 upperColor = vec3(0.075,0.095,0.145);
+      vec3 middleColor = vec3(0.105,0.115,0.155);
+      vec3 lowerColor = vec3(0.145,0.125,0.135);
+      vec3 horizonColor = vec3(0.27,0.145,0.105);
+
+      vec3 sky = mix(
+        lowerColor,
+        middleColor,
+        smoothstep(-0.05,0.25,h)
+      );
+
+      sky = mix(
+        sky,
+        upperColor,
+        smoothstep(0.25,0.65,h)
+      );
+
+      sky = mix(
+        sky,
+        topColor,
+        smoothstep(0.65,1.0,h)
+      );
+
+      // Lueur orange discrète à l'horizon
+      float horizonGlow = exp(
+        -pow((h + 0.105)*8.0,2.0)
+      );
+
+      float sunsetSide = smoothstep(
+        -0.5,0.8,dir.x
+      );
+
+      sky += vec3(0.16,0.065,0.035) *
+             horizonGlow *
+             sunsetSide;
+
+      // Nuages éloignés, étirés et peu visibles
+      vec2 cloudUV = vec2(
+        dir.x * 3.2,
+        dir.y * 5.0
+      );
+
+      cloudUV += vec2(
+        uTime * 0.0018,
+        uTime * 0.00025
+      );
+
+      float cloudNoise = fbm(cloudUV);
+
+      float cloudShape = smoothstep(
+        0.53,0.78,cloudNoise
+      );
+
+      // Les nuages sont surtout dans les couches hautes
+      float cloudZone =
+        smoothstep(-0.02,0.18,h) *
+        (1.0-smoothstep(0.65,0.95,h));
+
+      float cloudOpacity =
+        cloudShape * cloudZone * 0.13;
+
+      vec3 cloudColor = vec3(
+        0.30,0.29,0.32
+      );
+
+      sky = mix(
+        sky,
+        cloudColor,
+        cloudOpacity
+      );
+
+      // Étoiles minuscules et discrètes
+      vec2 starUV = dir.xz * 900.0;
+
+      float stars = step(
+        0.9975,
+        hash(floor(starUV))
+      );
+
+      stars *= smoothstep(0.12,0.45,h);
+
+      float twinkle =
+        0.55 + 0.45*sin(
+          uTime*0.8 + hash(floor(starUV))*20.0
+        );
+
+      sky += vec3(0.7,0.68,0.62) *
+             stars * twinkle * 0.45;
+
+      gl_FragColor = vec4(sky,1.0);
+
+    }
+  `
+});
+
+const skySphere = new THREE.Mesh(
+  new THREE.SphereGeometry(1800,64,48),
+  skyMaterial
+);
+
+skySphere.frustumCulled = false;
+skySphere.renderOrder = -100;
+scene.add(skySphere);
+
+// ==========================================
+// 3. ÉCLAIRAGE GLOBAL
+// ==========================================
+
+scene.add(
+  new THREE.AmbientLight(0x77758a,0.30)
+);
+
+const hemisphere = new THREE.HemisphereLight(
+  0x8d91a8,
+  0x24212a,
+  0.32
+);
+
+scene.add(hemisphere);
+
+const moonLight = new THREE.DirectionalLight(
+  0xa1a9c2,
+  0.32
+);
+
+moonLight.position.set(-40,70,-100);
+scene.add(moonLight);
+
+// ==========================================
+// 4. MONDE
+// ==========================================
+
+const world = buildWorld(scene);
+
+// ==========================================
+// 5. JOYSTICKS
+// ==========================================
+
+let jLx=0;
+let jLy=0;
+let jRx=0;
+let jRy=0;
+
+function setupJoy(id,callback) {
+
+  const cv=document.getElementById(id);
+
+  let active=false;
+  let bx=0;
+  let by=0;
+
+  function position(e) {
+
+    const r=cv.getBoundingClientRect();
+
+    return {
+      x:(e.clientX-r.left)*cv.width/r.width,
+      y:(e.clientY-r.top)*cv.height/r.height
     };
-    window.copyCoords=()=>{
-      const p=camera.position;
-      const txt=`X:${p.x.toFixed(2)} Y:${p.y.toFixed(2)} Z:${p.z.toFixed(2)}`;
-      const done=()=>{
-        const toast=document.getElementById('toast');
-        toast.textContent='✓ '+txt+' copied';toast.style.opacity='1';
-        setTimeout(()=>toast.style.opacity='0',1800);
-      };
-      if(navigator.clipboard?.writeText) navigator.clipboard.writeText(txt).then(done).catch(()=>fallbackCopy(txt,done));
-      else fallbackCopy(txt,done);
-    };
-    function fallbackCopy(txt,done){
-      const el=document.createElement('textarea');el.value=txt;document.body.appendChild(el);
-      el.select();document.execCommand('copy');el.remove();done();
+  }
+
+  function start(e) {
+
+    e.preventDefault();
+
+    const p=position(e);
+
+    bx=p.x;
+    by=p.y;
+
+    active=true;
+
+    cv.setPointerCapture(e.pointerId);
+  }
+
+  function move(e) {
+
+    if(!active)return;
+
+    e.preventDefault();
+
+    const p=position(e);
+
+    let x=(p.x-bx)/45;
+    let y=(p.y-by)/22;
+
+    const length=Math.hypot(x,y);
+
+    if(length>1) {
+      x/=length;
+      y/=length;
     }
 
-    function resize(){
-      const w=window.innerWidth,h=Math.max(1,window.innerHeight-70);
-      renderer.setSize(w,h);camera.aspect=w/h;camera.updateProjectionMatrix();
-    }
-    window.addEventListener('resize',resize);resize();
+    callback(x,y);
+  }
 
-    const clock=new THREE.Clock();
-    function loop(){
-      const dt=Math.min(clock.getDelta(),0.05);
-      camera.rotation.y=camYaw;camera.rotation.x=camPitch;
-      const forward=new THREE.Vector3(-Math.sin(camYaw),0,-Math.cos(camYaw));
-      const right=new THREE.Vector3(Math.cos(camYaw),0,-Math.sin(camYaw));
-      const speed=6.5;
-      const movement=new THREE.Vector3()
-        .addScaledVector(forward,-jLy*speed*dt)
-        .addScaledVector(right,jLx*speed*dt);
-      camera.position.add(movement);
-      camera.position.x=THREE.MathUtils.clamp(camera.position.x,-48,48);
-      camera.position.z=THREE.MathUtils.clamp(camera.position.z,-90,35);
-      camera.position.y=1.7;
-      if(jRx!==0)camYaw-=jRx*0.12;
-      if(jRy!==0)camPitch=THREE.MathUtils.clamp(camPitch-jRy*1.5*dt,-0.65,0.7);
-      if(showCoords){
-        document.getElementById('cx').textContent=camera.position.x.toFixed(2);
-        document.getElementById('cz').textContent=camera.position.z.toFixed(2);
-        document.getElementById('cy').textContent=camera.position.y.toFixed(2);
-      }
-      world.update?.(dt,clock.elapsedTime,camera.position);
-      renderer.render(scene,camera);
-      drawJoy('jL',jLx,jLy);drawJoy('jR',jRx,jRy);
-      requestAnimationFrame(loop);
-    }
-    requestAnimationFrame(loop);
-  </script>
+  function end() {
+    active=false;
+    callback(0,0);
+  }
+
+  cv.addEventListener('pointerdown',start);
+  cv.addEventListener('pointermove',move);
+  cv.addEventListener('pointerup',end);
+  cv.addEventListener('pointercancel',end);
+  cv.addEventListener('lostpointercapture',end);
+}
+
+setupJoy('jL',(x,y)=>{
+  jLx=x;
+  jLy=y;
+});
+
+setupJoy('jR',(x,y)=>{
+  jRx=x;
+  jRy=y;
+});
+
+// ==========================================
+// 6. JOYSTICK DESIGN
+// ==========================================
+
+function drawJoy(id,dx,dy) {
+
+  const cv=document.getElementById(id);
+  const ctx=cv.getContext('2d');
+
+  ctx.clearRect(0,0,120,60);
+
+  ctx.fillStyle='#25232b';
+
+  ctx.beginPath();
+  ctx.ellipse(60,30,55,25,0,0,Math.PI*2);
+  ctx.fill();
+
+  ctx.strokeStyle='#665b59';
+  ctx.lineWidth=1.3;
+  ctx.stroke();
+
+  const x=60+dx*38;
+  const y=30+dy*16;
+
+  const gradient=ctx.createRadialGradient(
+    x-3,y-3,1,x,y,15
+  );
+
+  gradient.addColorStop(0,'#c6bdb2');
+  gradient.addColorStop(1,'#655d57');
+
+  ctx.fillStyle=gradient;
+
+  ctx.beginPath();
+  ctx.ellipse(x,y,14,10,0,0,Math.PI*2);
+  ctx.fill();
+}
+
+// ==========================================
+// 7. CAMERA
+// ==========================================
+
+let camYaw=0;
+let camPitch=0;
+
+let dragging=false;
+let lastX=0;
+let lastY=0;
+
+canvas.addEventListener('pointerdown',e=>{
+
+  if(e.pointerType==='mouse') {
+    dragging=true;
+    lastX=e.clientX;
+    lastY=e.clientY;
+    canvas.setPointerCapture(e.pointerId);
+  }
+});
+
+canvas.addEventListener('pointermove',e=>{
+
+  if(!dragging)return;
+
+  camYaw-=(e.clientX-lastX)*0.004;
+  camPitch-=(e.clientY-lastY)*0.003;
+
+  camPitch=THREE.MathUtils.clamp(
+    camPitch,-1,1
+  );
+
+  lastX=e.clientX;
+  lastY=e.clientY;
+});
+
+canvas.addEventListener('pointerup',()=>{
+  dragging=false;
+});
+
+canvas.addEventListener('pointercancel',()=>{
+  dragging=false;
+});
+
+// ==========================================
+// 8. COORDINATES
+// ==========================================
+
+let showCoords=false;
+
+document.getElementById('coordButton')
+.addEventListener('click',()=>{
+
+  showCoords=!showCoords;
+
+  document.getElementById('coordPanel').style.display=
+    showCoords?'block':'none';
+});
+
+document.getElementById('copyBtn')
+.addEventListener('click',()=>{
+
+  const p=camera.position;
+
+  const text=
+    `X:${p.x.toFixed(2)} Y:${p.y.toFixed(2)} Z:${p.z.toFixed(2)}`;
+
+  navigator.clipboard?.writeText(text);
+});
+
+// ==========================================
+// 9. RESIZE
+// ==========================================
+
+function resize() {
+
+  const w=window.innerWidth;
+  const h=Math.max(1,window.innerHeight-70);
+
+  renderer.setSize(w,h);
+
+  camera.aspect=w/h;
+  camera.updateProjectionMatrix();
+}
+
+window.addEventListener('resize',resize);
+resize();
+
+// ==========================================
+// 10. ANIMATION
+// ==========================================
+
+const clock=new THREE.Clock();
+
+function animate() {
+
+  requestAnimationFrame(animate);
+
+  const dt=Math.min(clock.getDelta(),0.05);
+
+  // Le ciel suit la caméra pour rester infini
+  skySphere.position.copy(camera.position);
+
+  // Animation des nuages et étoiles
+  skyUniforms.uTime.value=clock.elapsedTime;
+
+  // Rotation caméra
+  camera.rotation.y=camYaw;
+  camera.rotation.x=camPitch;
+
+  // Déplacement
+  const forward=new THREE.Vector3(
+    -Math.sin(camYaw),
+    0,
+    -Math.cos(camYaw)
+  );
+
+  const right=new THREE.Vector3(
+    Math.cos(camYaw),
+    0,
+    -Math.sin(camYaw)
+  );
+
+  camera.position.addScaledVector(
+    forward,-jLy*6.5*dt
+  );
+
+  camera.position.addScaledVector(
+    right,jLx*6.5*dt
+  );
+
+  camera.position.y=1.7;
+
+  camYaw-=jRx*1.8*dt;
+
+  camPitch=THREE.MathUtils.clamp(
+    camPitch-jRy*1.2*dt,
+    -1,
+    1
+  );
+
+  // Coordonnées
+  if(showCoords) {
+
+    document.getElementById('cx').textContent=
+      camera.position.x.toFixed(2);
+
+    document.getElementById('cy').textContent=
+      camera.position.y.toFixed(2);
+
+    document.getElementById('cz').textContent=
+      camera.position.z.toFixed(2);
+  }
+
+  // Décor
+  world.update(dt,clock.elapsedTime);
+
+  renderer.render(scene,camera);
+
+  drawJoy('jL',jLx,jLy);
+  drawJoy('jR',jRx,jRy);
+}
+
+animate();
+
+</script>
 </body>
 </html>
