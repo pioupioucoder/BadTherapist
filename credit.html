@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0A0A0F">
+<link rel="icon" type="image/png" href="images/logo.png">
+<title>Credits & Information — Bad Therapist</title>
+
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600&family=IM+Fell+English:ital@0;1&display=swap" rel="stylesheet">
+
+<style>
+:root {
+  --bg:#0A0A0F;
+  --silver:#E8DDF0;
+  --blood:#8B0000;
+  --gold:#C9A84C;
+}
+
+* { box-sizing:border-box; }
+
+body {
+  margin:0;
+  min-height:100vh;
+  background:var(--bg);
+  color:var(--silver);
+  font-family:'IM Fell English',serif;
+  padding:24px;
+  position:relative;
+}
+
+body::before {
+  content:"";
+  position:fixed;
+  inset:0;
+  pointer-events:none;
+  background:radial-gradient(ellipse at 50% 0%,#210813 0%,transparent 55%);
+}
+
+body::after {
+  content:"";
+  position:fixed;
+  inset:13px;
+  border:1px solid rgba(201,168,76,.12);
+  pointer-events:none;
+}
+
+main {
+  position:relative;
+  width:min(760px,100%);
+  margin:auto;
+  z-index:1;
+}
+
+header {
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:14px;
+  border-bottom:1px solid rgba(201,168,76,.25);
+  padding:8px 0 20px;
+}
+
+a {
+  color:#d8c8d6;
+  text-decoration:none;
+}
+
+a:hover { color:white; }
+
+.back,.tag,.eyebrow,h2,footer {
+  font-family:Cinzel,serif;
+  letter-spacing:.15em;
+}
+
+.back { font-size:10px; }
+.tag { font-size:9px; color:var(--gold); }
+
+h1 {
+  font:500 clamp(2.6rem,8vw,5rem)/1.08 Cinzel,serif;
+  letter-spacing:.06em;
+  margin:48px 0 42px;
+  text-shadow:0 0 35px rgba(220,20,60,.2);
+}
+
+section {
+  padding:27px 0;
+  border-top:1px solid rgba(201,168,76,.2);
+}
+
+.eyebrow {
+  font-size:10px;
+  color:#b36a79;
+  margin-bottom:15px;
+}
+
+h2 {
+  font-size:12px;
+  font-weight:500;
+  color:var(--silver);
+  margin:0 0 17px;
+}
+
+p {
+  font-size:15px;
+  line-height:1.9;
+  color:#aa9eae;
+  margin:0 0 14px;
+}
+
+ul {
+  padding-left:21px;
+  color:#aa9eae;
+  line-height:1.9;
+}
+
+li {
+  padding-left:4px;
+  margin-bottom:7px;
+}
+
+strong {
+  color:#e8ddef;
+  font-weight:normal;
+}
+
+.note {
+  color:#c5a4b0;
+  font-style:italic;
+}
+
+footer {
+  border-top:1px solid rgba(201,168,76,.2);
+  padding-top:18px;
+  margin-top:36px;
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  font-size:9px;
+  color:#6e6372;
+}
+
+@media(max-width:480px) {
+  body { padding:18px; }
+  header,footer {
+    align-items:flex-start;
+    flex-direction:column;
+  }
+}
+</style>
+</head>
+
+<body>
+<main>
+
+<header>
+  <a class="back" href="settings.html">← BACK TO SETTINGS</a>
+  <span class="tag">BAD THERAPIST</span>
+</header>
+
+<h1>Credits &<br>Information</h1>
+
+<section>
+  <div class="eyebrow">01 / Credits</div>
+  <h2>THE CREATOR</h2>
+  <p>Bad Therapist is an independent visual novel project.</p>
+  <p class="note">Thank you for taking the time to experience this story.</p>
+</section>
+
+<section>
+  <div class="eyebrow">02 / Information</div>
+  <h2>ABOUT THE PROJECT</h2>
+
+  <p>Bad Therapist is a narrative visual novel currently in development. The story and its characters will evolve as new chapters are added.</p>
+
+  <p>Your choices may influence the way certain events unfold. Some scenes, routes and endings may become available as you progress.</p>
+
+  <p>This is a work of fiction. The themes and situations presented in the story are part of its narrative.</p>
+</section>
+
+<section>
+  <div class="eyebrow">03 / How to play</div>
+  <h2>CONTROLS</h2>
+
+  <ul>
+    <li><strong>Tap / Click:</strong> Advance dialogue.</li>
+    <li><strong>Dialogue:</strong> Click again while text is appearing to finish the text animation.</li>
+    <li><strong>Choices:</strong> Select an option when a choice appears. Your decision may affect the story.</li>
+    <li><strong>Back:</strong> Return to a previous scene when the option is available.</li>
+    <li><strong>History:</strong> Review previous dialogue when this feature is available.</li>
+    <li><strong>Settings:</strong> Adjust the volume, import or export your save, or reset your progress.</li>
+    <li><strong>Auto-save:</strong> Your progress is stored in your browser when the game saves.</li>
+  </ul>
+</section>
+
+<section>
+  <div class="eyebrow">04 / Important</div>
+  <h2>YOUR SAVE DATA</h2>
+
+  <p>Your progress is stored locally in your browser. Clearing your browser data or changing browsers may cause you to lose it.</p>
+
+  <p>To keep a backup, open Settings and use Export. You can later restore your progress using Import.</p>
+
+  <p class="note">If you encounter a bug, try refreshing the page. If the issue persists, report it to the creator.</p>
+</section>
+
+<footer>
+  <span>BAD THERAPIST</span>
+  <span>END OF FILE · 001</span>
+</footer>
+
+</main>
+</body>
+</html>

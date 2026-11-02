@@ -1,664 +1,274 @@
-
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#101010">
+<link rel="icon" type="image/png" href="images/logo.png">
 <title>Bad Therapist</title>
 
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+
 <style>
+:root {
+    --black: #101010;
+    --dark: #191919;
+    --gray: #777;
+    --light: #c9c9c9;
+    --white: #ededed;
+}
+
 * {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
+    box-sizing: border-box;
 }
 
 html, body {
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  background: #111722;
+    margin: 0;
+    min-height: 100%;
+    background: var(--black);
+    color: var(--white);
 }
 
-#gc {
-  display: block;
-  width: 100%;
-  height: calc(100% - 70px);
-  touch-action: none;
+body {
+    min-height: 100svh;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    font-family: 'VT323', monospace;
+    position: relative;
 }
 
-#hud {
-  position: fixed;
-  bottom: 0;
-  width: 100%;
-  height: 70px;
-  background: #171720;
-  border-top: 1px solid #393541;
-  display: flex;
-  justify-content: space-around;
-  align-items: center;
+/* Background */
+.background {
+    position: fixed;
+    inset: 0;
+    background:
+        radial-gradient(ellipse at center, #292929 0%, #171717 48%, #090909 100%);
+    z-index: 0;
 }
 
-#jL, #jR {
-  width: 120px;
-  height: 60px;
-  touch-action: none;
+.background::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    opacity: .18;
+    background-image:
+        linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px);
+    background-size: 32px 32px;
 }
 
-#paramBar {
-  position: fixed;
-  top: 10px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 10;
+/* CRT scanlines */
+.scanlines {
+    position: fixed;
+    inset: 0;
+    z-index: 5;
+    pointer-events: none;
+    opacity: .12;
+    background: repeating-linear-gradient(
+        to bottom,
+        transparent 0px,
+        transparent 2px,
+        rgba(0,0,0,.65) 3px,
+        rgba(0,0,0,.65) 4px
+    );
 }
 
-.pBtn {
-  background: rgba(23,23,32,.9);
-  color: #d9c5b5;
-  border: 1px solid #625047;
-  border-radius: 20px;
-  padding: 9px 17px;
-  font: 11px monospace;
-  letter-spacing: 1px;
+/* Screen frame */
+.frame {
+    position: fixed;
+    inset: 15px;
+    border: 1px solid rgba(255,255,255,.13);
+    pointer-events: none;
+    z-index: 2;
 }
 
-#coordPanel {
-  display: none;
-  position: fixed;
-  top: 60px;
-  left: 12px;
-  padding: 12px;
-  background: rgba(23,23,32,.95);
-  border: 1px solid #625047;
-  border-radius: 8px;
-  color: #ddd0c3;
-  font: 12px/1.8 monospace;
-  z-index: 20;
+.frame::before,
+.frame::after {
+    content: "";
+    position: absolute;
+    width: 13px;
+    height: 13px;
+    border-color: #aaa;
+    border-style: solid;
 }
 
-#copyBtn {
-  display: block;
-  width: 100%;
-  padding: 5px;
-  margin-top: 7px;
-  background: #302733;
-  color: white;
-  border: 1px solid #625047;
+.frame::before {
+    top: -1px;
+    left: -1px;
+    border-width: 2px 0 0 2px;
+}
+
+.frame::after {
+    bottom: -1px;
+    right: -1px;
+    border-width: 0 2px 2px 0;
+}
+
+/* Main */
+main {
+    width: min(700px, 90%);
+    text-align: center;
+    position: relative;
+    z-index: 3;
+    padding: 40px 15px;
+    animation: boot .9s ease-out both;
+}
+
+@keyframes boot {
+    from {
+        opacity: 0;
+        transform: translateY(12px);
+        filter: blur(3px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+        filter: blur(0);
+    }
+}
+
+/* Small top label */
+.system-label {
+    font-size: 19px;
+    letter-spacing: .24em;
+    color: #858585;
+    margin-bottom: 43px;
+}
+
+/* Game title */
+h1 {
+    font-family: 'Press Start 2P', monospace;
+    font-size: clamp(27px, 6vw, 54px);
+    line-height: 1.7;
+    font-weight: normal;
+    letter-spacing: -.07em;
+    margin: 0 auto 52px;
+    color: var(--white);
+    text-shadow:
+        3px 3px 0 #555,
+        6px 6px 0 rgba(0,0,0,.8);
+    position: relative;
+}
+
+/* Pixel glitch */
+.glitch {
+    display: inline-block;
+    animation: glitch 7s infinite;
+}
+
+@keyframes glitch {
+    0%, 94%, 96%, 100% {
+        transform: translate(0);
+        opacity: 1;
+    }
+    95% {
+        transform: translate(3px,-2px);
+        opacity: .65;
+    }
+}
+
+/* Divider */
+.divider {
+    width: 180px;
+    height: 4px;
+    background: #777;
+    margin: 0 auto 37px;
+    box-shadow:
+        0 5px 0 #333,
+        0 -5px 0 #333;
+}
+
+/* Buttons */
+nav {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 17px;
+}
+
+nav a {
+    width: 245px;
+    padding: 15px 12px;
+    text-decoration: none;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 11px;
+    color: #aaa;
+    background: #171717;
+    border: 2px solid #555;
+    box-shadow: 4px 4px 0 #050505;
+    transition: .15s ease;
+    position: relative;
+}
+
+nav a:hover {
+    color: #fff;
+    background: #353535;
+    border-color: #ddd;
+    transform: translate(-2px,-2px);
+    box-shadow: 6px 6px 0 #050505;
+}
+
+nav a:active {
+    transform: translate(3px,3px);
+    box-shadow: 1px 1px 0 #050505;
+}
+
+nav a::before {
+    content: "▶";
+    position: absolute;
+    left: 15px;
+    opacity: 0;
+    transition: .15s;
+    font-size: 10px;
+}
+
+nav a:hover::before {
+    opacity: 1;
+}
+
+/* Responsive */
+@media(max-width:480px) {
+    h1 {
+        font-size: clamp(22px, 7vw, 34px);
+    }
+
+    .system-label {
+        font-size: 16px;
+    }
+
+    nav a {
+        width: min(245px, 85vw);
+    }
+}
+
+@media(prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation: none !important;
+        transition: none !important;
+    }
 }
 </style>
 </head>
 
 <body>
 
-<canvas id="gc"></canvas>
+<div class="background"></div>
+<div class="frame"></div>
+<div class="scanlines"></div>
 
-<div id="paramBar">
-  <button class="pBtn" id="coordButton">📍 COORDINATES</button>
-</div>
+<main>
+    <div class="system-label">[ GAME SYSTEM : ONLINE ]</div>
 
-<div id="coordPanel">
-  BAD THERAPIST<br>
-  X: <span id="cx">0</span><br>
-  Y: <span id="cy">1.7</span><br>
-  Z: <span id="cz">0</span>
-  <button id="copyBtn">COPY</button>
-</div>
+    <h1>BAD<br>THERA<span class="glitch">PIST</span></h1>
 
-<div id="hud">
-  <canvas id="jL" width="120" height="60"></canvas>
-  <canvas id="jR" width="120" height="60"></canvas>
-</div>
+    <div class="divider"></div>
 
-<script type="importmap">
-{
-  "imports": {
-    "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.module.js"
-  }
-}
-</script>
+    <nav>
+        <a href="world_base.html?launch=1">PLAY</a>
+        <a href="settings.html">SETTINGS</a>
+    </nav>
+</main>
 
-<script type="module">
-
-import * as THREE from 'three';
-import { buildWorld } from './immeuble.js';
-
-// ==========================================
-// 1. SCENE
-// ==========================================
-
-const canvas = document.getElementById('gc');
-
-const renderer = new THREE.WebGLRenderer({
-  canvas,
-  antialias: true,
-  powerPreference: 'low-power'
-});
-
-renderer.setPixelRatio(
-  Math.min(window.devicePixelRatio || 1, 1.5)
-);
-
-renderer.outputEncoding = THREE.sRGBEncoding;
-
-const scene = new THREE.Scene();
-scene.fog = null;
-
-const camera = new THREE.PerspectiveCamera(
-  65, 1, 0.1, 5000
-);
-
-camera.position.set(0, 1.7, 13);
-camera.rotation.order = 'YXZ';
-
-// ==========================================
-// 2. SHARED SKY — BAD THERAPIST
-// ==========================================
-
-// Le ciel est créé ici une seule fois.
-// Tous les futurs décors utiliseront cette scène.
-
-const skyUniforms = {
-  uTime: { value: 0 }
-};
-
-const skyMaterial = new THREE.ShaderMaterial({
-
-  uniforms: skyUniforms,
-
-  side: THREE.BackSide,
-
-  depthWrite: false,
-
-  vertexShader: `
-    varying vec3 vDirection;
-
-    void main() {
-      vDirection = position;
-
-      gl_Position = projectionMatrix *
-                    modelViewMatrix *
-                    vec4(position, 1.0);
-    }
-  `,
-
-  fragmentShader: `
-
-    varying vec3 vDirection;
-
-    uniform float uTime;
-
-    float hash(vec2 p) {
-      return fract(
-        sin(dot(p, vec2(127.1,311.7))) *
-        43758.5453
-      );
-    }
-
-    float noise(vec2 p) {
-
-      vec2 i = floor(p);
-      vec2 f = fract(p);
-
-      f = f*f*(3.0-2.0*f);
-
-      float a = hash(i);
-      float b = hash(i+vec2(1.0,0.0));
-      float c = hash(i+vec2(0.0,1.0));
-      float d = hash(i+vec2(1.0,1.0));
-
-      return mix(
-        mix(a,b,f.x),
-        mix(c,d,f.x),
-        f.y
-      );
-    }
-
-    float fbm(vec2 p) {
-
-      float value = 0.0;
-      float amplitude = 0.5;
-
-      for(int i=0;i<5;i++) {
-
-        value += noise(p)*amplitude;
-
-        p *= 2.0;
-        amplitude *= 0.5;
-      }
-
-      return value;
-    }
-
-    void main() {
-
-      vec3 dir = normalize(vDirection);
-
-      float h = dir.y;
-
-      // Couleurs du ciel
-      vec3 topColor = vec3(0.055,0.075,0.115);
-      vec3 upperColor = vec3(0.075,0.095,0.145);
-      vec3 middleColor = vec3(0.105,0.115,0.155);
-      vec3 lowerColor = vec3(0.145,0.125,0.135);
-      vec3 horizonColor = vec3(0.27,0.145,0.105);
-
-      vec3 sky = mix(
-        lowerColor,
-        middleColor,
-        smoothstep(-0.05,0.25,h)
-      );
-
-      sky = mix(
-        sky,
-        upperColor,
-        smoothstep(0.25,0.65,h)
-      );
-
-      sky = mix(
-        sky,
-        topColor,
-        smoothstep(0.65,1.0,h)
-      );
-
-      // Lueur orange discrète à l'horizon
-      float horizonGlow = exp(
-        -pow((h + 0.105)*8.0,2.0)
-      );
-
-      float sunsetSide = smoothstep(
-        -0.5,0.8,dir.x
-      );
-
-      sky += vec3(0.16,0.065,0.035) *
-             horizonGlow *
-             sunsetSide;
-
-      // Nuages éloignés, étirés et peu visibles
-      vec2 cloudUV = vec2(
-        dir.x * 3.2,
-        dir.y * 5.0
-      );
-
-      cloudUV += vec2(
-        uTime * 0.0018,
-        uTime * 0.00025
-      );
-
-      float cloudNoise = fbm(cloudUV);
-
-      float cloudShape = smoothstep(
-        0.53,0.78,cloudNoise
-      );
-
-      // Les nuages sont surtout dans les couches hautes
-      float cloudZone =
-        smoothstep(-0.02,0.18,h) *
-        (1.0-smoothstep(0.65,0.95,h));
-
-      float cloudOpacity =
-        cloudShape * cloudZone * 0.13;
-
-      vec3 cloudColor = vec3(
-        0.30,0.29,0.32
-      );
-
-      sky = mix(
-        sky,
-        cloudColor,
-        cloudOpacity
-      );
-
-      // Étoiles minuscules et discrètes
-      vec2 starUV = dir.xz * 900.0;
-
-      float stars = step(
-        0.9975,
-        hash(floor(starUV))
-      );
-
-      stars *= smoothstep(0.12,0.45,h);
-
-      float twinkle =
-        0.55 + 0.45*sin(
-          uTime*0.8 + hash(floor(starUV))*20.0
-        );
-
-      sky += vec3(0.7,0.68,0.62) *
-             stars * twinkle * 0.45;
-
-      gl_FragColor = vec4(sky,1.0);
-
-    }
-  `
-});
-
-const skySphere = new THREE.Mesh(
-  new THREE.SphereGeometry(1800,64,48),
-  skyMaterial
-);
-
-skySphere.frustumCulled = false;
-skySphere.renderOrder = -100;
-scene.add(skySphere);
-
-// ==========================================
-// 3. ÉCLAIRAGE GLOBAL
-// ==========================================
-
-scene.add(
-  new THREE.AmbientLight(0x77758a,0.30)
-);
-
-const hemisphere = new THREE.HemisphereLight(
-  0x8d91a8,
-  0x24212a,
-  0.32
-);
-
-scene.add(hemisphere);
-
-const moonLight = new THREE.DirectionalLight(
-  0xa1a9c2,
-  0.32
-);
-
-moonLight.position.set(-40,70,-100);
-scene.add(moonLight);
-
-// ==========================================
-// 4. MONDE
-// ==========================================
-
-const world = buildWorld(scene);
-
-// ==========================================
-// 5. JOYSTICKS
-// ==========================================
-
-let jLx=0;
-let jLy=0;
-let jRx=0;
-let jRy=0;
-
-function setupJoy(id,callback) {
-
-  const cv=document.getElementById(id);
-
-  let active=false;
-  let bx=0;
-  let by=0;
-
-  function position(e) {
-
-    const r=cv.getBoundingClientRect();
-
-    return {
-      x:(e.clientX-r.left)*cv.width/r.width,
-      y:(e.clientY-r.top)*cv.height/r.height
-    };
-  }
-
-  function start(e) {
-
-    e.preventDefault();
-
-    const p=position(e);
-
-    bx=p.x;
-    by=p.y;
-
-    active=true;
-
-    cv.setPointerCapture(e.pointerId);
-  }
-
-  function move(e) {
-
-    if(!active)return;
-
-    e.preventDefault();
-
-    const p=position(e);
-
-    let x=(p.x-bx)/45;
-    let y=(p.y-by)/22;
-
-    const length=Math.hypot(x,y);
-
-    if(length>1) {
-      x/=length;
-      y/=length;
-    }
-
-    callback(x,y);
-  }
-
-  function end() {
-    active=false;
-    callback(0,0);
-  }
-
-  cv.addEventListener('pointerdown',start);
-  cv.addEventListener('pointermove',move);
-  cv.addEventListener('pointerup',end);
-  cv.addEventListener('pointercancel',end);
-  cv.addEventListener('lostpointercapture',end);
-}
-
-setupJoy('jL',(x,y)=>{
-  jLx=x;
-  jLy=y;
-});
-
-setupJoy('jR',(x,y)=>{
-  jRx=x;
-  jRy=y;
-});
-
-// ==========================================
-// 6. JOYSTICK DESIGN
-// ==========================================
-
-function drawJoy(id,dx,dy) {
-
-  const cv=document.getElementById(id);
-  const ctx=cv.getContext('2d');
-
-  ctx.clearRect(0,0,120,60);
-
-  ctx.fillStyle='#25232b';
-
-  ctx.beginPath();
-  ctx.ellipse(60,30,55,25,0,0,Math.PI*2);
-  ctx.fill();
-
-  ctx.strokeStyle='#665b59';
-  ctx.lineWidth=1.3;
-  ctx.stroke();
-
-  const x=60+dx*38;
-  const y=30+dy*16;
-
-  const gradient=ctx.createRadialGradient(
-    x-3,y-3,1,x,y,15
-  );
-
-  gradient.addColorStop(0,'#c6bdb2');
-  gradient.addColorStop(1,'#655d57');
-
-  ctx.fillStyle=gradient;
-
-  ctx.beginPath();
-  ctx.ellipse(x,y,14,10,0,0,Math.PI*2);
-  ctx.fill();
-}
-
-// ==========================================
-// 7. CAMERA
-// ==========================================
-
-let camYaw=0;
-let camPitch=0;
-
-let dragging=false;
-let lastX=0;
-let lastY=0;
-
-canvas.addEventListener('pointerdown',e=>{
-
-  if(e.pointerType==='mouse') {
-    dragging=true;
-    lastX=e.clientX;
-    lastY=e.clientY;
-    canvas.setPointerCapture(e.pointerId);
-  }
-});
-
-canvas.addEventListener('pointermove',e=>{
-
-  if(!dragging)return;
-
-  camYaw-=(e.clientX-lastX)*0.004;
-  camPitch-=(e.clientY-lastY)*0.003;
-
-  camPitch=THREE.MathUtils.clamp(
-    camPitch,-1,1
-  );
-
-  lastX=e.clientX;
-  lastY=e.clientY;
-});
-
-canvas.addEventListener('pointerup',()=>{
-  dragging=false;
-});
-
-canvas.addEventListener('pointercancel',()=>{
-  dragging=false;
-});
-
-// ==========================================
-// 8. COORDINATES
-// ==========================================
-
-let showCoords=false;
-
-document.getElementById('coordButton')
-.addEventListener('click',()=>{
-
-  showCoords=!showCoords;
-
-  document.getElementById('coordPanel').style.display=
-    showCoords?'block':'none';
-});
-
-document.getElementById('copyBtn')
-.addEventListener('click',()=>{
-
-  const p=camera.position;
-
-  const text=
-    `X:${p.x.toFixed(2)} Y:${p.y.toFixed(2)} Z:${p.z.toFixed(2)}`;
-
-  navigator.clipboard?.writeText(text);
-});
-
-// ==========================================
-// 9. RESIZE
-// ==========================================
-
-function resize() {
-
-  const w=window.innerWidth;
-  const h=Math.max(1,window.innerHeight-70);
-
-  renderer.setSize(w,h);
-
-  camera.aspect=w/h;
-  camera.updateProjectionMatrix();
-}
-
-window.addEventListener('resize',resize);
-resize();
-
-// ==========================================
-// 10. ANIMATION
-// ==========================================
-
-const clock=new THREE.Clock();
-
-function animate() {
-
-  requestAnimationFrame(animate);
-
-  const dt=Math.min(clock.getDelta(),0.05);
-
-  // Le ciel suit la caméra pour rester infini
-  skySphere.position.copy(camera.position);
-
-  // Animation des nuages et étoiles
-  skyUniforms.uTime.value=clock.elapsedTime;
-
-  // Rotation caméra
-  camera.rotation.y=camYaw;
-  camera.rotation.x=camPitch;
-
-  // Déplacement
-  const forward=new THREE.Vector3(
-    -Math.sin(camYaw),
-    0,
-    -Math.cos(camYaw)
-  );
-
-  const right=new THREE.Vector3(
-    Math.cos(camYaw),
-    0,
-    -Math.sin(camYaw)
-  );
-
-  camera.position.addScaledVector(
-    forward,-jLy*6.5*dt
-  );
-
-  camera.position.addScaledVector(
-    right,jLx*6.5*dt
-  );
-
-  camera.position.y=1.7;
-
-  camYaw-=jRx*1.8*dt;
-
-  camPitch=THREE.MathUtils.clamp(
-    camPitch-jRy*1.2*dt,
-    -1,
-    1
-  );
-
-  // Coordonnées
-  if(showCoords) {
-
-    document.getElementById('cx').textContent=
-      camera.position.x.toFixed(2);
-
-    document.getElementById('cy').textContent=
-      camera.position.y.toFixed(2);
-
-    document.getElementById('cz').textContent=
-      camera.position.z.toFixed(2);
-  }
-
-  // Décor
-  world.update(dt,clock.elapsedTime);
-
-  renderer.render(scene,camera);
-
-  drawJoy('jL',jLx,jLy);
-  drawJoy('jR',jRx,jRy);
-}
-
-animate();
-
-</script>
 </body>
 </html>

@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#101010">
+<link rel="icon" type="image/png" href="images/logo.png">
+<title>Settings — Bad Therapist</title>
+
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+
+<style>
+:root {
+    --black: #101010;
+    --dark: #191919;
+    --panel: #202020;
+    --gray: #777;
+    --light: #bcbcbc;
+    --white: #ededed;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    min-height: 100vh;
+    padding: 25px;
+    background: var(--black);
+    color: var(--white);
+    font-family: 'VT323', monospace;
+    position: relative;
+}
+
+body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background:
+        radial-gradient(ellipse at center, #292929, #101010 80%);
+    z-index: -1;
+}
+
+body::after {
+    content: "";
+    position: fixed;
+    inset: 15px;
+    border: 1px solid rgba(255,255,255,.13);
+    pointer-events: none;
+    z-index: 5;
+}
+
+.wrapper {
+    width: min(850px, 100%);
+    margin: auto;
+    position: relative;
+    z-index: 1;
+}
+
+/* Header */
+header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 5px 0 20px;
+    border-bottom: 1px solid #444;
+    gap: 15px;
+}
+
+.back {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 9px;
+    color: #aaa;
+    text-decoration: none;
+}
+
+.back:hover {
+    color: white;
+}
+
+.header-label {
+    font-size: 17px;
+    color: #777;
+    letter-spacing: .16em;
+}
+
+/* Page title */
+.page-title {
+    text-align: center;
+    padding: 40px 0 32px;
+}
+
+.page-title h1 {
+    font-family: 'Press Start 2P', monospace;
+    font-size: clamp(21px, 5vw, 35px);
+    font-weight: normal;
+    line-height: 1.7;
+    margin: 0;
+    text-shadow: 3px 3px #555;
+}
+
+.page-title p {
+    font-size: 21px;
+    color: #888;
+    margin: 13px 0 0;
+}
+
+/* Panels */
+.grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 15px;
+}
+
+.panel {
+    background: rgba(29,29,29,.94);
+    border: 2px solid #555;
+    box-shadow: 4px 4px 0 #050505;
+    padding: 22px;
+    min-width: 0;
+}
+
+.panel.wide {
+    grid-column: 1 / -1;
+}
+
+.panel-title {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 11px;
+    line-height: 1.8;
+    color: #e0e0e0;
+    margin: 0 0 17px;
+    padding-bottom: 12px;
+    border-bottom: 1px dashed #555;
+}
+
+.panel p {
+    font-size: 20px;
+    line-height: 1.3;
+    color: #999;
+    margin: 0 0 18px;
+}
+
+/* Audio */
+.volume-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+input[type="range"] {
+    width: 100%;
+    accent-color: #ddd;
+    cursor: pointer;
+}
+
+.value {
+    min-width: 43px;
+    text-align: right;
+    font-size: 20px;
+    color: white;
+}
+
+.mute-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 17px;
+    gap: 12px;
+    font-size: 19px;
+    color: #aaa;
+}
+
+/* Buttons */
+button, .action-link {
+    border: 2px solid #666;
+    background: #151515;
+    color: #ddd;
+    padding: 11px 13px;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 9px;
+    line-height: 1.7;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-block;
+    box-shadow: 3px 3px 0 #050505;
+    transition: .12s;
+}
+
+button:hover, .action-link:hover {
+    background: #444;
+    color: white;
+    border-color: #eee;
+}
+
+button:active, .action-link:active {
+    transform: translate(3px,3px);
+    box-shadow: none;
+}
+
+.actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.danger {
+    border-color: #999;
+    color: white;
+}
+
+.share-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.share-link {
+    border: 1px solid #666;
+    background: #151515;
+    padding: 16px;
+    color: #ddd;
+    font-size: 19px;
+    text-decoration: none;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: .15s;
+}
+
+.share-link:hover {
+    background: #393939;
+    border-color: white;
+    color: white;
+}
+
+.share-link span:last-child {
+    color: #888;
+}
+
+/* Footer */
+footer {
+    display: flex;
+    justify-content: space-between;
+    gap: 15px;
+    border-top: 1px solid #444;
+    padding-top: 17px;
+    margin-top: 28px;
+    color: #777;
+    font-size: 17px;
+    letter-spacing: .12em;
+}
+
+/* Toast */
+#toast {
+    position: fixed;
+    bottom: 25px;
+    left: 50%;
+    transform: translate(-50%, 20px);
+    opacity: 0;
+    pointer-events: none;
+    background: #ddd;
+    color: #111;
+    padding: 12px 18px;
+    font-size: 19px;
+    z-index: 10;
+    transition: .2s;
+    text-align: center;
+    max-width: 90%;
+}
+
+#toast.show {
+    opacity: 1;
+    transform: translate(-50%, 0);
+}
+
+/* Reset dialog */
+#confirm-layer {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.85);
+    display: none;
+    place-items: center;
+    padding: 20px;
+    z-index: 9;
+}
+
+#confirm-layer.show {
+    display: grid;
+}
+
+.dialog {
+    width: min(420px, 100%);
+    background: #202020;
+    border: 2px solid #aaa;
+    padding: 25px;
+    box-shadow: 6px 6px 0 #000;
+}
+
+.dialog h2 {
+    font: 10px/1.8 'Press Start 2P', monospace;
+    margin: 0 0 20px;
+}
+
+.dialog p {
+    font-size: 20px;
+    line-height: 1.4;
+    color: #aaa;
+}
+
+.dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+/* Responsive */
+@media(max-width:650px) {
+    body {
+        padding: 22px;
+    }
+
+    .grid {
+        grid-template-columns: 1fr;
+    }
+
+    .panel.wide {
+        grid-column: auto;
+    }
+
+    .header-label {
+        display: none;
+    }
+
+    .share-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media(prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        transition: none !important;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<main class="wrapper">
+
+<header>
+    <a class="back" id="back-link" href="index.html">← BACK</a>
+    <span class="header-label">BAD THERAPIST / SYSTEM MENU</span>
+</header>
+
+<section class="page-title">
+    <h1>SETTINGS</h1>
+    <p>[ Configure your experience ]</p>
+</section>
+
+<section class="grid">
+
+    <article class="panel">
+        <h2 class="panel-title">01. AUDIO</h2>
+        <p>Adjust the game volume.</p>
+
+        <div class="volume-row">
+            <input id="volume" type="range" min="0" max="1" step="0.01" value="0.7">
+            <span class="value" id="volume-value">70%</span>
+        </div>
+
+        <div class="mute-row">
+            <span id="mute-state">Sound enabled</span>
+            <button id="mute-toggle" type="button">MUTE</button>
+        </div>
+    </article>
+
+    <article class="panel">
+        <h2 class="panel-title">02. SAVE DATA</h2>
+        <p>Backup or restore your game progress.</p>
+
+        <div class="actions">
+            <button id="export-btn" type="button">EXPORT</button>
+            <button id="import-btn" type="button">IMPORT</button>
+            <input id="import-file" type="file" accept=".json,application/json" hidden>
+        </div>
+    </article>
+
+    <article class="panel">
+        <h2 class="panel-title">03. RESET</h2>
+        <p>Delete your saved progress and preferences.</p>
+        <button class="danger" id="reset-btn" type="button">RESET DATA</button>
+    </article>
+
+    <article class="panel">
+        <h2 class="panel-title">04. INFORMATION</h2>
+        <p>Credits, game information and instructions.</p>
+        <a class="action-link" href="credit.html">OPEN PAGE</a>
+    </article>
+
+    <article class="panel wide">
+        <h2 class="panel-title">05. EXTERNAL LINKS</h2>
+        <p>Find the game and its creator elsewhere.</p>
+
+        <div class="share-grid">
+            <a class="share-link" id="share-game"
+               href="https://pioupioucoder.github.io/BadTherapist/">
+                <span>SHARE GAME</span>
+                <span>↗</span>
+            </a>
+
+            <a class="share-link"
+               href="https://youtube.com/@krismeowofficial?si=qd-ctk7MqisbWY7w"
+               target="_blank" rel="noopener">
+                <span>YOUTUBE</span>
+                <span>↗</span>
+            </a>
+        </div>
+    </article>
+
+</section>
+
+<footer>
+    <span>BAD THERAPIST</span>
+    <span>END OF MENU</span>
+</footer>
+
+</main>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<div id="confirm-layer" role="dialog" aria-modal="true">
+    <div class="dialog">
+        <h2>RESET ALL DATA?</h2>
+        <p>This action will delete your local game progress. Make sure you have exported a backup first.</p>
+
+        <div class="dialog-actions">
+            <button id="cancel-reset" type="button">CANCEL</button>
+            <button id="confirm-reset" type="button">CONFIRM</button>
+        </div>
+    </div>
+</div>
+
+<script>
+(() => {
+'use strict';
+
+const KEYS = {
+    save: 'lmtd_save_v3',
+    volume: 'lmtd_volume',
+    muted: 'lmtd_muted',
+    chapters: 'lmtd_chapters_v1',
+    endings: 'lmtd_endings_seen_v1',
+    gameFlags: 'lmtd_gameFlags',
+    sessionCode: 'lmtd_code_ok'
+};
+
+const GAME_URL = 'https://pioupioucoder.github.io/BadTherapist/';
+
+const $ = id => document.getElementById(id);
+
+let toastTimer;
+
+function toast(message) {
+    const el = $('toast');
+    el.textContent = message;
+    el.classList.add('show');
+
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => {
+        el.classList.remove('show');
+    }, 2500);
+}
+
+function getVolume() {
+    const value = Number(localStorage.getItem(KEYS.volume));
+
+    return Number.isFinite(value)
+        ? Math.max(0, Math.min(1, value))
+        : 0.7;
+}
+
+function isMuted() {
+    return localStorage.getItem(KEYS.muted) === '1';
+}
+
+function syncAudioUI() {
+    const volume = getVolume();
+    const muted = isMuted();
+
+    $('volume').value = String(volume);
+    $('volume-value').textContent = Math.round(volume * 100) + '%';
+    $('mute-toggle').textContent = muted ? 'UNMUTE' : 'MUTE';
+    $('mute-state').textContent = muted ? 'Sound muted' : 'Sound enabled';
+}
+
+// VOLUME
+$('volume').addEventListener('input', event => {
+    const value = Number(event.target.value);
+    localStorage.setItem(KEYS.volume, String(value));
+    syncAudioUI();
+});
+
+// MUTE
+$('mute-toggle').addEventListener('click', () => {
+    localStorage.setItem(KEYS.muted, isMuted() ? '0' : '1');
+    syncAudioUI();
+});
+
+// EXPORT
+$('export-btn').addEventListener('click', () => {
+    try {
+        const data = {
+            save: localStorage.getItem(KEYS.save) || '{}',
+            volume: localStorage.getItem(KEYS.volume) || '0.7',
+            muted: localStorage.getItem(KEYS.muted) || '0',
+            chapters: localStorage.getItem(KEYS.chapters) || '[]',
+            endings: localStorage.getItem(KEYS.endings) || '[]',
+            gameFlags: localStorage.getItem(KEYS.gameFlags) || '{}'
+        };
+
+        const blob = new Blob(
+            [JSON.stringify(data, null, 2)],
+            { type: 'application/json' }
+        );
+
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+
+        link.href = url;
+        link.download = 'BadTherapistSAVE.json';
+
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+        toast('SAVE EXPORTED');
+
+    } catch (error) {
+        console.error(error);
+        toast('EXPORT FAILED');
+    }
+});
+
+// IMPORT
+$('import-btn').addEventListener('click', () => {
+    $('import-file').click();
+});
+
+$('import-file').addEventListener('change', event => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+
+    reader.onload = () => {
+        try {
+            const data = JSON.parse(String(reader.result));
+
+            if (
+                !data ||
+                typeof data !== 'object' ||
+                Array.isArray(data) ||
+                (typeof data.save !== 'string' && typeof data.save !== 'object')
+            ) {
+                throw new Error('Invalid save file');
+            }
+
+            const saveValue = typeof data.save === 'string'
+                ? data.save
+                : JSON.stringify(data.save);
+
+            JSON.parse(saveValue);
+            localStorage.setItem(KEYS.save, saveValue);
+
+            for (const key of [
+                'volume',
+                'muted',
+                'chapters',
+                'endings',
+                'gameFlags'
+            ]) {
+                if (data[key] !== undefined && data[key] !== null) {
+                    const value = typeof data[key] === 'string'
+                        ? data[key]
+                        : JSON.stringify(data[key]);
+
+                    localStorage.setItem(KEYS[key], value);
+                }
+            }
+
+            syncAudioUI();
+            toast('SAVE IMPORTED — RELOAD THE GAME');
+
+        } catch (error) {
+            console.error(error);
+            toast('INVALID SAVE FILE');
+
+        } finally {
+            $('import-file').value = '';
+        }
+    };
+
+    reader.onerror = () => toast('FILE COULD NOT BE READ');
+    reader.readAsText(file);
+});
+
+// RESET
+$('reset-btn').addEventListener('click', () => {
+    $('confirm-layer').classList.add('show');
+});
+
+$('cancel-reset').addEventListener('click', () => {
+    $('confirm-layer').classList.remove('show');
+});
+
+$('confirm-layer').addEventListener('click', event => {
+    if (event.target === $('confirm-layer')) {
+        $('confirm-layer').classList.remove('show');
+    }
+});
+
+$('confirm-reset').addEventListener('click', () => {
+    [
+        KEYS.save,
+        KEYS.volume,
+        KEYS.muted,
+        KEYS.chapters,
+        KEYS.endings,
+        KEYS.gameFlags
+    ].forEach(key => localStorage.removeItem(key));
+
+    sessionStorage.removeItem(KEYS.sessionCode);
+
+    $('confirm-layer').classList.remove('show');
+    syncAudioUI();
+    toast('LOCAL DATA RESET');
+});
+
+// SHARE
+$('share-game').addEventListener('click', async event => {
+    if (navigator.share) {
+        event.preventDefault();
+
+        try {
+            await navigator.share({
+                title: 'Bad Therapist',
+                url: GAME_URL
+            });
+        } catch (_) {}
+
+    } else if (navigator.clipboard && window.isSecureContext) {
+        event.preventDefault();
+
+        try {
+            await navigator.clipboard.writeText(GAME_URL);
+            toast('LINK COPIED');
+        } catch (_) {
+            window.open(GAME_URL, '_blank', 'noopener');
+        }
+    }
+});
+
+// BACK
+const fromWorld =
+    new URLSearchParams(location.search).get('from') === 'world_base';
+
+$('back-link').href = fromWorld
+    ? 'world_base.html'
+    : 'index.html';
+
+syncAudioUI();
+
+})();
+</script>
+
+</body>
+</html>
