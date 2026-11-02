@@ -1,11 +1,11 @@
+
 <!DOCTYPE html>
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-  <link rel="icon" type="image/png" href="/BadTherapist/images/logo.png?v=2">
-<title>Bad Therapist</title>
 <link rel="icon" type="image/png" href="./images/logo.png">
+<title>Bad Therapist</title>
 
 <style>
 * {
@@ -18,7 +18,7 @@ html, body {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: #111722;
+  background: #aeb8c0;
   font-family: Arial, sans-serif;
   touch-action: none;
   user-select: none;
@@ -36,9 +36,7 @@ html, body {
   touch-action: none;
 }
 
-/* ==========================================
-   HUD
-========================================== */
+/* HUD */
 
 #homeButton {
   position: fixed;
@@ -97,9 +95,7 @@ html, body {
   white-space: nowrap;
 }
 
-/* ==========================================
-   PANELS
-========================================== */
+/* PANELS */
 
 .hud-panel {
   display: none;
@@ -169,9 +165,7 @@ html, body {
   letter-spacing: 2px;
 }
 
-/* ==========================================
-   JOYSTICKS
-========================================== */
+/* JOYSTICKS */
 
 #hud {
   position: fixed;
@@ -193,9 +187,7 @@ html, body {
   touch-action: none;
 }
 
-/* ==========================================
-   ERROR
-========================================== */
+/* ERROR */
 
 #errorPanel {
   display: none;
@@ -212,12 +204,9 @@ html, body {
   white-space: pre-wrap;
 }
 
-/* ==========================================
-   MOBILE
-========================================== */
+/* MOBILE */
 
 @media (max-width: 480px) {
-
   #homeButton {
     top: 10px;
     left: 8px;
@@ -248,15 +237,6 @@ html, body {
     top: 58px;
     right: 8px;
   }
-
-  #hud {
-    height: 70px;
-  }
-
-  #jL, #jR {
-    width: 120px;
-    height: 60px;
-  }
 }
 </style>
 
@@ -273,10 +253,6 @@ html, body {
 
 <canvas id="gc"></canvas>
 
-<!-- ==========================================
-     HOME BUTTON - LEFT
-========================================== -->
-
 <button class="hud-icon" id="homeButton" aria-label="Home" title="Home">
   <svg viewBox="0 0 24 24">
     <path d="m3 10 9-7 9 7"/>
@@ -285,24 +261,16 @@ html, body {
   </svg>
 </button>
 
-<!-- ==========================================
-     RIGHT HUD
-========================================== -->
-
 <div id="topHud">
 
-  <!-- POSITION -->
-  <button class="hud-icon" id="positionButton"
-          aria-label="Position" title="Position">
+  <button class="hud-icon" id="positionButton" aria-label="Position" title="Position">
     <svg viewBox="0 0 24 24">
       <path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"/>
       <circle cx="12" cy="10" r="2.5"/>
     </svg>
   </button>
 
-  <!-- ITEMS -->
-  <button class="hud-icon" id="itemButton"
-          aria-label="Items" title="Items">
+  <button class="hud-icon" id="itemButton" aria-label="Items" title="Items">
     <svg viewBox="0 0 24 24">
       <path d="M4 7h16v14H4z"/>
       <path d="M8 7V4h8v3"/>
@@ -310,9 +278,7 @@ html, body {
     </svg>
   </button>
 
-  <!-- MAP -->
-  <button class="hud-icon" id="mapButton"
-          aria-label="Map" title="Map">
+  <button class="hud-icon" id="mapButton" aria-label="Map" title="Map">
     <svg viewBox="0 0 24 24">
       <path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3z"/>
       <path d="M9 3v15"/>
@@ -320,17 +286,10 @@ html, body {
     </svg>
   </button>
 
-  <!-- MONEY -->
   <div id="moneyDisplay">-3000 $</div>
-
 </div>
 
-<!-- ==========================================
-     POSITION PANEL
-========================================== -->
-
 <div class="hud-panel" id="coordPanel">
-
   <div class="panel-title">
     <span>POSITION</span>
     <button class="panel-close" data-close="coordPanel">×</button>
@@ -341,15 +300,9 @@ html, body {
   Z: <span id="cz">0</span>
 
   <button id="copyBtn">COPY</button>
-
 </div>
 
-<!-- ==========================================
-     INVENTORY PANEL
-========================================== -->
-
 <div class="hud-panel" id="itemPanel">
-
   <div class="panel-title">
     <span>INVENTORY</span>
     <button class="panel-close" data-close="itemPanel">×</button>
@@ -360,40 +313,25 @@ html, body {
     <div class="inventory-slot"></div>
     <div class="inventory-slot"></div>
     <div class="inventory-slot"></div>
-
     <div class="inventory-slot"></div>
     <div class="inventory-slot"></div>
     <div class="inventory-slot"></div>
     <div class="inventory-slot"></div>
-
     <div class="inventory-slot"></div>
     <div class="inventory-slot"></div>
     <div class="inventory-slot"></div>
     <div class="inventory-slot"></div>
   </div>
-
 </div>
 
-<!-- ==========================================
-     MAP PANEL
-========================================== -->
-
 <div class="hud-panel" id="mapPanel">
-
   <div class="panel-title">
     <span>MAP</span>
     <button class="panel-close" data-close="mapPanel">×</button>
   </div>
 
-  <div id="mapPlaceholder">
-    MAP UNAVAILABLE
-  </div>
-
+  <div id="mapPlaceholder">MAP UNAVAILABLE</div>
 </div>
-
-<!-- ==========================================
-     JOYSTICK HUD
-========================================== -->
 
 <div id="hud">
   <canvas id="jL" width="120" height="60"></canvas>
@@ -425,7 +363,11 @@ renderer.setPixelRatio(
 renderer.outputEncoding = THREE.sRGBEncoding;
 
 const scene = new THREE.Scene();
-scene.fog = null;
+
+scene.fog = new THREE.FogExp2(
+  0xb4b8b9,
+  0.00045
+);
 
 const camera = new THREE.PerspectiveCamera(
   65,
@@ -438,7 +380,7 @@ camera.position.set(0, 1.7, 13);
 camera.rotation.order = 'YXZ';
 
 // ==========================================
-// 2. SHARED SKY
+// 2. SHARED SKY - OVERCAST WINTER AFTERNOON
 // ==========================================
 
 const skyUniforms = {
@@ -448,9 +390,7 @@ const skyUniforms = {
 const skyMaterial = new THREE.ShaderMaterial({
 
   uniforms: skyUniforms,
-
   side: THREE.BackSide,
-
   depthWrite: false,
 
   vertexShader: `
@@ -468,43 +408,54 @@ const skyMaterial = new THREE.ShaderMaterial({
   fragmentShader: `
 
     varying vec3 vDirection;
-
     uniform float uTime;
 
-    float hash(vec2 p) {
-      return fract(
-        sin(dot(p, vec2(127.1,311.7))) *
-        43758.5453
-      );
+    // ======================================
+    // NOISE
+    // ======================================
+
+    float hash(vec3 p) {
+      p = fract(p * 0.3183099 + vec3(0.1));
+      p *= 17.0;
+      return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
     }
 
-    float noise(vec2 p) {
+    float noise(vec3 p) {
 
-      vec2 i = floor(p);
-      vec2 f = fract(p);
+      vec3 i = floor(p);
+      vec3 f = fract(p);
 
-      f = f*f*(3.0-2.0*f);
+      f = f * f * (3.0 - 2.0 * f);
 
-      float a = hash(i);
-      float b = hash(i+vec2(1.0,0.0));
-      float c = hash(i+vec2(0.0,1.0));
-      float d = hash(i+vec2(1.0,1.0));
+      float n000 = hash(i);
+      float n100 = hash(i + vec3(1.0,0.0,0.0));
+      float n010 = hash(i + vec3(0.0,1.0,0.0));
+      float n110 = hash(i + vec3(1.0,1.0,0.0));
 
-      return mix(
-        mix(a,b,f.x),
-        mix(c,d,f.x),
-        f.y
-      );
+      float n001 = hash(i + vec3(0.0,0.0,1.0));
+      float n101 = hash(i + vec3(1.0,0.0,1.0));
+      float n011 = hash(i + vec3(0.0,1.0,1.0));
+      float n111 = hash(i + vec3(1.0,1.0,1.0));
+
+      float x00 = mix(n000,n100,f.x);
+      float x10 = mix(n010,n110,f.x);
+      float x01 = mix(n001,n101,f.x);
+      float x11 = mix(n011,n111,f.x);
+
+      float y0 = mix(x00,x10,f.y);
+      float y1 = mix(x01,x11,f.y);
+
+      return mix(y0,y1,f.z);
     }
 
-    float fbm(vec2 p) {
+    float fbm(vec3 p) {
 
       float value = 0.0;
       float amplitude = 0.5;
 
-      for(int i=0;i<5;i++) {
+      for(int i = 0; i < 5; i++) {
 
-        value += noise(p)*amplitude;
+        value += noise(p) * amplitude;
 
         p *= 2.0;
         amplitude *= 0.5;
@@ -513,111 +464,249 @@ const skyMaterial = new THREE.ShaderMaterial({
       return value;
     }
 
+    // ======================================
+    // SKY
+    // ======================================
+
     void main() {
 
       vec3 dir = normalize(vDirection);
 
       float h = dir.y;
 
-      vec3 topColor = vec3(0.055,0.075,0.115);
-      vec3 upperColor = vec3(0.075,0.095,0.145);
-      vec3 middleColor = vec3(0.105,0.115,0.155);
-      vec3 lowerColor = vec3(0.145,0.125,0.135);
-      vec3 horizonColor = vec3(0.27,0.145,0.105);
+      // Subtle blue atmosphere behind the clouds.
+      // Blue is intentionally very restrained.
+
+      vec3 horizonBlue = vec3(0.43, 0.49, 0.53);
+      vec3 middleBlue  = vec3(0.37, 0.46, 0.53);
+      vec3 upperBlue   = vec3(0.34, 0.43, 0.50);
 
       vec3 sky = mix(
-        lowerColor,
-        middleColor,
-        smoothstep(-0.05,0.25,h)
+        horizonBlue,
+        middleBlue,
+        smoothstep(-0.18, 0.25, h)
       );
 
       sky = mix(
         sky,
-        upperColor,
-        smoothstep(0.25,0.65,h)
+        upperBlue,
+        smoothstep(0.25, 0.85, h)
       );
 
-      sky = mix(
-        sky,
-        topColor,
-        smoothstep(0.65,1.0,h)
+      // ======================================
+      // CLOUD MOVEMENT
+      // ======================================
+
+      vec3 cloudPosition = dir * 3.2;
+
+      // Slow, horizontal movement.
+      cloudPosition.x += uTime * 0.006;
+      cloudPosition.z += uTime * 0.0015;
+
+      // ======================================
+      // LARGE DISTANT CLOUD MASSES
+      // ======================================
+
+      float largeClouds = fbm(cloudPosition);
+
+      // A high coverage threshold keeps
+      // most of the blue hidden.
+
+      float cloudCoverage = smoothstep(
+        0.31,
+        0.49,
+        largeClouds
       );
 
-      // HORIZON GLOW
+      // ======================================
+      // SMALLER CLOUD DETAILS
+      // ======================================
 
-      float horizonGlow = exp(
-        -pow((h + 0.105)*8.0,2.0)
+      vec3 detailPosition = dir * 10.0;
+
+      detailPosition.x += uTime * 0.009;
+      detailPosition.z += uTime * 0.002;
+
+      float cloudDetails = fbm(detailPosition);
+
+      // Additional soft, distant cloud texture.
+
+      float fineClouds = noise(
+        dir * 24.0 +
+        vec3(uTime * 0.012, 0.0, uTime * 0.003)
       );
 
-      float sunsetSide = smoothstep(
-        -0.5,0.8,dir.x
+      float cloudTexture =
+        largeClouds * 0.72 +
+        cloudDetails * 0.20 +
+        fineClouds * 0.08;
+
+      // ======================================
+      // CLOUD DISTRIBUTION
+      // ======================================
+
+      float cloudZone = smoothstep(
+        -0.24,
+        -0.02,
+        h
       );
 
-      sky += vec3(0.16,0.065,0.035) *
-             horizonGlow *
-             sunsetSide;
+      // Clouds cover the upper sky too,
+      // without looking like a flat ceiling.
 
-      // DISTANT CLOUDS
-
-      vec2 cloudUV = vec2(
-        dir.x * 3.2,
-        dir.y * 5.0
+      float upperCoverage = smoothstep(
+        -0.15,
+        0.35,
+        h
       );
 
-      cloudUV += vec2(
-        uTime * 0.0018,
-        uTime * 0.00025
+      float coverage = mix(
+        0.91,
+        0.82,
+        upperCoverage
       );
 
-      float cloudNoise = fbm(cloudUV);
-
-      float cloudShape = smoothstep(
-        0.53,0.78,cloudNoise
+      float clouds = smoothstep(
+        coverage - 0.13,
+        coverage + 0.10,
+        cloudTexture
       );
 
-      float cloudZone =
-        smoothstep(-0.02,0.18,h) *
-        (1.0-smoothstep(0.65,0.95,h));
+      // Keep the horizon heavily overcast.
 
-      float cloudOpacity =
-        cloudShape * cloudZone * 0.13;
-
-      vec3 cloudColor = vec3(
-        0.30,0.29,0.32
+      float cloudMask = mix(
+        clouds,
+        max(clouds, 0.78),
+        smoothstep(-0.25, 0.02, h)
       );
+
+      // ======================================
+      // CLOUD COLORS
+      // ======================================
+
+      // Soft white-grey cloud tops.
+
+      vec3 cloudLight = vec3(
+        0.72,
+        0.73,
+        0.72
+      );
+
+      // Natural grey undersides.
+
+      vec3 cloudShadow = vec3(
+        0.43,
+        0.45,
+        0.46
+      );
+
+      // Slightly warmer clouds near sunset.
+
+      vec3 cloudWarm = vec3(
+        0.67,
+        0.59,
+        0.52
+      );
+
+      // Variation between cloud tops and shadows.
+
+      float cloudBrightness = smoothstep(
+        0.36,
+        0.68,
+        cloudDetails
+      );
+
+      vec3 cloudColor = mix(
+        cloudShadow,
+        cloudLight,
+        cloudBrightness
+      );
+
+      // ======================================
+      // LATE AFTERNOON LIGHT
+      // ======================================
+
+      // A very subtle warm glow near the horizon.
+
+      float sunsetGlow = exp(
+        -pow((h + 0.035) * 5.0, 2.0)
+      );
+
+      // Restrict the orange tint to a portion
+      // of the horizon.
+
+      float sunsetDirection = smoothstep(
+        -0.65,
+        0.65,
+        dir.x
+      );
+
+      float warmLight =
+        sunsetGlow *
+        sunsetDirection *
+        0.28;
+
+      cloudColor = mix(
+        cloudColor,
+        cloudWarm,
+        warmLight
+      );
+
+      // Slightly darker cloud undersides.
+
+      float underside = smoothstep(
+        0.0,
+        0.5,
+        -h
+      );
+
+      cloudColor *= 1.0 - underside * 0.10;
+
+      // ======================================
+      // FINAL CLOUD BLENDING
+      // ======================================
 
       sky = mix(
         sky,
         cloudColor,
-        cloudOpacity
+        cloudMask * cloudZone
       );
 
-      // STARS
+      // A soft atmospheric grey near the horizon.
 
-      vec2 starUV = dir.xz * 900.0;
-
-      float stars = step(
-        0.9975,
-        hash(floor(starUV))
+      float horizonMist = exp(
+        -pow((h + 0.10) * 4.0, 2.0)
       );
 
-      stars *= smoothstep(0.12,0.45,h);
+      vec3 mistColor = vec3(
+        0.58,
+        0.57,
+        0.55
+      );
 
-      float twinkle =
-        0.55 + 0.45*sin(
-          uTime*0.8 + hash(floor(starUV))*20.0
-        );
+      mistColor = mix(
+        mistColor,
+        vec3(0.62, 0.54, 0.47),
+        sunsetDirection * 0.22
+      );
 
-      sky += vec3(0.7,0.68,0.62) *
-             stars * twinkle * 0.45;
+      sky = mix(
+        sky,
+        mistColor,
+        horizonMist * 0.18
+      );
 
-      gl_FragColor = vec4(sky,1.0);
+      gl_FragColor = vec4(sky, 1.0);
     }
   `
 });
 
+// ==========================================
+// SKY SPHERE
+// ==========================================
+
 const skySphere = new THREE.Mesh(
-  new THREE.SphereGeometry(1800,64,48),
+  new THREE.SphereGeometry(1800, 64, 48),
   skyMaterial
 );
 
@@ -625,30 +714,43 @@ skySphere.frustumCulled = false;
 skySphere.renderOrder = -100;
 
 scene.add(skySphere);
-
 // ==========================================
 // 3. GLOBAL LIGHTING
 // ==========================================
 
+// Soft late-afternoon daylight.
+
 scene.add(
-  new THREE.AmbientLight(0x77758a,0.30)
+  new THREE.AmbientLight(
+    0xc2c5c5,
+    0.55
+  )
 );
 
+// Sky light: cold and diffuse.
+
 const hemisphere = new THREE.HemisphereLight(
-  0x8d91a8,
-  0x24212a,
-  0.32
+  0xd2d8dc,
+  0x777575,
+  0.68
 );
 
 scene.add(hemisphere);
 
-const moonLight = new THREE.DirectionalLight(
-  0xa1a9c2,
-  0.32
+// Weak sunlight filtered by thick clouds.
+
+const daylight = new THREE.DirectionalLight(
+  0xd5d4cf,
+  0.38
 );
 
-moonLight.position.set(-40,70,-100);
-scene.add(moonLight);
+daylight.position.set(
+  -80,
+  35,
+  -100
+);
+
+scene.add(daylight);
 
 // ==========================================
 // 4. WORLD LOADING
@@ -658,7 +760,7 @@ const params = new URLSearchParams(
   window.location.search
 );
 
-const worldFile = params.get('world') || 'immeuble.js';
+const worldFile = params.get('world') || 'bedroom.js';
 
 let world;
 
@@ -674,7 +776,10 @@ try {
     );
   }
 
-  world = worldModule.buildWorld(scene);
+ world = worldModule.buildWorld(scene, {
+  camera,
+  renderer
+});
 
 } catch (error) {
 
@@ -713,8 +818,8 @@ function setupJoy(id, callback) {
     const r = cv.getBoundingClientRect();
 
     return {
-      x: (e.clientX-r.left)*cv.width/r.width,
-      y: (e.clientY-r.top)*cv.height/r.height
+      x: (e.clientX - r.left) * cv.width / r.width,
+      y: (e.clientY - r.top) * cv.height / r.height
     };
   }
 
@@ -740,37 +845,37 @@ function setupJoy(id, callback) {
 
     const p = position(e);
 
-    let x = (p.x-bx)/45;
-    let y = (p.y-by)/22;
+    let x = (p.x - bx) / 45;
+    let y = (p.y - by) / 22;
 
-    const length = Math.hypot(x,y);
+    const length = Math.hypot(x, y);
 
     if (length > 1) {
       x /= length;
       y /= length;
     }
 
-    callback(x,y);
+    callback(x, y);
   }
 
   function end() {
     active = false;
-    callback(0,0);
+    callback(0, 0);
   }
 
-  cv.addEventListener('pointerdown',start);
-  cv.addEventListener('pointermove',move);
-  cv.addEventListener('pointerup',end);
-  cv.addEventListener('pointercancel',end);
-  cv.addEventListener('lostpointercapture',end);
+  cv.addEventListener('pointerdown', start);
+  cv.addEventListener('pointermove', move);
+  cv.addEventListener('pointerup', end);
+  cv.addEventListener('pointercancel', end);
+  cv.addEventListener('lostpointercapture', end);
 }
 
-setupJoy('jL',(x,y)=>{
+setupJoy('jL', (x, y) => {
   jLx = x;
   jLy = y;
 });
 
-setupJoy('jR',(x,y)=>{
+setupJoy('jR', (x, y) => {
   jRx = x;
   jRy = y;
 });
@@ -779,37 +884,38 @@ setupJoy('jR',(x,y)=>{
 // 6. JOYSTICK DESIGN
 // ==========================================
 
-function drawJoy(id,dx,dy) {
+function drawJoy(id, dx, dy) {
 
   const cv = document.getElementById(id);
   const ctx = cv.getContext('2d');
 
-  ctx.clearRect(0,0,120,60);
+  ctx.clearRect(0, 0, 120, 60);
 
   ctx.fillStyle = '#25232b';
 
   ctx.beginPath();
-  ctx.ellipse(60,30,55,25,0,0,Math.PI*2);
+  ctx.ellipse(60, 30, 55, 25, 0, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.strokeStyle = '#665b59';
   ctx.lineWidth = 1.3;
   ctx.stroke();
 
-  const x = 60+dx*38;
-  const y = 30+dy*16;
+  const x = 60 + dx * 38;
+  const y = 30 + dy * 16;
 
   const gradient = ctx.createRadialGradient(
-    x-3,y-3,1,x,y,15
+    x - 3, y - 3, 1,
+    x, y, 15
   );
 
-  gradient.addColorStop(0,'#c6bdb2');
-  gradient.addColorStop(1,'#655d57');
+  gradient.addColorStop(0, '#c6bdb2');
+  gradient.addColorStop(1, '#655d57');
 
   ctx.fillStyle = gradient;
 
   ctx.beginPath();
-  ctx.ellipse(x,y,14,10,0,0,Math.PI*2);
+  ctx.ellipse(x, y, 14, 10, 0, 0, Math.PI * 2);
   ctx.fill();
 }
 
@@ -824,7 +930,7 @@ let dragging = false;
 let lastX = 0;
 let lastY = 0;
 
-canvas.addEventListener('pointerdown',e=>{
+canvas.addEventListener('pointerdown', e => {
 
   if (e.pointerType === 'mouse') {
 
@@ -837,26 +943,26 @@ canvas.addEventListener('pointerdown',e=>{
   }
 });
 
-canvas.addEventListener('pointermove',e=>{
+canvas.addEventListener('pointermove', e => {
 
   if (!dragging) return;
 
-  camYaw -= (e.clientX-lastX)*0.004;
-  camPitch -= (e.clientY-lastY)*0.003;
+  camYaw -= (e.clientX - lastX) * 0.004;
+  camPitch -= (e.clientY - lastY) * 0.003;
 
   camPitch = THREE.MathUtils.clamp(
-    camPitch,-1,1
+    camPitch, -1, 1
   );
 
   lastX = e.clientX;
   lastY = e.clientY;
 });
 
-canvas.addEventListener('pointerup',()=>{
+canvas.addEventListener('pointerup', () => {
   dragging = false;
 });
 
-canvas.addEventListener('pointercancel',()=>{
+canvas.addEventListener('pointercancel', () => {
   dragging = false;
 });
 
@@ -864,13 +970,10 @@ canvas.addEventListener('pointercancel',()=>{
 // 8. HUD INTERACTIONS
 // ==========================================
 
-// HOME: RETURN TO MENU AND RESTART INTRO MUSIC
+// HOME
 
 document.getElementById('homeButton')
 .addEventListener('click', () => {
-
-  // Reset the intro music position.
-  // The accepted state is preserved.
 
   sessionStorage.setItem('bt_intro_position', '0');
 
@@ -900,21 +1003,15 @@ function togglePanel(panelId) {
     isAlreadyOpen ? 'none' : 'block';
 }
 
-// POSITION
-
 document.getElementById('positionButton')
 .addEventListener('click', () => {
   togglePanel('coordPanel');
 });
 
-// ITEMS
-
 document.getElementById('itemButton')
 .addEventListener('click', () => {
   togglePanel('itemPanel');
 });
-
-// MAP
 
 document.getElementById('mapButton')
 .addEventListener('click', () => {
@@ -957,7 +1054,7 @@ document.getElementById('copyBtn')
 
   } catch(error) {
 
-    console.error('Clipboard unavailable:',error);
+    console.error('Clipboard unavailable:', error);
 
   }
 });
@@ -969,15 +1066,15 @@ document.getElementById('copyBtn')
 function resize() {
 
   const w = window.innerWidth;
-  const h = Math.max(1,window.innerHeight-70);
+  const h = Math.max(1, window.innerHeight - 70);
 
-  renderer.setSize(w,h);
+  renderer.setSize(w, h);
 
-  camera.aspect = w/h;
+  camera.aspect = w / h;
   camera.updateProjectionMatrix();
 }
 
-window.addEventListener('resize',resize);
+window.addEventListener('resize', resize);
 resize();
 
 // ==========================================
@@ -990,7 +1087,7 @@ function animate() {
 
   requestAnimationFrame(animate);
 
-  const dt = Math.min(clock.getDelta(),0.05);
+  const dt = Math.min(clock.getDelta(), 0.05);
 
   // SKY FOLLOWS CAMERA
 
@@ -1003,7 +1100,7 @@ function animate() {
   camera.rotation.y = camYaw;
   camera.rotation.x = camPitch;
 
-  // FORWARD / BACKWARD MOVEMENT
+  // FORWARD / BACKWARD
 
   const forward = new THREE.Vector3(
     -Math.sin(camYaw),
@@ -1011,7 +1108,7 @@ function animate() {
     -Math.cos(camYaw)
   );
 
-  // LEFT / RIGHT MOVEMENT
+  // LEFT / RIGHT
 
   const right = new THREE.Vector3(
     Math.cos(camYaw),
@@ -1020,11 +1117,11 @@ function animate() {
   );
 
   camera.position.addScaledVector(
-    forward,-jLy*6.5*dt
+    forward, -jLy * 6.5 * dt
   );
 
   camera.position.addScaledVector(
-    right,jLx*6.5*dt
+    right, jLx * 6.5 * dt
   );
 
   // CONSTANT HEIGHT
@@ -1033,17 +1130,19 @@ function animate() {
 
   // RIGHT JOYSTICK CAMERA ROTATION
 
-  camYaw -= jRx*1.8*dt;
+  camYaw -= jRx * 1.8 * dt;
 
   camPitch = THREE.MathUtils.clamp(
-    camPitch-jRy*1.2*dt,
+    camPitch - jRy * 1.2 * dt,
     -1,
     1
   );
 
   // COORDINATES
 
-  if (document.getElementById('coordPanel').style.display === 'block') {
+  if (
+    document.getElementById('coordPanel').style.display === 'block'
+  ) {
 
     document.getElementById('cx').textContent =
       camera.position.x.toFixed(2);
@@ -1058,15 +1157,15 @@ function animate() {
   // WORLD UPDATE
 
   if (world && typeof world.update === 'function') {
-    world.update(dt,clock.elapsedTime);
+    world.update(dt, clock.elapsedTime);
   }
 
-  renderer.render(scene,camera);
+  renderer.render(scene, camera);
 
-  // JOYSTICK DRAWING
+  // JOYSTICKS
 
-  drawJoy('jL',jLx,jLy);
-  drawJoy('jR',jRx,jRy);
+  drawJoy('jL', jLx, jLy);
+  drawJoy('jR', jRx, jRy);
 }
 
 animate();
