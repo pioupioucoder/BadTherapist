@@ -1,4085 +1,785 @@
+
 <!DOCTYPE html>
-<html lang="en">
+<html lang="fr">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Bad Therapist</title>
-<link rel="icon" type="image/png" href="images/logo.png">
-<link rel="apple-touch-icon" href="images/logo.png">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Cinzel:wght@400;600&family=IM+Fell+English:ital@0;1&display=swap" rel="stylesheet">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>World Base</title>
+
 <style>
-.glitch{animation:glitch 0.3s infinite alternate;}
-@keyframes glitch{
-  0%{transform:translate(0);text-shadow:-1px 0 red,1px 0 blue;}
-  20%{transform:translate(-2px,1px);text-shadow:-2px 0 red,2px 0 cyan;}
-  40%{transform:translate(2px,-1px);text-shadow:2px 0 magenta,-2px 0 lime;}
-  60%{transform:translate(-1px,2px);text-shadow:-1px 0 orange,1px 0 purple;}
-  80%{transform:translate(1px,-2px);text-shadow:1px 0 pink,-1px 0 yellow;}
-  100%{transform:translate(0);text-shadow:-1px 0 red,1px 0 blue;}
-}
-:root{
-  --blood:#8B0000;--crimson:#DC143C;--rose:#FF6B8A;--petal:#FFD6E0;
-  --obsidian:#0A0A0F;--midnight:#12121A;--dusk:#1E1E2E;--twilight:#2A2A3E;
-  --mist:#C8B8D0;--silver:#E8DDF0;--gold:#C9A84C;
-  --affinity-pos:#DC143C;--affinity-neg:#6B21A8;
-  --text-main:#F0E8F5;--text-dim:#9B8FAA;
-  --box-bg:rgba(10,10,15,0.88);--box-border:rgba(200,160,200,0.25);
-  --choice-bg:rgba(20,10,30,0.85);--choice-hover:rgba(139,0,0,0.4);
-  --dialogue-h:200px;--char-scale:2;
-}
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-html,body{width:100%;height:100%;background:var(--obsidian);font-family:'Cormorant Garamond',serif;color:var(--text-main);overflow:hidden;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent}
-button{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
-.screen{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .8s ease;z-index:10}
-.screen.active{opacity:1;pointer-events:all}
-body::before{content:'';position:fixed;inset:0;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");pointer-events:none;z-index:9999;opacity:.3}
-#particles{position:fixed;inset:0;pointer-events:none;z-index:1;overflow:hidden}
-.particle{position:absolute;width:3px;height:3px;border-radius:50%;background:var(--crimson);opacity:0;animation:floatUp linear infinite}
-@keyframes floatUp{0%{transform:translateY(100vh) scale(0);opacity:0}10%{opacity:.6}90%{opacity:.3}100%{transform:translateY(-10vh) scale(1.5);opacity:0}}
-#blood-overlay{position:absolute;inset:0;pointer-events:none;z-index:3;opacity:0;transition:opacity 1.5s ease;overflow:hidden}
-#blood-overlay.active{opacity:1}
-#blood-overlay::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at center,transparent 45%,rgba(90,0,0,.15) 75%,rgba(50,0,0,.4) 100%);opacity:0;transition:opacity 1.2s ease;pointer-events:none}
-#blood-overlay.active::before{opacity:1}
-.blood-splat{position:absolute;background:radial-gradient(ellipse at 40% 35%,rgba(170,10,20,.9) 0%,rgba(120,0,10,.75) 40%,rgba(70,0,5,.45) 70%,rgba(40,0,0,.15) 88%,transparent 100%);filter:blur(.35px);opacity:0;animation:splatPop .3s ease forwards}
-@keyframes splatPop{0%{opacity:0;transform:scale(.2)}70%{opacity:1;transform:scale(1.05)}100%{opacity:1;transform:scale(1)}}
-.blood-drip{position:absolute;top:0;background:linear-gradient(to bottom,rgba(120,0,10,.85) 0%,rgba(90,0,5,.65) 60%,rgba(60,0,5,.35) 100%);border-radius:0 0 40% 40%;animation:dripGrow ease-out forwards}
-@keyframes dripGrow{0%{height:0}100%{height:var(--drip-h,40vh)}}
-.blood-drop{position:absolute;background:radial-gradient(ellipse at 50% 30%,rgba(160,10,15,.9) 0%,rgba(90,0,5,.7) 60%,transparent 100%);animation:dropFall ease-in forwards}
-@keyframes dropFall{0%{transform:translateY(-30px);opacity:0}15%{opacity:1}100%{transform:translateY(var(--drop-y,80vh));opacity:.4}}
-@keyframes bloodShake{0%,100%{transform:translate(0,0)}8%{transform:translate(-6px,3px)}16%{transform:translate(7px,-4px)}24%{transform:translate(-5px,5px)}32%{transform:translate(6px,2px)}40%{transform:translate(-7px,-3px)}48%{transform:translate(4px,4px)}56%{transform:translate(-4px,-5px)}64%{transform:translate(6px,1px)}72%{transform:translate(-5px,4px)}80%{transform:translate(4px,-3px)}90%{transform:translate(-3px,2px)}}
-#game-screen.blood-shake{animation:bloodShake .65s cubic-bezier(.36,.07,.19,.97)}
-#screen-glitch{position:fixed;inset:0;pointer-events:none;z-index:9997;opacity:0;mix-blend-mode:screen}
-#screen-glitch.active{opacity:1;animation:rgbGlitch .5s steps(3) infinite alternate}
-@keyframes rgbGlitch{0%{background:linear-gradient(90deg,rgba(255,0,0,.10),transparent 40%),linear-gradient(-90deg,rgba(0,255,255,.08),transparent 40%);transform:translate(0,0)}50%{background:linear-gradient(90deg,transparent 60%,rgba(255,0,80,.12)),linear-gradient(-90deg,transparent 60%,rgba(0,255,180,.10));transform:translate(-2px,1px)}100%{background:linear-gradient(90deg,rgba(255,0,0,.08),transparent 30%,rgba(0,255,255,.08));transform:translate(2px,-1px)}}
-
-#blood-realism-overlay{
-  position:fixed;inset:0;
-  pointer-events:none;
-  z-index:30;
-  opacity:0;
-  transition:opacity 1.5s ease;
-  overflow:hidden;
-  --level: 0;
-}
-#blood-realism-overlay.active{opacity:1}
-#blood-realism-overlay .vignette-layer{
-  position:absolute;inset:0;
-  box-shadow:
-    inset 0 0 calc(var(--level) * 1.6px) calc(var(--level) * 0.9px) rgba(60,0,0, calc(var(--level) / 100 * 0.9)),
-    inset 0 0 calc(var(--level) * 3.2px) calc(var(--level) * 1.8px) rgba(25,0,0, calc(var(--level) / 100 * 0.7));
-  transition:box-shadow 2.6s cubic-bezier(.4,0,.2,1);
-  pointer-events:none;
-}
-#blood-realism-overlay .top-wound{
-  position:absolute;
-  top:0;left:0;right:0;
-  height:0;
-  background:linear-gradient(to bottom,
-    rgba(70,0,0,.95) 0%,
-    rgba(100,0,5,.85) 40%,
-    rgba(60,0,0,.5) 80%,
-    transparent 100%);
-  transition:height 2.6s cubic-bezier(.4,0,.2,1);
-  pointer-events:none;
-  filter:blur(1px);
-}
-#blood-realism-overlay.active .top-wound{
-  height:calc(var(--level) * 0.6px);
-}
-.drips-layer{position:absolute;inset:0;overflow:hidden;}
-.real-drip{
-  position:absolute;top:0;
-  width:var(--w, 5px);height:var(--h, 0);
-  transform-origin:top center;
-  transition:height 2.6s cubic-bezier(.35,0,.25,1);
-  filter:drop-shadow(0 1px 2px rgba(0,0,0,.7));
-  will-change:height;
-}
-.real-drip .drip-body{
-  position:absolute;inset:0;
-  background:linear-gradient(to right,
-    rgba(40,0,0,.75) 0%,
-    rgba(75,0,5,.92) 18%,
-    rgba(120,0,12,.98) 45%,
-    rgba(105,0,10,.95) 72%,
-    rgba(40,0,0,.75) 100%);
-  border-radius:0 0 45% 45% / 0 0 6px 6px;
-  overflow:hidden;
-}
-.real-drip .drip-body::before{
-  content:'';position:absolute;
-  left:28%;right:28%;top:6%;bottom:8%;
-  background:linear-gradient(to bottom,
-    rgba(200,40,50,.35) 0%,
-    rgba(180,30,40,.18) 40%,
-    transparent 85%);
-  border-radius:50%;filter:blur(1.2px);pointer-events:none;
-}
-.real-drip .drip-body::after{
-  content:'';position:absolute;
-  left:0;right:0;bottom:0;height:35%;
-  background:linear-gradient(to top,rgba(35,0,0,.55),transparent 100%);
-  pointer-events:none;
-}
-.real-drip .drip-splatter{
-  position:absolute;top:-4px;left:50%;
-  transform:translateX(-50%);
-  width:calc(var(--w, 5px) * 2.8);height:12px;
-  background:radial-gradient(ellipse at 50% 40%,
-    rgba(120,0,12,.95) 0%,
-    rgba(70,0,0,.75) 55%,
-    transparent 90%);
-  border-radius:50%;filter:blur(0.8px);pointer-events:none;
-}
-.real-drip .drip-head{
-  position:absolute;
-  bottom:-3px;left:50%;
-  transform:translateX(-50%);
-  width:calc(var(--w, 5px) * 1.3);
-  height:calc(var(--w, 5px) * 1.5);
-  background:radial-gradient(circle at 40% 30%,
-    rgba(190,25,35,.98) 0%,
-    rgba(130,0,15,.98) 35%,
-    rgba(75,0,5,.95) 70%,
-    rgba(40,0,0,.85) 100%);
-  border-radius:50%;
-  box-shadow:
-    0 1px 3px rgba(0,0,0,.6),
-    inset -1px -1px 2px rgba(50,0,0,.7),
-    inset 1px 1px 2px rgba(200,50,60,.35);
-  pointer-events:none;
-}
-.real-drip .drip-side{
-  position:absolute;top:25%;
-  left:calc(var(--w, 5px) - 1px);
-  width:calc(var(--w, 5px) * 0.55);height:45%;
-  background:linear-gradient(to bottom,
-    rgba(90,0,5,.9) 0%,
-    rgba(70,0,0,.7) 100%);
-  border-radius:0 0 50% 50%;
-  transform:skewX(-10deg);pointer-events:none;
-}
-#blood-realism-overlay .final-red{
-  position:absolute;inset:0;
-  background:radial-gradient(ellipse at center,
-    rgba(130,0,5,.94) 0%,
-    rgba(90,0,0,.97) 45%,
-    rgba(50,0,0,1) 100%);
-  opacity:0;transition:opacity 2.5s ease;pointer-events:none;
-}
-#blood-realism-overlay .final-red.active{opacity:1}
-
-#eyes-overlay{
-  position:absolute;
-  inset:0;
-  z-index:1; /* ⚠️ au-dessus de game-bg (0), sous char-wrap (2) et dialogue (10) */
-  pointer-events:none;
-  opacity:0;
-  transition:opacity 1.2s ease;
-  background:linear-gradient(to bottom,
-    rgba(0,0,0,0.98) 0%,
-    rgba(0,0,0,0.95) 40%,
-    rgba(0,0,0,0.55) 65%,
-    transparent 100%);
-}
-#eyes-overlay.active{opacity:1;}
-.eyes-layer{position:absolute;inset:0;overflow:hidden;}
-
-.eye-unit{
-  position:absolute;
-  opacity:0;
-  transform:translate(-50%, -50%) rotate(var(--rot, 0deg)) scale(.3);
-  transition:opacity .7s ease, transform .7s ease;
-  will-change:opacity, transform;
-}
-.eye-unit.visible{
-  opacity:1;
-  transform:translate(-50%, -50%) rotate(var(--rot, 0deg)) scale(1);
-}
-.eye-drift{
-  animation:eyeDrift 10s ease-in-out infinite;
-  transform-origin:center;
-  will-change:transform;
-}
-.eye-shape{
-  position:relative;
-  width:var(--eye-w, 60px);
-  height:var(--eye-h, 30px);
-  border-radius:50% / 55% 55% 45% 45%;
-  background:radial-gradient(ellipse at 50% 40%,
-    #fff 0%,
-    #f0d0d0 30%,
-    #8B0000 65%,
-    #1a0000 100%);
-  box-shadow:
-    0 0 15px rgba(220,20,60,.65),
-    0 0 32px rgba(139,0,0,.45),
-    inset 0 0 8px rgba(0,0,0,.55);
-  transform-origin:center;
-  animation:eyeBlink 3.2s ease-in-out infinite;
-  will-change:transform;
-}
-.eye-shape::before{
-  content:'';
-  position:absolute;
-  top:50%; left:50%;
-  transform:translate(-50%,-50%);
-  width:calc(var(--eye-w, 60px) * 0.36);
-  height:calc(var(--eye-w, 60px) * 0.36);
-  border-radius:50%;
-  background:radial-gradient(circle at 40% 35%,
-    #000 0%,
-    #200000 50%,
-    #8B0000 85%,
-    #4a0000 100%);
-}
-.eye-shape::after{
-  content:'';
-  position:absolute;
-  top:20%; left:28%;
-  width:22%; height:22%;
-  border-radius:50%;
-  background:rgba(255,210,210,.85);
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
 }
 
-@keyframes eyeBlink{
-  0%, 30%, 34% { transform:scaleY(1); }
-  32% { transform:scaleY(0.05); }
-  65%, 68% { transform:scaleY(1); }
-  66.5% { transform:scaleY(0.05); }
-  100% { transform:scaleY(1); }
-}
-@keyframes eyeDrift{
-  0%, 100%{ transform:translate(0, 0); }
-  25%{ transform:translate(5px, -3px); }
-  50%{ transform:translate(-4px, 4px); }
-  75%{ transform:translate(2px, 5px); }
-}
-/* ══ PAUPIÈRES (yeux qui se ferment) ══ */
-#eyelid-overlay{
-  position:absolute;
-  inset:0;
-  z-index:5;
-  pointer-events:none;
-  display:none;
-  background:rgba(0,0,0,0);
- transition:background 1.4s ease;
-}
-#eyelid-overlay.closed{
-  background:#000;
-}
-#eyelid-overlay.active{display:block}
-.eyelid-top,
-.eyelid-bottom{
-  position:absolute;left:0;right:0;
-  height:0;
-  background:#000;
-  transition:height 2s cubic-bezier(.6,0,.2,1);
-}
-.eyelid-top{
-  top:0;
-  border-radius:0 0 50% 50% / 0 0 20% 20%;
-  box-shadow:0 4px 20px rgba(0,0,0,.8);
-}
-.eyelid-bottom{
-  bottom:0;
-  border-radius:50% 50% 0 0 / 20% 20% 0 0;
-  box-shadow:0 -4px 20px rgba(0,0,0,.8);
-}
-#eyelid-overlay.closed .eyelid-top,
-#eyelid-overlay.closed .eyelid-bottom{height:52%}
-#next-chapter-prompt{
-  position:fixed;
-  top:50%;left:50%;
-  transform:translate(-50%,-50%) scale(.92);
-  z-index:35;
-  padding:1.6rem 2.8rem;
-  background:rgba(10,5,15,.92);
-  border:1px solid rgba(220,20,60,.5);
-  backdrop-filter:blur(14px);
-  -webkit-backdrop-filter:blur(14px);
-  cursor:pointer;
-  text-align:center;
-  opacity:0;
-  transition:opacity .8s ease, transform .8s ease;
-  pointer-events:none;
-  box-shadow:0 0 50px rgba(139,0,0,.4), inset 0 0 30px rgba(139,0,0,.15);
-  border-radius:2px;
-  -webkit-tap-highlight-color:transparent;
-  touch-action:manipulation;
-}
-#next-chapter-prompt.active{
-  opacity:1;
-  pointer-events:auto;
-  transform:translate(-50%,-50%) scale(1);
-}
-.next-chapter-prompt-text{
-  font-family:'Cinzel',serif;
-  font-size:clamp(.85rem,2.2vw,1.1rem);
-  color:var(--silver);
-  letter-spacing:.2em;
-  margin-bottom:.7rem;
-  text-shadow:0 0 20px rgba(220,20,60,.4);
-}
-.next-chapter-prompt-hint{
-  font-family:'IM Fell English',serif;
-  font-size:.8rem;
-  color:rgba(200,180,200,.55);
-  font-style:italic;
-  letter-spacing:.15em;
-  animation:poemHintPulse 2s ease infinite;
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #111722;
+  font-family: Arial, sans-serif;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
-#poem-overlay{position:fixed;inset:0;z-index:80;background:rgba(5,3,8,.85);backdrop-filter:blur(10px);display:none;align-items:center;justify-content:center;opacity:0;transition:opacity .6s ease;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
-#poem-overlay.active{display:flex;opacity:1;pointer-events:auto}
-.poem-parchment{background:linear-gradient(135deg,#f2e8d2 0%,#e2d2b0 100%);background-image:radial-gradient(circle at 15% 20%,rgba(180,150,110,.15) 0%,transparent 35%),radial-gradient(circle at 85% 80%,rgba(160,130,95,.18) 0%,transparent 40%),linear-gradient(135deg,#f2e8d2 0%,#e2d2b0 100%);max-width:520px;width:82%;max-height:82vh;padding:2.8rem 2.4rem;border-radius:3px;box-shadow:0 20px 60px rgba(0,0,0,.7),0 0 40px rgba(220,20,60,.15),inset 0 0 60px rgba(140,110,70,.15);position:relative;transform:scaleY(0) rotateX(80deg);transform-origin:top center;transition:transform 1s cubic-bezier(.2,.9,.3,1);perspective:1000px;overflow-y:auto}
-#poem-overlay.active .poem-parchment{transform:scaleY(1) rotateX(0deg)}
-.poem-parchment::before,.poem-parchment::after{content:'';position:absolute;left:0;right:0;height:8px;background:radial-gradient(ellipse at center,rgba(160,120,80,.4) 0%,transparent 80%);pointer-events:none}
-.poem-parchment::before{top:-2px}
-.poem-parchment::after{bottom:-2px}
-.poem-parchment-inner{font-family:'IM Fell English',serif;color:#E8DDF0;text-align:center}
-.poem-lines{font-size:clamp(.85rem,2vw,1.05rem);line-height:1.9;font-style:italic;letter-spacing:.01em}
-.poem-lines .poem-line{opacity:0;transform:translateY(6px);animation:poemLineIn .7s ease forwards}
-@keyframes poemLineIn{to{opacity:1;transform:translateY(0)}}
-.poem-author{margin-top:1.8rem;padding-top:1rem;font-family:'Cinzel',serif;font-size:clamp(.7rem,1.8vw,.85rem);letter-spacing:.35em;color:#C8B8D0;text-transform:uppercase;border-top:1px solid rgba(120,80,40,.25);width:60%;margin-left:auto;margin-right:auto;opacity:0;animation:poemLineIn 1s ease forwards;animation-delay:1.2s}
-.poem-hint{position:absolute;bottom:2rem;font-family:'IM Fell English',serif;font-size:.75rem;color:rgba(200,180,200,.5);font-style:italic;letter-spacing:.15em;animation:poemHintPulse 2s ease infinite;pointer-events:none}
-@keyframes poemHintPulse{0%,100%{opacity:.4}50%{opacity:.9}}
-#chapter-title-screen{position:fixed;inset:0;z-index:15;background:radial-gradient(ellipse at 50% 50%,#1a0510 0%,var(--obsidian) 70%);display:flex;flex-direction:column;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity 1s ease;cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent;padding:2rem}
-#chapter-title-screen.active{opacity:1;pointer-events:all}
-.ch-title-eyebrow{font-family:'Cinzel',serif;font-size:clamp(.55rem,1.6vw,.75rem);letter-spacing:.6em;color:var(--blood);text-transform:uppercase;margin-bottom:2rem;text-align:center}
-.ch-title-label{font-family:'Cinzel',serif;font-size:clamp(2rem,7vw,4.5rem);font-weight:600;color:var(--silver);letter-spacing:.15em;text-align:center;line-height:1.1;text-shadow:0 0 40px rgba(220,20,60,.35),0 0 90px rgba(220,20,60,.15)}
-.ch-title-label span{color:var(--crimson)}
-.ch-title-divider{display:flex;align-items:center;gap:1rem;width:clamp(200px,45vw,360px);margin:1.8rem 0 1.4rem}
-.ch-title-divider::before,.ch-title-divider::after{content:'';flex:1;height:1px;background:linear-gradient(to right,transparent,var(--blood))}
-.ch-title-divider::after{background:linear-gradient(to left,transparent,var(--blood))}
-.ch-title-divider span{color:var(--crimson);font-size:.9rem}
-.ch-title-subtitle{font-family:'IM Fell English',serif;font-size:clamp(.95rem,2.4vw,1.35rem);font-style:italic;color:var(--mist);letter-spacing:.06em;max-width:640px;text-align:center;line-height:1.6;padding:0 1rem}
-.ch-title-subtitle.empty{display:none}
-.ch-title-hint{position:absolute;bottom:2.5rem;font-family:'IM Fell English',serif;font-size:.75rem;letter-spacing:.2em;color:rgba(200,180,200,.45);font-style:italic;animation:poemHintPulse 2.2s ease infinite;pointer-events:none}
-#chapter-title-screen.active .ch-title-eyebrow{animation:chTitleFade 1.2s .3s both}
-#chapter-title-screen.active .ch-title-label{animation:chTitleReveal 1.6s .6s both}
-#chapter-title-screen.active .ch-title-divider{animation:chTitleFade 1.2s 1.5s both}
-#chapter-title-screen.active .ch-title-subtitle:not(.empty){animation:chTitleFade 1.4s 1.9s both}
-@keyframes chTitleFade{from{opacity:0}to{opacity:1}}
-@keyframes chTitleReveal{0%{opacity:0;transform:translateY(24px);filter:blur(10px)}100%{opacity:1;transform:translateY(0);filter:blur(0)}}
-#code-screen{background:radial-gradient(ellipse at 50% 30%,#1a0510 0%,var(--obsidian) 70%);z-index:20}
-.code-deco-line{position:absolute;top:0;left:50%;transform:translateX(-50%);width:1px;height:30%;background:linear-gradient(to bottom,transparent,var(--blood))}
-.code-deco-line::after{content:'\2756';position:absolute;bottom:-10px;left:50%;transform:translateX(-50%);color:var(--blood);font-size:12px}
-.code-deco-line-bottom{position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:1px;height:25%;background:linear-gradient(to top,transparent,var(--blood))}
-.code-inner{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;gap:2rem;text-align:center}
-.code-mystery-symbol{font-size:clamp(2.5rem,8vw,4.5rem);color:var(--blood);text-shadow:0 0 40px rgba(139,0,0,.6),0 0 80px rgba(139,0,0,.3);opacity:0;animation:fadeIn 2s .4s forwards;line-height:1;letter-spacing:.3em}
-.code-divider{display:flex;align-items:center;gap:1rem;width:260px;opacity:0;animation:fadeIn 1s 2s forwards}
-.code-divider::before,.code-divider::after{content:'';flex:1;height:1px;background:linear-gradient(to right,transparent,var(--blood))}
-.code-divider::after{background:linear-gradient(to left,transparent,var(--blood))}
-.code-divider-icon{color:var(--crimson);font-size:.85rem}
-.code-entry-block{display:flex;flex-direction:column;align-items:center;gap:1.4rem;opacity:0;animation:fadeIn 1s 2.3s forwards}
-.code-prompt-label{font-family:'IM Fell English',serif;font-size:clamp(.9rem,2.5vw,1.05rem);color:var(--mist);font-style:italic;letter-spacing:.05em}
-.code-field-wrap{display:flex;flex-direction:column;align-items:center;gap:.7rem}
-#code-input{font-family:'Cinzel',serif;font-size:1.6rem;letter-spacing:.6em;text-indent:.6em;background:var(--box-bg);border:1px solid var(--box-border);color:var(--silver);text-align:center;outline:none;width:220px;padding:.8rem 1rem;backdrop-filter:blur(12px);border-radius:2px;transition:border-color .3s,box-shadow .3s;caret-color:var(--crimson);-webkit-text-security:disc}
-#code-input:focus{border-color:rgba(220,20,60,.6);box-shadow:0 0 20px rgba(220,20,60,.15)}
-#code-input.shake{animation:codeShake .35s ease}
-@keyframes codeShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-8px)}40%{transform:translateX(8px)}60%{transform:translateX(-5px)}80%{transform:translateX(5px)}}
-#code-input.error-flash{border-color:#ff6b6b;box-shadow:0 0 20px rgba(255,107,107,.2)}
-#btn-code-enter{font-family:'Cinzel',serif;font-size:clamp(.75rem,2vw,.9rem);letter-spacing:.35em;color:var(--silver);background:transparent;border:1px solid rgba(220,20,60,.5);padding:.85rem 2.5rem;cursor:pointer;position:relative;overflow:hidden;transition:all .4s ease;touch-action:manipulation}
-#btn-code-enter::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,var(--blood),transparent);opacity:0;transition:opacity .4s}
-#btn-code-enter:hover{border-color:var(--crimson);color:#fff;letter-spacing:.45em;box-shadow:0 0 30px rgba(220,20,60,.3)}
-#btn-code-enter:hover::before{opacity:1}
-#btn-code-enter span{position:relative;z-index:1}
-.code-error-msg{font-family:'IM Fell English',serif;font-size:.88rem;color:#ff6b6b;font-style:italic;min-height:1.2em;opacity:0;transition:opacity .3s}
-.code-error-msg.show{opacity:1}
-#title-screen{background:radial-gradient(ellipse at 50% 30%,#1a0510 0%,var(--obsidian) 70%)}
-.title-bg-roses{position:absolute;inset:0;background:radial-gradient(circle at 20% 80%,rgba(139,0,0,.15) 0%,transparent 50%),radial-gradient(circle at 80% 20%,rgba(139,0,0,.10) 0%,transparent 40%);pointer-events:none}
-.title-deco{position:absolute;top:0;left:50%;transform:translateX(-50%);width:1px;height:30%;background:linear-gradient(to bottom,transparent,var(--blood))}
-.title-deco::after{content:'\2756';position:absolute;bottom:-10px;left:50%;transform:translateX(-50%);color:var(--blood);font-size:12px}
-.title-wrap{position:relative;text-align:center;z-index:2}
-.title-sub{font-family:'Cinzel',serif;font-size:clamp(.55rem,1.5vw,.8rem);letter-spacing:.5em;color:var(--blood);text-transform:uppercase;margin-bottom:1.2rem;opacity:0;animation:fadeIn 1.5s .5s forwards}
-.title-main{font-family:'Cinzel',serif;font-size:clamp(2.5rem,8vw,6rem);font-weight:600;color:var(--silver);line-height:1;text-shadow:0 0 60px rgba(220,20,60,.4),0 0 120px rgba(220,20,60,.2);opacity:0;animation:titleReveal 5s .8s forwards}
-.title-main span{color:var(--crimson)}
-@keyframes titleReveal{0%{opacity:0;transform:translateY(30px);filter:blur(12px)}20%{opacity:.3;transform:translateY(15px);filter:blur(6px)}60%{opacity:.85;transform:translateY(4px);filter:blur(1px)}100%{opacity:1;transform:translateY(0);filter:blur(0)}}
-@keyframes fadeIn{to{opacity:1}}
-.title-line{display:flex;align-items:center;gap:1rem;margin:1.5rem 0 2.5rem;opacity:0;animation:fadeIn 1.5s 3.5s forwards}
-.title-line::before,.title-line::after{content:'';flex:1;height:1px;background:linear-gradient(to right,transparent,var(--blood))}
-.title-line::after{background:linear-gradient(to left,transparent,var(--blood))}
-.title-line-icon{color:var(--crimson);font-size:1rem}
-.title-btns{display:flex;flex-direction:column;gap:.8rem;align-items:center;opacity:0;animation:fadeIn 1.5s 4.2s forwards}
-.btn-start,.btn-chapters,.btn-settings-title{font-family:'Cinzel',serif;font-size:clamp(.8rem,2vw,1rem);letter-spacing:.3em;color:var(--silver);background:transparent;border:1px solid rgba(220,20,60,.5);padding:1rem 3rem;cursor:pointer;position:relative;overflow:hidden;transition:all .4s ease;width:260px;text-align:center;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
-.btn-start::before,.btn-chapters::before,.btn-settings-title::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,var(--blood),transparent);opacity:0;transition:opacity .4s}
-.btn-start:hover,.btn-chapters:hover,.btn-settings-title:hover{border-color:var(--crimson);color:#fff;letter-spacing:.4em;box-shadow:0 0 30px rgba(220,20,60,.3)}
-.btn-start:hover::before,.btn-chapters:hover::before,.btn-settings-title:hover::before{opacity:1}
-.btn-chapters,.btn-settings-title{border-color:rgba(201,168,76,.3);font-size:clamp(.7rem,1.8vw,.85rem);padding:.8rem 3rem}
-.btn-chapters:hover,.btn-settings-title:hover{border-color:var(--gold);box-shadow:0 0 30px rgba(201,168,76,.2)}
-#policy-screen{background:var(--obsidian);padding:1rem}
-.policy-container{width:100%;max-width:700px;display:flex;flex-direction:column;height:100vh;max-height:100vh;padding:2rem 1.5rem 1.5rem}
-.policy-header{font-family:'Cinzel',serif;font-size:clamp(1rem,3vw,1.5rem);color:var(--silver);text-align:center;border-bottom:1px solid var(--box-border);padding-bottom:1rem;margin-bottom:1.2rem;flex-shrink:0}
-.policy-scroll{flex:1;overflow-y:auto;font-size:clamp(.75rem,1.8vw,.9rem);line-height:1.9;color:var(--mist);padding-right:.5rem;scroll-behavior:smooth;-webkit-overflow-scrolling:touch}
-.policy-scroll::-webkit-scrollbar{width:3px}
-.policy-scroll::-webkit-scrollbar-thumb{background:var(--blood);border-radius:2px}
-.policy-scroll h3{font-family:'Cinzel',serif;color:var(--crimson);font-size:.85rem;letter-spacing:.15em;margin:1.5rem 0 .5rem}
-.policy-scroll p{margin-bottom:.8rem}
-.policy-scroll .credits{margin-top:2rem;padding-top:1rem;border-top:1px solid var(--box-border);font-style:italic;font-size:.8rem;color:var(--text-dim)}
-.policy-progress{height:2px;background:rgba(255,255,255,.05);margin:.8rem 0;flex-shrink:0}
-.policy-progress-bar{height:100%;background:var(--blood);width:0%;transition:width .1s}
-.policy-footer{display:flex;align-items:center;gap:1rem;padding-top:1rem;flex-shrink:0;border-top:1px solid var(--box-border);flex-wrap:wrap;justify-content:center}
-.policy-hint{font-size:.75rem;color:var(--text-dim);font-style:italic;flex:1;min-width:150px}
-.btn-accept{font-family:'Cinzel',serif;font-size:.8rem;letter-spacing:.2em;background:var(--blood);color:#fff;border:none;padding:.8rem 2rem;cursor:pointer;opacity:.4;transition:all .3s;pointer-events:none;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
-.btn-accept.ready{opacity:1;pointer-events:all}
-.btn-accept.ready:hover{background:var(--crimson);box-shadow:0 0 20px rgba(220,20,60,.4)}
-#loading-screen{background:var(--obsidian);z-index:50}
-.loading-inner{text-align:center}
-.loading-title{font-family:'Cinzel',serif;font-size:1rem;letter-spacing:.4em;color:var(--blood);margin-bottom:2rem;text-transform:uppercase}
-.loading-bar-outer{width:280px;height:2px;background:rgba(255,255,255,.08);border-radius:1px;overflow:hidden;margin:0 auto 1rem}
-.loading-bar-inner{height:100%;background:var(--crimson);width:0%;transition:width .3s ease;border-radius:1px}
-.loading-pct{font-family:'Cinzel',serif;font-size:.7rem;color:var(--text-dim);letter-spacing:.3em}
-.loading-detail{font-family:'IM Fell English',serif;font-size:.7rem;color:var(--text-dim);font-style:italic;margin-top:.5rem;letter-spacing:.1em;min-height:1em}
-#settings-screen{background:radial-gradient(ellipse at 50% 50%,#0d0515 0%,var(--obsidian) 80%);z-index:20;overflow-y:auto;flex-direction:column;justify-content:flex-start;align-items:center}
-@keyframes settingsPetalDrop{0%{transform:translateY(-10vh) rotate(0deg) scale(0);opacity:0}10%{opacity:.7}85%{opacity:.4}100%{transform:translateY(110vh) rotate(720deg) scale(1.2);opacity:0}}
-#settings-petals-container{position:fixed;inset:0;pointer-events:none;z-index:0;overflow:hidden}
-.settings-petal{position:absolute;top:-10%;border-radius:60% 40% 70% 30% / 50% 60% 40% 50%;opacity:0;animation:settingsPetalDrop linear infinite;filter:blur(0.5px)}
-.settings-container{width:100%;max-width:600px;display:flex;flex-direction:column;gap:1.4rem;padding:3rem 2rem 4rem;position:relative;z-index:2}
-.settings-title{font-family:'Cinzel',serif;font-size:1.1rem;color:var(--silver);text-align:center;letter-spacing:.3em;border-bottom:1px solid var(--box-border);padding-bottom:1rem;margin-bottom:.2rem}
-.settings-section-label{font-family:'Cinzel',serif;font-size:.65rem;color:var(--blood);letter-spacing:.35em;text-transform:uppercase;margin-top:.6rem;display:flex;align-items:center;gap:.8rem}
-.settings-section-label::after{content:'';flex:1;height:1px;background:linear-gradient(to right,var(--blood),transparent)}
-.settings-row{display:flex;align-items:center;gap:.8rem}
-.settings-row .vol-label{font-family:'Cinzel',serif;font-size:.75rem;color:var(--text-dim);letter-spacing:.15em;min-width:70px}
-#settings-vol-slider{flex:1;accent-color:var(--crimson);cursor:pointer}
-#settings-mute-btn{background:none;border:1px solid var(--box-border);color:var(--mist);cursor:pointer;padding:.3rem .6rem;font-size:.85rem;transition:all .2s;touch-action:manipulation}
-#settings-mute-btn:hover{border-color:var(--crimson);color:var(--silver)}
-.settings-close-btn{font-family:'Cinzel',serif;font-size:.8rem;letter-spacing:.2em;background:transparent;border:1px solid var(--box-border);color:var(--mist);padding:.9rem;cursor:pointer;transition:all .2s;text-align:center;margin-top:.4rem;touch-action:manipulation}
-.settings-close-btn:hover{border-color:var(--crimson);color:var(--silver);background:rgba(139,0,0,.15)}
-.settings-data-row{display:flex;gap:.6rem;flex-wrap:wrap}
-.settings-data-btn{font-family:'Cinzel',serif;font-size:.7rem;letter-spacing:.18em;background:transparent;border:1px solid var(--box-border);color:var(--text-dim);padding:.65rem 1.2rem;cursor:pointer;transition:all .25s;text-align:center;touch-action:manipulation}
-.settings-data-btn:hover{border-color:var(--gold);color:var(--silver)}
-.settings-data-btn.danger-reset{border-color:rgba(255,107,107,.25);color:#ff9999}
-.settings-data-btn.danger-reset:hover{border-color:#ff6b6b;background:rgba(200,0,0,.12)}
-.settings-share-row{display:flex;gap:1.2rem;align-items:flex-start;padding:.4rem 0}
-.settings-share-icon{display:flex;align-items:center;justify-content:center;width:42px;height:42px;border-radius:50%;border:1px solid var(--box-border);color:var(--mist);font-size:1.1rem;text-decoration:none;transition:all .3s ease;cursor:pointer;background:transparent;position:relative;overflow:hidden;touch-action:manipulation}
-.settings-share-icon::before{content:'';position:absolute;inset:0;border-radius:50%;background:radial-gradient(circle,var(--blood),transparent);opacity:0;transition:opacity .3s}
-.settings-share-icon:hover{border-color:var(--crimson);color:#fff;transform:scale(1.12)}
-.settings-share-icon:hover::before{opacity:1}
-.settings-share-label{font-family:'Cinzel',serif;font-size:.55rem;letter-spacing:.15em;color:var(--text-dim);text-align:center;margin-top:.3rem}
-.settings-share-item{display:flex;flex-direction:column;align-items:center;gap:.1rem}
-@keyframes settingsPulse{0%,100%{box-shadow:0 0 15px rgba(139,0,0,.2)}50%{box-shadow:0 0 35px rgba(220,20,60,.35)}}
-#game-popup-overlay{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.85);display:none;align-items:center;justify-content:center;backdrop-filter:blur(8px)}
-.game-popup-panel{background:rgba(12,8,18,.98);border:1px solid rgba(220,20,60,.5);padding:2.5rem 2.5rem 1.8rem;max-width:380px;width:88%;display:flex;flex-direction:column;align-items:center;gap:1.2rem;text-align:center;box-shadow:0 0 60px rgba(139,0,0,.3);animation:settingsPulse 3s infinite}
-.game-popup-symbol{color:var(--blood);font-size:1.8rem;letter-spacing:.3em}
-.game-popup-title{font-family:'Cinzel',serif;font-size:1rem;color:var(--silver);letter-spacing:.25em}
-.game-popup-text{font-family:'IM Fell English',serif;font-size:.92rem;color:var(--mist);line-height:1.8;font-style:italic}
-.game-popup-divider{display:flex;align-items:center;gap:.8rem;width:100%}
-.game-popup-divider::before,.game-popup-divider::after{content:'';flex:1;height:1px;background:rgba(220,20,60,.3)}
-.game-popup-divider span{color:var(--crimson);font-size:.7rem}
-.game-popup-btns{display:flex;gap:.7rem;width:100%;flex-wrap:wrap;justify-content:center}
-.game-popup-btn{font-family:'Cinzel',serif;font-size:.75rem;letter-spacing:.2em;background:transparent;border:1px solid var(--box-border);color:var(--mist);padding:.7rem 1.4rem;cursor:pointer;transition:all .25s;flex:1;min-width:100px;touch-action:manipulation}
-.game-popup-btn:hover{border-color:var(--crimson);color:var(--silver);background:rgba(139,0,0,.15)}
-.game-popup-btn.confirm{border-color:rgba(220,20,60,.5);color:var(--rose)}
-.game-popup-btn.confirm:hover{background:rgba(139,0,0,.3);border-color:var(--crimson)}
-#chapters-screen{background:radial-gradient(ellipse at 50% 50%,#110814 0%,var(--obsidian) 80%);overflow-y:auto;flex-direction:column;justify-content:flex-start;align-items:stretch;position:fixed;-webkit-overflow-scrolling:touch}
-.ch-bg-gradient{position:fixed;inset:0;pointer-events:none;z-index:0;background:radial-gradient(ellipse at 20% 20%,rgba(139,0,0,.12) 0%,transparent 50%),radial-gradient(ellipse at 80% 80%,rgba(107,33,168,.08) 0%,transparent 50%),radial-gradient(ellipse at 50% 50%,#110814 0%,var(--obsidian) 80%)}
-#ch-particles{position:fixed;inset:0;pointer-events:none;z-index:1;overflow:hidden}
-#chapters-screen .ch-header{position:relative;display:flex;flex-direction:column;align-items:center;padding:3rem 1rem 2.5rem;border-bottom:1px solid var(--box-border);flex-shrink:0;z-index:10}
-#chapters-screen .ch-header-deco{width:1px;height:40px;background:linear-gradient(to bottom,transparent,var(--blood));margin-bottom:1rem}
-#chapters-screen .ch-back-btn{position:absolute;left:1.5rem;top:2rem;font-family:'Cinzel',serif;font-size:.7rem;letter-spacing:.2em;color:var(--text-dim);background:transparent;border:1px solid rgba(200,160,200,.2);padding:.5rem 1rem;cursor:pointer;transition:all .25s ease;display:flex;align-items:center;gap:.4rem;touch-action:manipulation}
-#chapters-screen .ch-back-btn:hover{border-color:var(--crimson);color:var(--silver)}
-#chapters-screen .ch-eyebrow{font-family:'Cinzel',serif;font-size:clamp(.55rem,1.5vw,.75rem);letter-spacing:.55em;color:var(--blood);text-transform:uppercase;opacity:0;animation:fadeIn 1s .3s forwards}
-#chapters-screen .ch-header-divider{display:flex;align-items:center;gap:1rem;width:100%;max-width:300px;margin:.8rem 0 0;opacity:0;animation:fadeIn 1s .6s forwards}
-#chapters-screen .ch-header-divider::before,#chapters-screen .ch-header-divider::after{content:'';flex:1;height:1px;background:linear-gradient(to right,transparent,var(--blood))}
-#chapters-screen .ch-header-divider::after{background:linear-gradient(to left,transparent,var(--blood))}
-#chapters-screen .ch-header-divider span{color:var(--crimson);font-size:.75rem}
-#ch-progress-section{max-width:900px;margin:2.5rem auto 0;padding:0 1.5rem;opacity:0;animation:fadeIn 1s .9s forwards;width:100%;position:relative;z-index:10}
-.ch-progress-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:.8rem}
-.ch-progress-label{font-family:'Cinzel',serif;font-size:.65rem;letter-spacing:.3em;color:var(--text-dim);text-transform:uppercase}
-.ch-progress-count{font-family:'Cinzel',serif;font-size:.7rem;color:var(--mist)}
-.ch-progress-rail{position:relative;height:3px;background:rgba(255,255,255,.06);border-radius:2px;overflow:visible}
-.ch-progress-fill{height:100%;background:linear-gradient(to right,var(--blood),var(--crimson));border-radius:2px;transition:width 1s cubic-bezier(.4,0,.2,1);position:relative}
-.ch-progress-fill::after{content:'';position:absolute;right:-1px;top:50%;transform:translateY(-50%);width:8px;height:8px;border-radius:50%;background:var(--crimson);box-shadow:0 0 8px rgba(220,20,60,.8)}
-.ch-progress-ticks{position:absolute;top:0;left:0;right:0;bottom:0;display:flex;align-items:center;pointer-events:none}
-.ch-progress-tick{position:absolute;top:50%;transform:translate(-50%,-50%);width:5px;height:5px;border-radius:50%;border:1px solid rgba(200,160,200,.3);background:var(--obsidian);transition:all .4s ease}
-.ch-progress-tick.done{background:var(--crimson);border-color:var(--crimson);box-shadow:0 0 6px rgba(220,20,60,.5)}
-.ch-progress-tick.current{background:transparent;border-color:var(--gold);box-shadow:0 0 8px rgba(201,168,76,.4);animation:pulseTick 2s ease infinite}
-@keyframes pulseTick{0%,100%{box-shadow:0 0 4px rgba(201,168,76,.4)}50%{box-shadow:0 0 12px rgba(201,168,76,.7)}}
-.ch-progress-endings{display:flex;gap:.5rem;margin-top:.8rem;align-items:center}
-.ch-ending-pip{display:flex;align-items:center;gap:.3rem;font-family:'Cinzel',serif;font-size:.6rem;letter-spacing:.1em;color:var(--text-dim)}
-.ch-ending-pip-dot{width:6px;height:6px;border-radius:50%;border:1px solid rgba(200,160,200,.25);background:transparent;transition:all .4s}
-.ch-ending-pip-dot.unlocked-good{background:var(--crimson);border-color:var(--crimson);box-shadow:0 0 5px rgba(220,20,60,.5)}
-.ch-ending-pip-dot.unlocked-bad{background:#9333ea;border-color:#9333ea;box-shadow:0 0 5px rgba(147,51,234,.5)}
-.ch-progress-complete-msg{font-family:'IM Fell English',serif;font-size:.8rem;color:var(--gold);font-style:italic;margin-left:.5rem;opacity:0;transition:opacity .5s}
-.ch-progress-complete-msg.show{opacity:1}
-#chapters-main{position:relative;z-index:10;max-width:1100px;margin:0 auto;padding:2.5rem 1.5rem 5rem;width:100%}
-#ch-status{text-align:center;padding:4rem 1rem;font-family:'IM Fell English',serif;font-size:1.1rem;color:var(--text-dim);font-style:italic}
-.ch-section-title{font-family:'Cinzel',serif;font-size:.7rem;letter-spacing:.45em;color:var(--blood);text-transform:uppercase;display:flex;align-items:center;gap:1rem;margin:0 0 2rem}
-.ch-section-title::before,.ch-section-title::after{content:'';flex:1;height:1px;background:linear-gradient(to right,var(--blood),transparent)}
-.ch-section-title::after{background:linear-gradient(to left,var(--blood),transparent)}
-#ch-chapters-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:1.8rem;opacity:0;transition:opacity .7s ease}
-#ch-chapters-grid.visible{opacity:1}
-.ch-card{position:relative;overflow:hidden;background:var(--box-bg);border:1px solid var(--box-border);backdrop-filter:blur(12px);cursor:pointer;transition:transform .3s ease,border-color .3s ease,box-shadow .3s ease;display:flex;flex-direction:column;min-height:220px;touch-action:manipulation}
-.ch-card:hover:not(.locked){border-color:rgba(220,20,60,.5);transform:translateY(-5px);box-shadow:0 20px 50px rgba(0,0,0,.6),0 0 25px rgba(220,20,60,.08)}
-.ch-card.locked{background:rgba(12,6,18,.9);border-color:rgba(80,40,80,.2);cursor:not-allowed;filter:saturate(.25) brightness(.7)}
-.ch-card-thumb{width:100%;height:160px;background-color:rgba(20,8,30,.9);background-size:cover;background-position:center top;position:relative;flex-shrink:0;overflow:hidden}
-.ch-card-thumb::after{content:'';position:absolute;inset:0;background:linear-gradient(to bottom,rgba(10,10,15,0) 30%,rgba(10,10,15,.95) 100%);z-index:2;pointer-events:none}
-.ch-card-char-img{position:absolute;bottom:0;left:50%;transform:translateX(-50%);height:145px;object-fit:contain;filter:drop-shadow(0 0 18px rgba(0,0,0,.9));z-index:1;transition:transform .4s ease}
-.ch-card:hover:not(.locked) .ch-card-char-img{transform:translateX(-50%) scale(1.04) translateY(-4px)}
-.ch-card-thumb-placeholder{width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:3rem;opacity:.1;color:var(--crimson);position:relative;z-index:1}
-.ch-card-num{position:absolute;top:.7rem;left:.7rem;z-index:3;font-family:'Cinzel',serif;font-size:.58rem;letter-spacing:.3em;color:var(--crimson);background:rgba(10,10,15,.85);border:1px solid rgba(220,20,60,.35);padding:.2rem .55rem}
-.ch-card.chapter-one .ch-card-num{color:var(--gold);border-color:rgba(201,168,76,.4)}
-.ch-card-badge-locked{position:absolute;top:.7rem;right:.7rem;z-index:3;font-size:1rem;opacity:.35}
-.ch-card-body{padding:.9rem 1.2rem 1.1rem;flex:1;display:flex;flex-direction:column;gap:.4rem}
-.ch-card-title{font-family:'Cinzel',serif;font-size:clamp(.88rem,2vw,.98rem);color:var(--silver);letter-spacing:.1em;line-height:1.2}
-.ch-card-subtitle{font-family:'IM Fell English',serif;font-size:.85rem;color:var(--mist);font-style:italic;line-height:1.5;flex:1}
-.ch-card-meta{display:flex;align-items:center;justify-content:space-between;margin-top:.5rem;padding-top:.5rem;border-top:1px solid rgba(200,160,200,.08)}
-.ch-card-tag{font-family:'Cinzel',serif;font-size:.58rem;letter-spacing:.15em;color:var(--text-dim)}
-.ch-card-arrow{color:var(--crimson);font-size:.8rem;opacity:0;transition:opacity .2s,transform .2s}
-.ch-card:hover:not(.locked) .ch-card-arrow{opacity:1;transform:translateX(4px)}
-#ch-endings-section{margin-top:3rem;display:none}
-.ch-ending-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:1.2rem}
-.ch-ending-card{background:var(--box-bg);border:1px solid var(--box-border);padding:1.5rem;display:flex;flex-direction:column;gap:.6rem;transition:all .3s ease}
-.ch-ending-card.good:hover{border-color:rgba(220,20,60,.4);box-shadow:0 8px 20px rgba(220,20,60,.08)}
-.ch-ending-card.bad:hover{border-color:rgba(107,33,168,.4);box-shadow:0 8px 20px rgba(107,33,168,.08)}
-.ch-ending-card-type{font-family:'Cinzel',serif;font-size:.58rem;letter-spacing:.3em;text-transform:uppercase}
-.ch-ending-card.good .ch-ending-card-type{color:var(--crimson)}
-.ch-ending-card.bad .ch-ending-card-type{color:#9333ea}
-.ch-ending-card-title{font-family:'Cinzel',serif;font-size:.95rem;color:var(--silver);letter-spacing:.1em}
-.ch-ending-card-range{font-family:'IM Fell English',serif;font-size:.8rem;color:var(--text-dim);font-style:italic}
-.ch-ending-locked-msg{font-family:'IM Fell English',serif;font-size:.9rem;color:var(--text-dim);font-style:italic;text-align:center;padding:2rem;border:1px dashed rgba(200,160,200,.12)}
-@media(max-width:600px){
-  #chapters-screen .ch-back-btn{left:.8rem;top:1.5rem}
-  #chapters-screen .ch-header{padding:2rem .8rem 1.5rem}
-  #ch-progress-section{padding:0 1rem}
-  #ch-chapters-grid{grid-template-columns:1fr}
-  #chapters-main{padding:2rem 1rem 3rem}
-}
-#game-screen{background:var(--obsidian);padding:0}
-#game-bg{position:absolute;inset:0;background-size:cover;background-position:center;z-index:0}
-/* ══ Boutons overlay BACK/NEXT ══ */
-.overlay-nav-btn{
-  position:absolute;
-  bottom:1.5rem;
-  font-family:'Cinzel',serif;
-  font-size:.7rem;
-  letter-spacing:.15em;
-  color:var(--text-dim);
-  background:rgba(10,10,15,.85);
-  border:1px solid rgba(200,160,200,.2);
-  padding:.5rem 1rem;
-  cursor:pointer;
-  transition:all .2s;
-  border-radius:2px;
-  display:none;
-  align-items:center;
-  gap:.35rem;
-  backdrop-filter:blur(8px);
-  -webkit-backdrop-filter:blur(8px);
-  touch-action:manipulation;
-  -webkit-tap-highlight-color:transparent;
-  z-index:12;
-}
-.overlay-nav-btn:hover{
-  border-color:var(--crimson);
-  color:var(--rose);
-}
-.overlay-nav-btn.visible{
-  display:inline-flex;
-}
-#overlay-back-btn{ left:1rem; }
-#overlay-next-btn{ right:1rem; }
-
-#char-wrap{position:absolute;bottom:var(--dialogue-h);left:50%;transform:translateX(-50%);z-index:2;display:flex;align-items:flex-end;justify-content:center;pointer-events:none;opacity:0;filter:drop-shadow(0 0 30px rgba(0,0,0,.8))}
-
-/* ══ TREMBLEMENT (plumintact) — MOUVEMENT SEUL ══ */
-#char-wrap.dark-reveal #char-img{
-  animation: charTrembleForever 0.4s ease-in-out infinite;
-  transform-origin: 50% 85%;
-  will-change: transform;
-  -webkit-transform: translateZ(0);
-  transform: translateZ(0);
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
-}
-@keyframes charTrembleForever{
-  0%   { transform: translate(2px, -1px) rotate(-0.6deg); }
-  50%  { transform: translate(-2px, 1.5px) rotate(0.7deg); }
-  100% { transform: translate(2px, -1px) rotate(-0.6deg); }
+#gc {
+  display: block;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: calc(100% - 70px);
+  touch-action: none;
 }
 
-/* ══ BALANCEMENT (plumdied) — MOUVEMENT SEUL ══ */
-#char-wrap.swing #char-img{
-  transform-origin: 50% 8%;
-  animation: charSwing 3.8s ease-in-out infinite;
-  will-change: transform;
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
-}
-@keyframes charSwing{
-  0%   { transform: rotate(-3deg) translateZ(0); }
-  50%  { transform: rotate(3deg) translateZ(0); }
-  100% { transform: rotate(-3deg) translateZ(0); }
-}
-#char-img{
-  max-height:calc(100vh * var(--char-scale));
-  max-width:calc(60vw * var(--char-scale));
-  object-fit:contain;
+#hud {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 70px;
+  background: rgba(23, 23, 32, 0.96);
+  border-top: 1px solid #393541;
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  z-index: 20;
 }
 
-@media(max-width:600px){
-  #char-img{max-width:calc(100vw * var(--char-scale))}
-  #char-wrap.dark-reveal #char-img,
-  #char-wrap.swing #char-img{
-    max-height:68vh !important;
-    max-width:78vw !important;
+#jL, #jR {
+  width: 120px;
+  height: 60px;
+  touch-action: none;
+}
+
+#paramBar {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+}
+
+.pBtn {
+  background: rgba(23, 23, 32, 0.9);
+  color: #d9c5b5;
+  border: 1px solid #625047;
+  border-radius: 20px;
+  padding: 9px 17px;
+  font: 11px monospace;
+  letter-spacing: 1px;
+  cursor: pointer;
+}
+
+.pBtn:active {
+  background: #39313b;
+}
+
+#coordPanel {
+  display: none;
+  position: fixed;
+  top: 60px;
+  left: 12px;
+  padding: 12px;
+  background: rgba(23, 23, 32, 0.95);
+  border: 1px solid #625047;
+  border-radius: 8px;
+  color: #ddd0c3;
+  font: 12px/1.8 monospace;
+  z-index: 40;
+}
+
+#copyBtn {
+  display: block;
+  width: 100%;
+  padding: 6px;
+  margin-top: 7px;
+  background: #302733;
+  color: white;
+  border: 1px solid #625047;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+#errorPanel {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: #111722;
+  color: #eee;
+  padding: 25px;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font: 14px/1.7 monospace;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 480px) {
+  #hud {
+    height: 70px;
   }
-}
-@media(min-width:1200px){#char-img{max-width:calc(100vw * var(--char-scale))}}
 
-#hud{position:fixed;top:0;left:0;right:0;display:none;align-items:center;justify-content:space-between;padding:.8rem 1.2rem;z-index:80;background:linear-gradient(to bottom,rgba(0,0,0,.6),transparent);transition:opacity .8s ease;pointer-events:none}
-#hud .hud-left,#hud .hud-right{pointer-events:auto}
-#game-screen.active ~ #hud{display:flex}
-.hud-left,.hud-right{display:flex;align-items:center;gap:.8rem}
-#affinity-wrap{display:flex;align-items:center;gap:.5rem}
-.affinity-icon{font-size:1.1rem;filter:drop-shadow(0 0 4px var(--crimson));transition:filter .5s}
-#affinity-bar-outer{width:80px;height:6px;background:rgba(255,255,255,.1);border-radius:3px;overflow:hidden;position:relative}
-#affinity-bar{height:100%;width:50%;border-radius:3px;background:linear-gradient(to right,var(--affinity-neg),var(--affinity-pos));transition:width .6s cubic-bezier(.4,0,.2,1),background .6s;position:absolute;left:0}
-#affinity-val{
-  font-family:'Cinzel',serif;
-  font-size:1rem;
-  font-weight:700;
-  color:var(--silver);
-  min-width:3.5rem;
-  text-align:center;
-  transition:color .4s, background .4s, box-shadow .4s;
-  background:rgba(10,10,15,.85);
-  border:1px solid rgba(200,160,200,.35);
-  border-radius:3px;
-  padding:.2rem .5rem;
-  text-shadow:0 0 10px currentColor;
-  letter-spacing:.08em;
-  line-height:1.2;
-}
-.hud-btn{background:rgba(10,10,15,.7);border:1px solid var(--box-border);color:var(--mist);cursor:pointer;width:36px;height:36px;display:flex;align-items:center;justify-content:center;font-size:.95rem;transition:all .2s;border-radius:2px;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
-.hud-btn:hover{border-color:var(--crimson);color:var(--silver)}
-#dialogue-wrap{position:absolute;bottom:0;left:0;right:0;z-index:10;padding:0 1rem 1rem;transition:opacity .8s ease}
-#dialogue-box{background:var(--box-bg);border:1px solid var(--box-border);border-radius:2px;backdrop-filter:blur(12px);overflow:hidden}
-#speaker-bar{padding:.4rem 1.2rem;border-bottom:1px solid var(--box-border);display:flex;align-items:center;gap:.5rem}
-#speaker-name{font-family:'Cinzel',serif;font-size:clamp(.75rem,2vw,.9rem);color:var(--crimson);letter-spacing:.15em}
-.speaker-deco{color:var(--blood);font-size:.6rem}
-#dialogue-text{padding:1rem 1.2rem;font-size:clamp(.9rem,2.5vw,1.1rem);font-family:'IM Fell English',serif;line-height:1.7;color:var(--text-main);min-height:5em}
-#dialogue-text.speaker-unknown{
-  color:#DC143C;
-  text-shadow:0 0 12px rgba(220,20,60,.5), 0 0 24px rgba(139,0,0,.3);
-}
-#dialogue-nav{display:flex;align-items:center;justify-content:space-between;padding:.3rem 1.2rem .6rem;border-top:1px solid rgba(200,160,200,.08)}
-#btn-back-dialogue{font-family:'Cinzel',serif;font-size:.65rem;letter-spacing:.15em;color:var(--text-dim);background:transparent;border:1px solid rgba(200,160,200,.15);padding:.25rem .7rem;cursor:pointer;transition:all .2s;border-radius:2px;opacity:0;pointer-events:none;touch-action:manipulation}
-#btn-back-dialogue.visible{opacity:1;pointer-events:all}
-#btn-back-dialogue:hover{border-color:var(--crimson);color:var(--rose)}
-#dialogue-continue{color:var(--blood);font-size:.75rem;animation:blink 1.5s infinite}
-@keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
-#choices-wrap{position:absolute;bottom:var(--dialogue-h);left:0;right:0;z-index:11;padding:0 1rem .5rem;display:none;flex-direction:column;gap:.6rem;transition:opacity .8s ease;max-height:calc(100vh - var(--dialogue-h) - 20px);overflow-y:auto}
-.choice-btn{background:var(--choice-bg);border:1px solid var(--box-border);color:var(--silver);padding:.9rem 1.5rem;font-family:'IM Fell English',serif;font-size:clamp(.85rem,2.2vw,1rem);cursor:pointer;text-align:left;transition:all .25s ease;backdrop-filter:blur(10px);border-radius:2px;position:relative;overflow:hidden;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
-.choice-btn::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--crimson);transform:scaleY(0);transition:transform .2s}
-.choice-btn:hover{background:var(--choice-hover);border-color:rgba(220,20,60,.5);transform:translateX(4px)}
-.choice-btn:hover::before{transform:scaleY(1)}
-#history-overlay{position:fixed;inset:0;z-index:90;background:rgba(5,5,10,.95);display:none;flex-direction:column;backdrop-filter:blur(8px)}
-.history-header{padding:1.2rem 1.5rem;border-bottom:1px solid var(--box-border);display:flex;align-items:center;justify-content:space-between;font-family:'Cinzel',serif;font-size:.9rem;color:var(--mist);letter-spacing:.2em}
-#history-list{flex:1;overflow-y:auto;padding:1rem 1.5rem;-webkit-overflow-scrolling:touch}
-#history-list::-webkit-scrollbar{width:3px}
-#history-list::-webkit-scrollbar-thumb{background:var(--blood)}
-.history-entry{margin-bottom:1.2rem;font-family:'IM Fell English',serif;font-size:clamp(.85rem,2vw,1rem);line-height:1.7;color:var(--text-dim)}
-.history-entry .h-name{color:var(--crimson);font-family:'Cinzel',serif;font-size:.8rem;letter-spacing:.1em;margin-bottom:.2rem}
-.history-entry .h-choice{color:var(--rose);font-style:italic}
-#pause-modal{position:fixed;inset:0;z-index:90;background:rgba(5,5,10,.92);display:none;flex-direction:column;align-items:center;justify-content:center;backdrop-filter:blur(12px)}
-.pause-panel{background:rgba(15,10,20,.95);border:1px solid var(--box-border);padding:2.5rem 3rem;min-width:280px;max-width:400px;width:90%;display:flex;flex-direction:column;gap:.8rem}
-.pause-title{font-family:'Cinzel',serif;font-size:1.1rem;color:var(--silver);text-align:center;letter-spacing:.3em;margin-bottom:.5rem;border-bottom:1px solid var(--box-border);padding-bottom:.8rem}
-.pause-btn{font-family:'Cinzel',serif;font-size:.8rem;letter-spacing:.2em;background:transparent;border:1px solid var(--box-border);color:var(--mist);padding:.9rem;cursor:pointer;transition:all .2s;text-align:center;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
-.pause-btn:hover{border-color:var(--crimson);color:var(--silver);background:rgba(139,0,0,.15)}
-.pause-btn.danger{color:#ff6b6b;border-color:rgba(255,107,107,.3)}
-.pause-btn.danger:hover{background:rgba(200,0,0,.15);border-color:#ff6b6b}
-.volume-row{display:flex;align-items:center;gap:.8rem;padding:.5rem 0;border-top:1px solid var(--box-border);margin-top:.5rem}
-.vol-label{font-family:'Cinzel',serif;font-size:.7rem;color:var(--text-dim);letter-spacing:.15em;min-width:60px}
-#vol-slider{flex:1;accent-color:var(--crimson);cursor:pointer}
-.vol-mute{background:none;border:1px solid var(--box-border);color:var(--mist);cursor:pointer;padding:.3rem .6rem;font-size:.8rem;transition:all .2s}
-.vol-mute:hover{border-color:var(--crimson);color:var(--silver)}
-#help-overlay{position:fixed;inset:0;z-index:90;background:rgba(5,5,10,.9);display:none;flex-direction:column;align-items:center;justify-content:center;padding:1rem;backdrop-filter:blur(8px)}
-.help-panel{background:rgba(15,10,20,.98);border:1px solid var(--box-border);padding:2rem;max-width:500px;width:100%;max-height:80vh;overflow-y:auto;-webkit-overflow-scrolling:touch}
-.help-panel h2{font-family:'Cinzel',serif;color:var(--silver);font-size:1rem;letter-spacing:.25em;margin-bottom:1.5rem;border-bottom:1px solid var(--box-border);padding-bottom:.8rem}
-.help-row{display:flex;gap:1rem;margin-bottom:1rem;font-size:.85rem;line-height:1.5}
-.help-key{min-width:80px;color:var(--crimson);font-family:'Cinzel',serif;font-size:.75rem;letter-spacing:.1em}
-.help-val{color:var(--mist)}
-#minigame-overlay{position:fixed;inset:0;z-index:70;background:var(--obsidian);display:none}
-body.minigame-active #game-bg{opacity:0}
-body.minigame-active #char-wrap{opacity:0}
-body.minigame-active #dialogue-wrap{display:none}
-body.minigame-active #choices-wrap{display:none}
-body.minigame-active #hud{display:none !important}
-#minigame-frame{width:100%;height:100%;border:none;display:block}
-#ending-screen{background:var(--obsidian);flex-direction:column;gap:1.5rem;text-align:center;padding:2rem}
-.ending-type{font-family:'Cinzel',serif;font-size:.7rem;letter-spacing:.5em;color:var(--blood);text-transform:uppercase}
-.ending-title{font-family:'Cinzel',serif;font-size:clamp(1.5rem,5vw,3rem);color:var(--silver);text-shadow:0 0 40px rgba(220,20,60,.4)}
-.ending-text{font-family:'IM Fell English',serif;font-size:clamp(.9rem,2.2vw,1.1rem);color:var(--mist);max-width:500px;line-height:1.8;font-style:italic}
-.btn-restart{font-family:'Cinzel',serif;font-size:.8rem;letter-spacing:.3em;color:var(--silver);background:transparent;border:1px solid rgba(220,20,60,.5);padding:.9rem 2.5rem;cursor:pointer;transition:all .3s;margin-top:1rem;touch-action:manipulation}
-.btn-restart:hover{border-color:var(--crimson);background:rgba(139,0,0,.2)}
-#affinity-delta{position:fixed;top:60px;right:1rem;font-family:'Cinzel',serif;font-size:1rem;opacity:0;pointer-events:none;z-index:20;transition:opacity .3s;text-shadow:0 0 10px currentColor}
-#affinity-delta.show{animation:deltaAnim 1.5s ease forwards}
-@keyframes deltaAnim{0%{opacity:0;transform:translateY(0)}20%{opacity:1}80%{opacity:1;transform:translateY(-20px)}100%{opacity:0;transform:translateY(-30px)}}
-#fade-overlay{position:fixed;inset:0;z-index:40;background:var(--obsidian);opacity:0;pointer-events:none;transition:opacity .5s}
-#fade-overlay.fade-in{opacity:1;pointer-events:all}
-.ripple{position:fixed;border-radius:50%;width:20px;height:20px;background:rgba(220,20,60,.3);pointer-events:none;z-index:9000;transform:translate(-50%,-50%) scale(0);animation:rippleAnim .6s ease forwards}
-@keyframes rippleAnim{to{transform:translate(-50%,-50%) scale(8);opacity:0}}
-@media(max-width:480px){
-  .pause-panel{padding:1.5rem 1.2rem}
-  #hud{padding:.6rem .8rem}
-  #dialogue-wrap,#choices-wrap{padding:0 .5rem .5rem}
-  #affinity-bar-outer{width:60px}
-  #code-input{width:180px;font-size:1.3rem}
-  .settings-container{padding:1.5rem 1.2rem}
-  .poem-parchment{padding:2rem 1.5rem}
-}
-#mission-overlay{
-  position:fixed;inset:0;z-index:80;
-  background:rgba(5,3,8,.88);backdrop-filter:blur(10px);
-  display:none;align-items:center;justify-content:center;
-  opacity:0;transition:opacity .8s ease;
-  cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;
-}
-#mission-overlay.active{display:flex;opacity:1;pointer-events:auto}
-.mission-parchment{
-  background:rgba(10,3,15,.96);
-  border:1px solid rgba(220,20,60,.4);
-  max-width:420px;width:80%;
-  padding:3rem 2rem;
-  text-align:center;
-  box-shadow:0 20px 60px rgba(0,0,0,.8),0 0 40px rgba(139,0,0,.35);
-  position:relative;
-  transform:scale(.9);opacity:0;
-  transition:transform .8s cubic-bezier(.2,.9,.3,1),opacity .8s ease;
-}
-#mission-overlay.active .mission-parchment{transform:scale(1);opacity:1}
-.mission-title{
-  font-family:'Cinzel',serif;font-size:clamp(1.4rem,4.5vw,2rem);
-  font-weight:600;color:#E8DDF0;letter-spacing:.25em;
-  text-shadow:0 0 40px rgba(220,20,60,.55),0 0 80px rgba(139,0,0,.35);
-  line-height:1.3;
-}
-.mission-hint{
-  position:absolute;bottom:1.3rem;left:50%;transform:translateX(-50%);
-  font-family:'IM Fell English',serif;font-size:.72rem;
-  color:rgba(200,180,200,.45);font-style:italic;
-  letter-spacing:.15em;animation:poemHintPulse 2s ease infinite;
-  pointer-events:none;white-space:nowrap;
-}
-
-/* Quand une image overlay (lettre) est affichée : on cache le dialogue */
-body.overlay-active #dialogue-wrap{opacity:0;pointer-events:none}
-@media(max-width:600px){
-  body.overlay-active #dialogue-wrap{display:none}
-  body.overlay-active #hud{opacity:.3}
-}
-@media(max-width:600px){
-  #choices-wrap{
-    bottom:var(--dialogue-h);
-    padding:0 .5rem .4rem;
-    gap:.45rem;
-    max-height:calc(100vh - var(--dialogue-h) - 10px);
+  #jL, #jR {
+    width: 120px;
+    height: 60px;
   }
-  .choice-btn{
-    padding:.7rem 1rem;
-    font-size:.9rem;
-  }
-}
-#mission-overlay{
-  position:fixed;inset:0;z-index:120;
-  background:radial-gradient(ellipse at center, rgba(20,0,10,.97) 0%, rgba(5,0,3,.99) 70%);
-  display:none;flex-direction:column;align-items:center;justify-content:center;
-  padding:2rem 1.5rem;text-align:center;
-  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
-  cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;
-}
-#mission-overlay.active{display:flex;animation:missionFadeIn .8s ease}
-@keyframes missionFadeIn{from{opacity:0}to{opacity:1}}
-.mission-symbol{
-  font-family:'Cinzel',serif;font-size:clamp(1.8rem,6vw,3rem);
-  color:#DC143C;letter-spacing:.5em;
-  text-shadow:0 0 20px #8B0000, 0 0 40px #8B0000, 0 0 60px #8B0000;
-  margin-bottom:1.5rem;animation:missionPulse 1.8s ease infinite;
-}
-@keyframes missionPulse{
-  0%,100%{opacity:.85;text-shadow:0 0 15px #8B0000, 0 0 30px #8B0000}
-  50%{opacity:1;text-shadow:0 0 30px #DC143C, 0 0 60px #8B0000, 0 0 90px #8B0000}
-}
-.mission-label{
-  font-family:'Cinzel',serif;font-size:clamp(.55rem,1.8vw,.75rem);
-  letter-spacing:.5em;color:#8B0000;text-transform:uppercase;
-  margin-bottom:.6rem;
-}
-.mission-title{
-  font-family:'Cinzel',serif;font-size:clamp(1.3rem,4.5vw,2.4rem);
-  font-weight:600;color:#E8DDF0;letter-spacing:.2em;
-  text-shadow:0 0 30px rgba(220,20,60,.5),0 0 60px rgba(139,0,0,.3);
-  margin-bottom:1.4rem;line-height:1.2;
-}
-.mission-divider{
-  display:flex;align-items:center;gap:1rem;
-  width:min(340px,80vw);margin:0 auto 1.6rem;
-}
-.mission-divider::before,.mission-divider::after{
-  content:'';flex:1;height:1px;
-  background:linear-gradient(to right,transparent,#8B0000);
-}
-.mission-divider::after{background:linear-gradient(to left,transparent,#8B0000)}
-.mission-divider span{color:#DC143C;font-size:.9rem}
-.mission-text{
-  font-family:'IM Fell English',serif;
-  font-size:clamp(.9rem,2.5vw,1.1rem);
-  font-style:italic;color:#C8B8D0;
-  max-width:520px;line-height:1.8;
-  margin-bottom:1.8rem;padding:0 1rem;
-}
-.mission-warning{
-  font-family:'Cinzel',serif;font-size:clamp(.6rem,1.7vw,.75rem);
-  letter-spacing:.25em;color:#DC143C;
-  margin-bottom:1rem;text-transform:uppercase;
-  animation:missionWarn 1.4s ease infinite;
-}
-@keyframes missionWarn{0%,100%{opacity:.6}50%{opacity:1}}
-.mission-accept{
-  font-family:'Cinzel',serif;font-size:clamp(.75rem,2vw,.9rem);
-  letter-spacing:.35em;color:#E8DDF0;background:transparent;
-  border:1px solid rgba(220,20,60,.6);
-  padding:1rem 3rem;cursor:pointer;
-  position:relative;overflow:hidden;
-  transition:all .35s ease;
-  touch-action:manipulation;
-}
-.mission-accept::before{
-  content:'';position:absolute;inset:0;
-  background:linear-gradient(135deg,#8B0000,transparent);
-  opacity:0;transition:opacity .35s;
-}
-.mission-accept:hover,.mission-accept:focus{
-  border-color:#FF6B8A;color:#fff;letter-spacing:.45em;
-  box-shadow:0 0 40px rgba(220,20,60,.5);
-}
-.mission-accept:hover::before{opacity:1}
-.mission-accept span{position:relative;z-index:1}
-.mission-hint{
-  font-family:'IM Fell English',serif;font-size:.72rem;
-  color:rgba(200,180,200,.45);font-style:italic;
-  letter-spacing:.15em;margin-top:1.2rem;
-  animation:missionWarn 2s ease infinite;
-}
-/* ══ CHARACTERS INTRO — thème clair ══ */
-#chars-intro-overlay{
-  position:fixed;inset:0;z-index:95;
-  background:radial-gradient(ellipse at center, #1a0f18 0%, #050205 100%);
-  display:none;
-  flex-direction:column;
-  align-items:center;
-  justify-content:center;
-  padding:2rem 1rem;
-  opacity:0;
-  transition:opacity .8s ease;
-}
-#chars-intro-overlay.active{display:flex;opacity:1;}
-
-.chars-pair{
-  display:flex;
-  gap:1.2rem;
-  align-items:center;
-  justify-content:center;
-  flex-wrap:nowrap;
-  width:100%;
-  max-width:900px;
-}
-
-.char-card{
-  flex:1 1 0;
-  max-width:280px;
-  min-width:0;
-  background:#08050a;
-  border:1px solid rgba(139,0,0,.25);
-  border-radius:6px;
-  padding:1rem .8rem 1.2rem;
-  text-align:center;
-  box-shadow:0 8px 30px rgba(120,80,60,.15), 0 2px 8px rgba(0,0,0,.06);
-  opacity:0;
-  transform:translateY(30px) scale(.9);
-  transition:opacity .7s ease, transform .7s cubic-bezier(.2,.9,.3,1);
-}
-.char-card.left{ transform:translate(-40px,30px) scale(.9); }
-.char-card.right{ transform:translate(40px,30px) scale(.9); }
-.char-card.center{ transform:translateY(30px) scale(.9); }
-.char-card.visible{
-  opacity:1;
-  transform:translate(0,0) scale(1);
-}
-
-.char-card-img{
-  width:100%;
-  height:auto;
-  max-height:200px;
-  object-fit:contain;
-  filter:drop-shadow(0 0 20px rgba(0,0,0,.9));
-  margin-bottom:.8rem;
-  background:#08050a;
-  border-radius:4px;
-}
-.char-card-name{
-  font-family:'Cinzel',serif;
-  font-size:clamp(1rem,3vw,1.3rem);
-    color:#E8DDF0;
-  letter-spacing:.25em;
-  text-transform:uppercase;
-  margin-bottom:.7rem;
-  border-bottom:1px solid rgba(139,0,0,.25);
-  padding-bottom:.5rem;
-}
-
-.char-card-info{
-  font-family:'IM Fell English',serif;
-  font-size:clamp(.7rem,1.8vw,.85rem);
-   color:#C8B8D0;
-  line-height:1.7;
-  text-align:left;
-}
-.char-card-info .info-key{ color:#8B0000; }
-.char-card-info .info-line{
-  display:flex;
-  justify-content:space-between;
-  gap:.5rem;
-  padding:.15rem 0;
-  border-bottom:1px dashed rgba(220,20,60,.15);
-}
-.char-card-info .info-key{
-  color:var(--crimson);
-  font-family:'Cinzel',serif;
-  font-size:.65rem;
-  letter-spacing:.12em;
-  text-transform:uppercase;
-  flex-shrink:0;
-}
-.char-card-info .info-val{
-  text-align:right;
-  font-style:italic;
-}
-
-.char-card.es{
-  border-color:rgba(220,20,60,.6);
-  box-shadow:0 8px 30px rgba(220,20,60,.25), 0 0 60px rgba(220,20,60,.15);
-}
-.char-card.es .char-card-name{
-  color:#FF6B8A;
-  text-shadow:0 0 20px rgba(220,20,60,.6);
-}
-@keyframes esPulse{
-  0%,100%{ text-shadow:0 0 20px rgba(220,20,60,.6); }
-  50%{ text-shadow:0 0 35px rgba(220,20,60,1), 0 0 70px rgba(220,20,60,.5); }
-}
-
-/* Mobile : cartes plus petites, empilées un peu */
-@media(max-width:600px){
-  .chars-pair{ gap:.6rem; }
-  .char-card{
-    padding:1rem .8rem 1.2rem;
-    max-width:340px;
-    width:90%;
-  }
-  .char-card-img{ max-height:200px; }
-  .char-card-info{ font-size:.75rem; }
-  .char-card-info .info-key{ font-size:.62rem; }
-}
-/* ══ Boutons navigation persos ══ */
-#chars-nav{
-  display:flex;
-  gap:1rem;
-  margin-top:2rem;
-  justify-content:center;
-  width:100%;
-  max-width:600px;
-}
-.chars-nav-btn{
-  font-family:'Cinzel',serif;
-  font-size:.75rem;
-  letter-spacing:.2em;
-  color:#C8B8D0;
-  background:rgba(10,10,15,.7);
-  border:1px solid rgba(200,160,200,.3);
-  padding:.7rem 1.6rem;
-  cursor:pointer;
-  transition:all .25s;
-  border-radius:3px;
-  touch-action:manipulation;
-  -webkit-tap-highlight-color:transparent;
-}
-.chars-nav-btn:hover{
-  border-color:#DC143C;
-  color:#FF6B8A;
-  background:rgba(220,20,60,.15);
-}
-.chars-nav-btn:disabled{
-  opacity:.3;
-  cursor:not-allowed;
-}
-.chars-nav-btn.end{
-  border-color:#8B0000;
-  color:#8B0000;
-  font-weight:600;
-}
-.chars-nav-btn.end:hover{
-  background:#8B0000;
-  color:#fff;
-}
-.chars-count{
-  font-family:'Cinzel',serif;
-  font-size:.7rem;
-  letter-spacing:.2em;
-  color:#C8B8D0;
-  text-align:center;
-  margin-bottom:1rem;
-}
-/* ══ NOTE AVANT LE CHAPITRE ══ */
-#note-screen{
-  position:fixed;inset:0;z-index:14;
-  background:var(--obsidian);
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  padding:2rem 1.5rem;
-  opacity:0;
-  pointer-events:none;
-  transition:opacity .8s ease;
-  cursor:pointer;
-  -webkit-tap-highlight-color:transparent;
-  touch-action:manipulation;
-}
-#note-screen.active{opacity:1;pointer-events:all;}
-
-.note-paper{
-  max-width:520px;
-  width:100%;
-  background:radial-gradient(ellipse at center, #1a0510 0%, #09060b 72%, #050307 100%);
-  border:1px solid rgba(220,20,60,.38);
-  padding:3rem 2.2rem 3rem;
-  border-radius:3px;
-  box-shadow:
-    0 20px 60px rgba(0,0,0,.65),
-    0 0 35px rgba(139,0,0,.12),
-    inset 0 0 60px rgba(139,0,0,.08);
-  position:relative;
-  transform:scale(.97);
-  transition:transform .8s cubic-bezier(.2,.9,.3,1);
-}
-#note-screen.active .note-paper{
-  transform:scale(1);
-}
-.note-paper::before{
-  content:'';
-  position:absolute;
-  left:2.5rem;right:2.5rem;top:1.5rem;
-  height:1px;
-  background:linear-gradient(to right,transparent,rgba(220,20,60,.35),transparent);
-}
-.note-paper::after{
-  content:'';
-  position:absolute;
-  left:2.5rem;right:2.5rem;bottom:1.5rem;
-  height:1px;
-  background:linear-gradient(to right,transparent,rgba(220,20,60,.35),transparent);
-}
-
-.note-content{
-  font-family:'IM Fell English',Georgia,serif;
-  font-size:clamp(.9rem,2.2vw,1.05rem);
-  line-height:1.9;
-  color:#E8DDF0;
-  text-align:left;
-  font-style:italic;
-  white-space:pre-wrap;
-}
-.note-content .note-title{
-  font-family:'Cinzel',serif;
-  font-size:clamp(1rem,2.8vw,1.3rem);
-  letter-spacing:.25em;
-  text-transform:uppercase;
-  color:#FF6B8A;
-  text-align:center;
-  font-style:normal;
-  display:block;
-  margin-bottom:1.5rem;
-  padding-bottom:1rem;
-  border-bottom:1px solid rgba(139,0,0,.25);
-}
-.note-content .note-signature{
-  display:block;
-  text-align:right;
-  margin-top:2rem;
-  font-family:'Cinzel',serif;
-  font-size:.8rem;
-  letter-spacing:.2em;
-  color:#C8B8D0;
-  font-style:normal;
-}
-
-.note-hint{
-  position:absolute;
-  bottom:1.5rem;
-  left:50%;
-  transform:translateX(-50%);
-  font-family:'IM Fell English',serif;
-  font-size:.7rem;
-  color:rgba(200,180,200,.5);
-  font-style:italic;
-  letter-spacing:.15em;
-  animation:notePulse 2s ease infinite;
-  pointer-events:none;
-}
-@keyframes notePulse{
-  0%,100%{opacity:.4;}
-  50%{opacity:.9;}
-}
-
-@media(max-width:600px){
-  .note-paper{padding:2rem 1.5rem 2.5rem;}
-  .note-content{font-size:.85rem;line-height:1.8;}
 }
 </style>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.module.js"
+  }
+}
+</script>
 </head>
+
 <body>
 
-<div id="particles"></div>
-<div id="fade-overlay"></div>
-<div id="affinity-delta"></div>
-<div id="screen-glitch"></div>
+<canvas id="gc"></canvas>
 
-<div id="blood-realism-overlay">
-  <div class="vignette-layer"></div>
-  <div class="top-wound"></div>
-  <div class="drips-layer"></div>
-  <div class="final-red"></div>
+<div id="paramBar">
+  <button class="pBtn" id="coordButton">
+    📍 COORDINATES
+  </button>
 </div>
 
+<div id="coordPanel">
+  WORLD POSITION<br>
+  X: <span id="cx">0</span><br>
+  Y: <span id="cy">1.7</span><br>
+  Z: <span id="cz">0</span>
 
-
-<div id="next-chapter-prompt">
-  <div class="next-chapter-prompt-text" id="next-chapter-prompt-text"></div>
-  <div class="next-chapter-prompt-hint" id="next-chapter-prompt-hint"></div>
+  <button id="copyBtn">COPY</button>
 </div>
 
-<div id="loading-screen" class="screen active">
-  <div class="loading-inner">
-    <div class="loading-title" id="loading-label">Loading</div>
-    <div class="loading-bar-outer"><div class="loading-bar-inner" id="loading-bar"></div></div>
-    <div class="loading-pct" id="loading-pct">0%</div>
-    <div class="loading-detail" id="loading-detail"></div>
-  </div>
+<div id="hud">
+  <canvas id="jL" width="120" height="60"></canvas>
+  <canvas id="jR" width="120" height="60"></canvas>
 </div>
 
-<div id="code-screen" class="screen">
-  <div class="code-deco-line"></div>
-  <div class="code-deco-line-bottom"></div>
-  <div class="code-inner">
-    <div class="code-mystery-symbol">&#10022; &#10022; &#10022;</div>
-    <div class="code-divider"><span class="code-divider-icon">&#10022;</span></div>
-    <div class="code-entry-block">
-      <div class="code-prompt-label" id="code-prompt-text">Enter the secret code to begin</div>
-      <div class="code-field-wrap">
-        <input type="password" id="code-input" maxlength="10" inputmode="numeric" autocomplete="off" placeholder="····">
-        <div class="code-error-msg" id="code-error"></div>
-      </div>
-      <button id="btn-code-enter" type="button"><span>ENTER</span></button>
-    </div>
-  </div>
-</div>
+<div id="errorPanel"></div>
 
-<div id="title-screen" class="screen">
-  <div class="title-bg-roses"></div>
-  <div class="title-deco"></div>
-  <div class="title-wrap">
-    <div class="title-sub" id="title-sub">— a visual novel —</div>
-    <div class="title-main">Love You<br>To <span>Death</span></div>
-    <div class="title-line"><span class="title-line-icon">&#10022;</span></div>
-    <div class="title-btns">
-      <button class="btn-start" id="btn-start" type="button">BEGIN</button>
-      <button class="btn-chapters" id="btn-chapters" type="button">&#9830; CHAPTERS</button>
-      <button class="btn-settings-title" id="btn-settings-title" type="button">&#9881; SETTINGS</button>
-    </div>
-  </div>
-</div>
+<script type="module">
 
-<div id="settings-screen" class="screen">
-  <div id="settings-petals-container"></div>
-  <div class="settings-container">
-    <button class="settings-close-btn" id="btn-settings-close" type="button" style="margin-bottom:.8rem">&#9664; BACK</button>
-    <div class="settings-title" id="settings-screen-title">— SETTINGS —</div>
-    <div class="settings-section-label" id="settings-audio-label">AUDIO</div>
-    <div class="settings-row">
-      <span class="vol-label" id="settings-vol-label">MUSIC</span>
-      <input type="range" id="settings-vol-slider" min="0" max="1" step="0.01" value="0.7">
-      <button id="settings-mute-btn" type="button">&#128266;</button>
-    </div>
-    <div class="settings-section-label" id="settings-data-label">DATA</div>
-    <div class="settings-data-row">
-      <button class="settings-data-btn" id="btn-export-data" type="button" onclick="exportData()">&#11123; EXPORT</button>
-      <button class="settings-data-btn" id="btn-import-data" type="button" onclick="triggerImport()">&#11121; IMPORT</button>
-      <input type="file" id="import-file-input" accept=".json" style="display:none">
-    </div>
-    <div class="settings-data-row">
-      <button class="settings-data-btn danger-reset" id="btn-reset-data" type="button" onclick="showResetPopup()">&#9762; RESET</button>
-    </div>
-    <div class="settings-section-label" id="settings-credits-label">CREDITS &amp; INFO</div>
-    <div class="settings-data-row">
-      <button class="settings-data-btn" id="btn-open-credits" type="button" onclick="openCredits()">&#9825; CREDITS &amp; INFO</button>
-    </div>
-    <div class="settings-section-label" id="settings-social-label">SOCIAL</div>
-    <div class="settings-share-row">
-      <div class="settings-share-item">
-        <a class="settings-share-icon" href="https://pioupioucoder.github.io/LoveYouToDeath/" target="_blank" title="Share" id="share-link-btn">&#128279;</a>
-        <span class="settings-share-label" id="share-label-share">SHARE</span>
-      </div>
-      <div class="settings-share-item">
-        <a class="settings-share-icon" href="mailto:pioupioucoder@protonmail.com" title="Email">&#9993;</a>
-        <span class="settings-share-label">EMAIL</span>
-      </div>
-      <div class="settings-share-item">
-        <a class="settings-share-icon" href="https://youtube.com/@call-me-zephyr-fan?si=LD0Sk_jCrZK0BlbY&sub_confirmation=1" target="_blank" title="YouTube">&#9654;</a>
-        <span class="settings-share-label">YOUTUBE</span>
-      </div>
-    </div>
-  </div>
-</div>
+import * as THREE from 'three';
 
-<div id="game-popup-overlay">
-  <div class="game-popup-panel">
-    <div class="game-popup-symbol">&#10022; &#10022; &#10022;</div>
-    <div class="game-popup-title" id="game-popup-title"></div>
-    <div class="game-popup-divider"><span>&#10022;</span></div>
-    <div class="game-popup-text" id="game-popup-text"></div>
-    <div class="game-popup-btns" id="game-popup-btns"></div>
-  </div>
-</div>
+// ==========================================
+// 1. SCENE
+// ==========================================
 
-<div id="chapters-screen" class="screen">
-  <div class="ch-bg-gradient"></div>
-  <div id="ch-particles"></div>
-  <div class="ch-header">
-    <button class="ch-back-btn" id="btn-chapters-back" type="button">&#9666; BACK</button>
-    <div class="ch-header-deco"></div>
-    <div class="ch-eyebrow" id="ch-eyebrow">— chapters —</div>
-    <div class="ch-header-divider"><span>&#10022;</span></div>
-  </div>
-  <div id="ch-progress-section">
-    <div class="ch-progress-header">
-      <span class="ch-progress-label" id="ch-progress-label">YOUR JOURNEY</span>
-      <span class="ch-progress-count" id="ch-progress-count"></span>
-    </div>
-    <div class="ch-progress-rail" id="ch-progress-rail">
-      <div class="ch-progress-fill" id="ch-progress-fill" style="width:0%"></div>
-      <div class="ch-progress-ticks" id="ch-progress-ticks"></div>
-    </div>
-    <div class="ch-progress-endings" id="ch-progress-endings"></div>
-  </div>
-  <div id="chapters-main">
-    <div id="ch-status"><div id="ch-status-text">Loading…</div></div>
-    <div id="ch-chapters-section" style="display:none">
-      <div class="ch-section-title" id="ch-chapters-label">CHAPTERS</div>
-      <div id="ch-chapters-grid"></div>
-    </div>
-    <div id="ch-endings-section">
-      <div class="ch-section-title" id="ch-endings-label">ENDINGS</div>
-      <div id="ch-endings-container"></div>
-    </div>
-  </div>
-</div>
+const canvas = document.getElementById('gc');
 
-<div id="policy-screen" class="screen">
-  <div class="policy-container">
-    <div class="policy-header" id="policy-header">My dear Etoile, please read</div>
-    <div class="policy-scroll" id="policy-scroll"></div>
-    <div class="policy-progress"><div class="policy-progress-bar" id="policy-bar"></div></div>
-    <div class="policy-footer">
-      <span class="policy-hint" id="policy-hint">Scroll to the bottom to accept</span>
-      <button class="btn-accept" id="btn-accept" type="button">Just Chippy (OK)</button>
-    </div>
-  </div>
-</div>
-<div id="note-screen">
-  <div class="note-paper">
-    <div class="note-content" id="note-content">
-      <!-- ═══ REMPLIS TON TEXTE ICI ═══ -->
-    </div>
-    <div class="note-hint">tap to continue</div>
-  </div>
-</div>
-<div id="chapter-title-screen">
-  <div class="ch-title-eyebrow">— a chapter begins —</div>
-  <div class="ch-title-label" id="ch-title-label"></div>
-  <div class="ch-title-divider"><span>&#10022;</span></div>
-  <div class="ch-title-subtitle" id="ch-title-subtitle"></div>
-  <div class="ch-title-hint">tap to continue</div>
-</div>
+const renderer = new THREE.WebGLRenderer({
+  canvas,
+  antialias: true,
+  powerPreference: 'low-power'
+});
 
-<div id="game-screen" class="screen">
-  <div id="game-bg"></div>
-  <img id="overlay-img" src="" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:1;opacity:0;pointer-events:none;">
-     <button id="overlay-back-btn" type="button" class="overlay-nav-btn">&#9666; BACK</button>
-  <button id="overlay-next-btn" type="button" class="overlay-nav-btn">NEXT &#9656;</button>
-  <div id="eyes-overlay">
-    <div class="eyes-layer"></div>
-  </div>
-  <div id="blood-overlay"></div>
-<div id="char-wrap"><img id="char-img" src="" alt=""></div>
- <div id="eyelid-overlay">
-    <div class="eyelid-top"></div>
-    <div class="eyelid-bottom"></div>
-  </div>
+renderer.setPixelRatio(
+  Math.min(window.devicePixelRatio || 1, 1.5)
+);
 
-  <div id="dialogue-wrap">
-    <div id="dialogue-box">
-      <div id="speaker-bar"><span class="speaker-deco">&#9670;</span><span id="speaker-name"></span></div>
-      <div id="dialogue-text"></div>
-      <div id="dialogue-nav">
-        <button id="btn-back-dialogue" type="button">&#9666; BACK</button>
-        <span id="dialogue-continue">&#9662;</span>
-      </div>
-    </div>
-  </div>
-  <div id="choices-wrap"></div>
-</div>
-<div id="chars-intro-overlay">
-  <div class="chars-count" id="chars-count">1 / 2</div>
-  <div class="chars-pair" id="chars-pair"></div>
-  <div id="chars-nav">
-    <button class="chars-nav-btn" id="chars-back" type="button">&#9666; BACK</button>
-    <button class="chars-nav-btn" id="chars-next" type="button">NEXT &#9656;</button>
-  </div>
-</div>
- <div id="hud">
-  <div class="hud-left">
-    <div id="affinity-wrap">
-      <span class="affinity-icon" id="aff-icon">&#9829;</span>
-      <div id="affinity-bar-outer"><div id="affinity-bar"></div></div>
-      <span id="affinity-val">0</span>
-    </div>
-  </div>
-  <div class="hud-right">
-    <button class="hud-btn" id="btn-history" type="button">&#128220;</button>
-    <button class="hud-btn" id="btn-help" type="button">?</button>
-    <button class="hud-btn" id="btn-pause" type="button">&#9208;</button>
-  </div>
-</div>
-<div id="ending-screen" class="screen">
-  <div class="ending-type" id="ending-type"></div>
-  <div class="ending-title" id="ending-title"></div>
-  <div class="ending-text" id="ending-text"></div>
-  <button class="btn-restart" id="btn-restart-end" type="button">RESTART</button>
-</div>
+renderer.outputEncoding = THREE.sRGBEncoding;
 
-<div id="history-overlay">
-  <div class="history-header">
-    <span id="history-title-label">DIALOGUE HISTORY</span>
-    <button class="hud-btn" id="btn-close-history" type="button">&#10005;</button>
-  </div>
-  <div id="history-list"></div>
-</div>
+const scene = new THREE.Scene();
+scene.fog = null;
 
-<div id="pause-modal">
-  <div class="pause-panel">
-    <div class="pause-title" id="pause-title-label">— PAUSE —</div>
-    <button class="pause-btn" id="btn-resume" type="button">RESUME</button>
-    <button class="pause-btn" id="btn-save-quit" type="button">SAVE &amp; QUIT</button>
-  </div>
-</div>
+const camera = new THREE.PerspectiveCamera(
+  65,
+  1,
+  0.1,
+  5000
+);
 
-<input type="range" id="vol-slider" style="display:none" min="0" max="1" step="0.01" value="0.7">
-<button id="btn-mute" style="display:none"></button>
-<button class="pause-btn" id="btn-restart-game" style="display:none">RESTART FROM BEGINNING</button>
+camera.position.set(0, 1.7, 13);
+camera.rotation.order = 'YXZ';
 
-<div id="help-overlay">
-  <div class="help-panel">
-    <h2 id="help-title">HOW TO PLAY</h2>
-    <div id="help-rows"></div>
-    <button class="pause-btn" id="btn-close-help" type="button" style="margin-top:1rem">CLOSE</button>
-  </div>
-</div>
+// ==========================================
+// 2. SHARED SKY
+// ==========================================
 
-<div id="minigame-overlay">
-<iframe id="minigame-frame" src="" allowfullscreen allow="autoplay"></iframe>
-</div>
-
-<div id="poem-overlay">
-  <div class="poem-parchment">
-    <div class="poem-parchment-inner">
-      <div class="poem-lines" id="poem-lines"></div>
-      <div class="poem-author" id="poem-author"></div>
-    </div>
-  </div>
-  <div class="poem-hint" id="poem-hint">tap to continue</div>
-</div>
-<div id="mission-overlay">
-  <div class="mission-symbol">&#10022;</div>
-  <div class="mission-label">&#9733; NEW MISSION &#9733;</div>
-  <div class="mission-title" id="mission-title">PROTECT PLUM</div>
-  <div class="mission-divider"><span>&#10022;</span></div>
-  <div class="mission-warning" id="mission-warning">FAILURE IS NOT AN OPTION</div>
-  <div class="mission-text" id="mission-text"></div>
-  <button class="mission-accept" id="mission-accept-btn" type="button"><span>ACCEPT</span></button>
-  <div class="mission-hint" id="mission-hint">tap to begin</div>
-</div>
-
-<audio id="bgm" loop></audio>
-
-<script>
-'use strict';
-
-const GAME_CONFIG = {
-  secretCode: '1203',
-  chapterFiles: ['prologue.json'],
-  introMusic: 'music/intro.mp3',
-  preloadImages: [],
-  firstChapterLabel: 'Prologue',
-  firstChapterSubtitle: ''
+const skyUniforms = {
+  uTime: { value: 0 }
 };
 
-const FORCE_LOCKED_CHAPTERS = [];
+const skyMaterial = new THREE.ShaderMaterial({
 
-const SESSION_CODE_KEY = 'lmtd_code_ok';
-function isCodeValidated(){try{return sessionStorage.getItem(SESSION_CODE_KEY)==='1';}catch(e){return false;}}
-function markCodeValidated(){try{sessionStorage.setItem(SESSION_CODE_KEY,'1');}catch(e){}}
+  uniforms: skyUniforms,
 
-const I18N = {
-  en: {
-    loading:'Loading', titleSub:'— a visual novel —', btnBegin:'BEGIN', btnContinue:'CONTINUE',
-    btnChapters:'&#9830; CHAPTERS', btnSettings:'&#9881; SETTINGS',
-    policyHeader:'My dear Etoile, please read', policyHint:'Scroll to the bottom to accept',
-    btnAccept:'Just Chippy (OK)', btnBack:'\u25C2 BACK', btnResume:'RESUME', btnSaveQuit:'SAVE & QUIT',
-    btnRestart:'RESTART FROM BEGINNING', btnRestartEnd:'RESTART', musicLabel:'MUSIC',
-    historyTitle:'DIALOGUE HISTORY', helpTitle:'HOW TO PLAY', helpClose:'CLOSE',
-    codePrompt:'Enter the secret code to begin',
-    codeError:'Incorrect code. Try again.',
-    settingsTitle:'— SETTINGS —', settingsAudio:'AUDIO', settingsBack:'\u25C4 BACK',
-    settingsData:'DATA', exportBtn:'EXPORT', importBtn:'IMPORT', resetBtn:'RESET',
-    creditsBtn:'CREDITS & INFO', shareLabel:'SHARE',
-    settingsCredits:'CREDITS & INFO', settingsSocial:'SOCIAL',
-    resetPopupTitle:'RESET GAME',
-    resetPopupText:'This will erase all your progress, chapters unlocked and choices made. This action cannot be undone.',
-    resetConfirm:'RESET', resetCancel:'CANCEL',
-    exportSuccess:'Data exported successfully.',
-    importSuccess:'Data imported successfully. Reloading…',
-    importError:'Invalid file. Please select a valid JSON save.',
-    creditsTitle:'— CREDITS & INFO —',
-    helpRows:[
-      ['TAP / CLICK','Advance dialogue. Skips typewriter effect if in progress.'],
-      ['CHOICES','Select an option. Your choice may affect affinity.'],
-      ['\u2665 AFFINITY','Your bond with the character. Rises or falls with choices.'],
-      ['\u25C2 BACK','Return to the previous scene. Reverses the affinity delta.'],
-      ['\u{1F4DC} HISTORY','Review past dialogue at any time.'],
-      ['\u23F8 PAUSE','Adjust volume, save, or restart.'],
-      ['AUTO-SAVE','Progress is saved automatically at each scene.'],
-      ['MINI-GAMES','Special interactive moments may appear between scenes.'],
-    ],
-    confirmRestart:'Restart from the beginning? Your progress will be lost.',
-    confirmRestartEnd:'Restart the game?',
-    youLabel:'You', systemLabel:'— System —',
-    systemFallback:'No JSON file found. Place your scene files in the json/en/ folder to begin.',
-    policyContent:`
-      <h3>CREDITS</h3>
-      <p>It's just you, Etoile, who's coming here — so no need for a big credits section. But if you ask me to, I'll make one.</p>
-      <h3>HOW TO PLAY</h3>
-      <p>It's a simple visual novel, with a story whose chapters I'll fill in little by little. You're the protagonist (well, it's fiction), and Es is the trigger character — a tiny version of me, in a way.</p>
-      <p>I know the beginning — especially the prologue — is pretty dark, and that it seems cliché, but it's often drawn from what we feel. Of course, even if the prologue is grim, don't worry: there will be good moments. It's just the start.</p>
-      <p>I hope you'll enjoy it, and that it doesn't bug out — sometimes the buttons don't work, so be patient if that happens. If something goes wrong, tell me.</p>
-      <h3>WARNING</h3>
-      <p>The site saves your progress through your browser's cache. To avoid losing your progress by accident, don't forget to make a local backup in the settings.</p>
-      <div class="credits">
-        <p style="margin-top:1rem;color:var(--crimson)">\u2665 And don't forget: I love you very much, Etoile. \u2665</p>
-      </div>`
-  }
-};
+  side: THREE.BackSide,
 
-const LS_KEY='lmtd_save_v3';
-const LS_VOL_KEY='lmtd_volume';
-const LS_MUTE_KEY='lmtd_muted';
+  depthWrite: false,
 
-const state = {
-  lang:'en', firstTime:true, sceneIndex:0, scenes:[], navStack:[],
-  affinity:0, history:[], muted:false, volume:0.7, currentMusic:null,
-  isTyping:false, typing:null, awaitingChoice:false,
-  pendingChoices:null,
-  endingsData:{good:null,bad:null},
-  _settingsFrom:'title-screen',
-  bloodFadeScenesLeft: 0,
-  poemActive: false,
-  titleCardActive: false,
-  finalRedTransitioning: false,
-  nextChapterPromptActive: false,
-   eyesTransitioning: false,
-    missionActive: false,
-  persistChar: false
-};
-let chapterIndexCache = null;
-let bloodDripsInitialized = false;
-let _lastCharSrc = null;
-let lastBg = null;
+  vertexShader: `
+    varying vec3 vDirection;
 
-// ═══ FLAGS (choix mémorisés entre chapitres) ═══
-window.gameFlags = (() => {
-  try{ return JSON.parse(localStorage.getItem("lmtd_gameFlags") || "{}"); }
-  catch(e){ return {}; }
-})();
-function saveFlags(){
-  try{ localStorage.setItem("lmtd_gameFlags", JSON.stringify(window.gameFlags)); }catch(e){}
-}
+    void main() {
+      vDirection = position;
 
-function t(k){return I18N.en[k];}
-function closeEyes(callback){
-  const ov = document.getElementById('eyelid-overlay');
-  if(!ov){ if(callback) callback(); return; }
-  state.eyesTransitioning = true;
-  ov.classList.add('active');
-  requestAnimationFrame(()=>ov.classList.add('closed'));
-  setTimeout(()=>{
-    state.eyesTransitioning = false;   // ← libère advance()
-    if(callback) callback();
-  }, 2000);                              // ← ralenti à 2s
-}
+      gl_Position = projectionMatrix *
+                    modelViewMatrix *
+                    vec4(position, 1.0);
+    }
+  `,
 
-function openEyes(callback){
-  const ov = document.getElementById('eyelid-overlay');
-  if(!ov){ state.eyesTransitioning = false; if(callback) callback(); return; }
-  ov.classList.remove('closed');
-  setTimeout(()=>{
-    ov.classList.remove('active');
-    state.eyesTransitioning = false;
-    if(callback) callback();
-  }, 1200);
-}
-window.LMTD_OPEN_HISTORY = function(){
-  try{ renderHistory(); document.getElementById('history-overlay').style.display='flex'; }catch(e){}
-};
-window.LMTD_OPEN_HELP = function(){
-  try{ document.getElementById('help-overlay').style.display='flex'; }catch(e){}
-};
-window.LMTD_OPEN_PAUSE = function(){
-  try{ saveGame(); document.getElementById('pause-modal').style.display='flex'; }catch(e){}
-};
-window.LMTD_GET_AFFINITY = function(){
-  try{ return state.affinity; }catch(e){ return 0; }
-};
-function syncDialogueHeight(){
-  const dlg=document.getElementById('dialogue-wrap');
-  if(!dlg)return;
-  const h=dlg.getBoundingClientRect().height;
-  document.documentElement.style.setProperty('--dialogue-h',h+'px');
-}
+  fragmentShader: `
 
-/* ══ EFFET SANG (splat) ══ */
-function rand(min,max){return min+Math.random()*(max-min);}
-function makeIrregularRadius(){
-  return `${rand(30,70)}% ${rand(30,70)}% ${rand(30,70)}% ${rand(30,70)}% / ${rand(30,70)}% ${rand(30,70)}% ${rand(30,70)}% ${rand(30,70)}%`;
-}
-function triggerBloodEffect(intensity){
-  const overlay=document.getElementById('blood-overlay');
-  const glitch=document.getElementById('screen-glitch');
-  const screen=document.getElementById('game-screen');
-  if(!overlay)return;
-  if(screen){
-    screen.classList.remove('blood-shake');
-    void screen.offsetWidth;
-    screen.classList.add('blood-shake');
-    setTimeout(()=>screen.classList.remove('blood-shake'),700);
-  }
-  if(glitch){
-    glitch.classList.remove('active');
-    void glitch.offsetWidth;
-    glitch.classList.add('active');
-    setTimeout(()=>glitch.classList.remove('active'),900);
-  }
-  overlay.innerHTML='';
-  overlay.classList.add('active');
-  overlay.style.opacity='1';
-  const cfg = intensity==='heavy'
-    ? {large:10, medium:16, tiny:26, drips:9,  drops:16}
-    : intensity==='light'
-    ? {large:5,  medium:9,  tiny:14, drips:4,  drops:7}
-    : {large:7,  medium:12, tiny:20, drips:6,  drops:11};
-  for(let i=0;i<cfg.large;i++){
-    const s=document.createElement('div');
-    s.className='blood-splat';
-    const w=rand(18,40), h=w*rand(.55,1.3);
-    s.style.width=w+'px';s.style.height=h+'px';
-    s.style.left=rand(0,95)+'%';s.style.top=rand(0,95)+'%';
-    s.style.borderRadius=makeIrregularRadius();
-    s.style.opacity=rand(.6,.95);
-    s.style.animationDelay=rand(0,.35)+'s';
-    overlay.appendChild(s);
-  }
-  for(let i=0;i<cfg.medium;i++){
-    const s=document.createElement('div');
-    s.className='blood-splat';
-    const w=rand(8,18), h=w*rand(.6,1.4);
-    s.style.width=w+'px';s.style.height=h+'px';
-    s.style.left=rand(0,98)+'%';s.style.top=rand(0,98)+'%';
-    s.style.borderRadius=makeIrregularRadius();
-    s.style.opacity=rand(.5,.85);
-    s.style.animationDelay=rand(0,.4)+'s';
-    overlay.appendChild(s);
-  }
-  for(let i=0;i<cfg.tiny;i++){
-    const s=document.createElement('div');
-    s.className='blood-splat';
-    const w=rand(2,6);
-    s.style.width=w+'px';s.style.height=w*rand(.7,1.3)+'px';
-    s.style.left=rand(0,100)+'%';s.style.top=rand(0,100)+'%';
-    s.style.borderRadius=rand(40,60)+'%';
-    s.style.opacity=rand(.4,.9);
-    s.style.animationDelay=rand(0,.5)+'s';
-    overlay.appendChild(s);
-  }
-  for(let i=0;i<cfg.drips;i++){
-    const d=document.createElement('div');
-    d.className='blood-drip';
-    d.style.left=rand(0,100)+'%';
-    d.style.width=rand(1.5,3.5)+'px';
-    d.style.setProperty('--drip-h',rand(15,55)+'vh');
-    d.style.animationDelay=rand(0,.5)+'s';
-    d.style.animationDuration=rand(1.4,2.6)+'s';
-    overlay.appendChild(d);
-  }
-  for(let i=0;i<cfg.drops;i++){
-    const dr=document.createElement('div');
-    dr.className='blood-drop';
-    const dw=rand(3,5);
-    dr.style.width=dw+'px';
-    dr.style.height=dw*rand(1.6,2.4)+'px';
-    dr.style.borderRadius=rand(45,55)+'% '+rand(45,55)+'% '+rand(45,55)+'% '+rand(45,55)+'% / '+rand(55,70)+'% '+rand(55,70)+'% '+rand(30,45)+'% '+rand(30,45)+'%';
-    dr.style.left=rand(0,100)+'%';
-    dr.style.top=rand(-15,-5)+'px';
-    dr.style.setProperty('--drop-y',rand(60,110)+'vh');
-    dr.style.animationDuration=rand(.9,1.8)+'s';
-    dr.style.animationDelay=rand(0,1)+'s';
-    overlay.appendChild(dr);
-  }
-  state.bloodFadeScenesLeft = 3;
-}
-function advanceBloodFade(){
-  if(state.bloodFadeScenesLeft<=0)return;
-  const overlay=document.getElementById('blood-overlay');
-  if(!overlay)return;
-  state.bloodFadeScenesLeft--;
-  const opacity=state.bloodFadeScenesLeft/3;
-  overlay.style.opacity=String(opacity);
-  if(state.bloodFadeScenesLeft===0){
-    setTimeout(()=>{
-      if(state.bloodFadeScenesLeft===0){
-        overlay.classList.remove('active');
-        overlay.innerHTML='';
-        overlay.style.opacity='0';
+    varying vec3 vDirection;
+
+    uniform float uTime;
+
+    float hash(vec2 p) {
+      return fract(
+        sin(dot(p, vec2(127.1,311.7))) *
+        43758.5453
+      );
+    }
+
+    float noise(vec2 p) {
+
+      vec2 i = floor(p);
+      vec2 f = fract(p);
+
+      f = f*f*(3.0-2.0*f);
+
+      float a = hash(i);
+      float b = hash(i+vec2(1.0,0.0));
+      float c = hash(i+vec2(0.0,1.0));
+      float d = hash(i+vec2(1.0,1.0));
+
+      return mix(
+        mix(a,b,f.x),
+        mix(c,d,f.x),
+        f.y
+      );
+    }
+
+    float fbm(vec2 p) {
+
+      float value = 0.0;
+      float amplitude = 0.5;
+
+      for(int i=0;i<5;i++) {
+
+        value += noise(p)*amplitude;
+
+        p *= 2.0;
+        amplitude *= 0.5;
       }
-    },1600);
+
+      return value;
+    }
+
+    void main() {
+
+      vec3 dir = normalize(vDirection);
+
+      float h = dir.y;
+
+      // Couleurs du ciel
+
+      vec3 topColor = vec3(0.055,0.075,0.115);
+      vec3 upperColor = vec3(0.075,0.095,0.145);
+      vec3 middleColor = vec3(0.105,0.115,0.155);
+      vec3 lowerColor = vec3(0.145,0.125,0.135);
+      vec3 horizonColor = vec3(0.27,0.145,0.105);
+
+      vec3 sky = mix(
+        lowerColor,
+        middleColor,
+        smoothstep(-0.05,0.25,h)
+      );
+
+      sky = mix(
+        sky,
+        upperColor,
+        smoothstep(0.25,0.65,h)
+      );
+
+      sky = mix(
+        sky,
+        topColor,
+        smoothstep(0.65,1.0,h)
+      );
+
+      // Lueur orange à l'horizon
+
+      float horizonGlow = exp(
+        -pow((h + 0.105)*8.0,2.0)
+      );
+
+      float sunsetSide = smoothstep(
+        -0.5,0.8,dir.x
+      );
+
+      sky += vec3(0.16,0.065,0.035) *
+             horizonGlow *
+             sunsetSide;
+
+      // Nuages lointains
+
+      vec2 cloudUV = vec2(
+        dir.x * 3.2,
+        dir.y * 5.0
+      );
+
+      cloudUV += vec2(
+        uTime * 0.0018,
+        uTime * 0.00025
+      );
+
+      float cloudNoise = fbm(cloudUV);
+
+      float cloudShape = smoothstep(
+        0.53,0.78,cloudNoise
+      );
+
+      float cloudZone =
+        smoothstep(-0.02,0.18,h) *
+        (1.0-smoothstep(0.65,0.95,h));
+
+      float cloudOpacity =
+        cloudShape * cloudZone * 0.13;
+
+      vec3 cloudColor = vec3(
+        0.30,0.29,0.32
+      );
+
+      sky = mix(
+        sky,
+        cloudColor,
+        cloudOpacity
+      );
+
+      // Étoiles
+
+      vec2 starUV = dir.xz * 900.0;
+
+      float stars = step(
+        0.9975,
+        hash(floor(starUV))
+      );
+
+      stars *= smoothstep(0.12,0.45,h);
+
+      float twinkle =
+        0.55 + 0.45*sin(
+          uTime*0.8 + hash(floor(starUV))*20.0
+        );
+
+      sky += vec3(0.7,0.68,0.62) *
+             stars * twinkle * 0.45;
+
+      gl_FragColor = vec4(sky,1.0);
+    }
+  `
+});
+
+const skySphere = new THREE.Mesh(
+  new THREE.SphereGeometry(1800,64,48),
+  skyMaterial
+);
+
+skySphere.frustumCulled = false;
+skySphere.renderOrder = -100;
+
+scene.add(skySphere);
+
+// ==========================================
+// 3. ÉCLAIRAGE GLOBAL
+// ==========================================
+
+scene.add(
+  new THREE.AmbientLight(0x77758a,0.30)
+);
+
+const hemisphere = new THREE.HemisphereLight(
+  0x8d91a8,
+  0x24212a,
+  0.32
+);
+
+scene.add(hemisphere);
+
+const moonLight = new THREE.DirectionalLight(
+  0xa1a9c2,
+  0.32
+);
+
+moonLight.position.set(-40,70,-100);
+scene.add(moonLight);
+
+// ==========================================
+// 4. CHARGEMENT DU DÉCOR
+// ==========================================
+
+// Par défaut : immeuble.js
+// Possibilité de choisir un autre décor
+// avec ?world=maison.js
+
+const params = new URLSearchParams(
+  window.location.search
+);
+
+const worldFile = params.get('world') || 'immeuble.js';
+
+let world;
+
+try {
+
+  const worldModule = await import(
+    new URL(worldFile, window.location.href).href
+  );
+
+  if (typeof worldModule.buildWorld !== 'function') {
+    throw new Error(
+      'Le fichier du décor doit exporter buildWorld(scene).'
+    );
   }
+
+  world = worldModule.buildWorld(scene);
+
+} catch (error) {
+
+  console.error('Erreur de chargement du décor :', error);
+
+  const panel = document.getElementById('errorPanel');
+
+  panel.style.display = 'flex';
+
+  panel.textContent =
+    'Impossible de charger le décor : ' +
+    worldFile +
+    '\n\n' +
+    error.message;
 }
 
-/* ══ BLOOD REALISM ══ */
-function createRealisticDrip(index, total){
-  const drip = document.createElement('div');
-  drip.className = 'real-drip';
-  const basePos = (index + 0.5) / total * 100;
-  const pos = basePos + (Math.random() - 0.5) * 7;
-  drip.style.left = Math.max(2, Math.min(98, pos)) + '%';
-  const w = 2.5 + Math.random() * 7.5;
-  drip.style.setProperty('--w', w + 'px');
-  const maxH = 18 + Math.random() * 52;
-  drip.style.setProperty('--max-h', maxH);
-  const skew = (Math.random() - 0.5) * 6;
-  drip.style.transform = `skewX(${skew}deg)`;
-  drip.style.transitionDelay = (Math.random() * 0.6) + 's';
-  const body = document.createElement('div');
-  body.className = 'drip-body';
-  drip.appendChild(body);
-  const splatter = document.createElement('div');
-  splatter.className = 'drip-splatter';
-  drip.appendChild(splatter);
-  const head = document.createElement('div');
-  head.className = 'drip-head';
-  drip.appendChild(head);
-  if (Math.random() > 0.55) {
-    const side = document.createElement('div');
-    side.className = 'drip-side';
-    side.style.height = (25 + Math.random() * 40) + '%';
-    drip.appendChild(side);
+// ==========================================
+// 5. JOYSTICKS
+// ==========================================
+
+let jLx = 0;
+let jLy = 0;
+let jRx = 0;
+let jRy = 0;
+
+function setupJoy(id, callback) {
+
+  const cv = document.getElementById(id);
+
+  let active = false;
+  let bx = 0;
+  let by = 0;
+
+  function position(e) {
+
+    const r = cv.getBoundingClientRect();
+
+    return {
+      x: (e.clientX-r.left)*cv.width/r.width,
+      y: (e.clientY-r.top)*cv.height/r.height
+    };
   }
-  return drip;
-}
-function initBloodDrips(){
-  if (bloodDripsInitialized) return;
-  bloodDripsInitialized = true;
-  const container = document.querySelector('#blood-realism-overlay .drips-layer');
-  if (!container) return;
-  const count = 14;
-  for (let i = 0; i < count; i++) {
-    container.appendChild(createRealisticDrip(i, count));
+
+  function start(e) {
+
+    e.preventDefault();
+
+    const p = position(e);
+
+    bx = p.x;
+    by = p.y;
+
+    active = true;
+
+    cv.setPointerCapture(e.pointerId);
   }
-}
-function setBloodRealism(level){
-  const ov = document.getElementById('blood-realism-overlay');
-  if (!ov) return;
-  const lvl = Math.max(0, Math.min(100, Number(level) || 0));
-  if (lvl <= 0) { clearBloodRealism(); return; }
-  initBloodDrips();
-  ov.classList.add('active');
-  ov.style.setProperty('--level', lvl);
-  const drips = ov.querySelectorAll('.real-drip');
-  drips.forEach(d => {
-    const maxH = parseFloat(d.style.getPropertyValue('--max-h')) || 30;
-    const h = (maxH * lvl) / 100;
-    d.style.height = h + 'vh';
-  });
-}
-function setFinalRed(on){
-  const fr = document.querySelector('#blood-realism-overlay .final-red');
-  if (!fr) return;
-  if (on) fr.classList.add('active');
-  else fr.classList.remove('active');
-}
-function clearBloodRealism(){
-  const ov = document.getElementById('blood-realism-overlay');
-  if (!ov) return;
-  ov.classList.remove('active');
-  ov.style.setProperty('--level', 0);
-  ov.querySelectorAll('.real-drip').forEach(d => { d.style.height = '0'; });
-  setFinalRed(false);
+
+  function move(e) {
+
+    if (!active) return;
+
+    e.preventDefault();
+
+    const p = position(e);
+
+    let x = (p.x-bx)/45;
+    let y = (p.y-by)/22;
+
+    const length = Math.hypot(x,y);
+
+    if (length > 1) {
+      x /= length;
+      y /= length;
+    }
+
+    callback(x,y);
+  }
+
+  function end() {
+    active = false;
+    callback(0,0);
+  }
+
+  cv.addEventListener('pointerdown',start);
+  cv.addEventListener('pointermove',move);
+  cv.addEventListener('pointerup',end);
+  cv.addEventListener('pointercancel',end);
+  cv.addEventListener('lostpointercapture',end);
 }
 
-/* ══ EYES EFFECT — yeux qui observent dans le noir ══ */
-let _eyesActive = false;
+setupJoy('jL',(x,y)=>{
+  jLx = x;
+  jLy = y;
+});
 
-function triggerEyesEffect(){
-  const ov = document.getElementById('eyes-overlay');
-  const layer = ov ? ov.querySelector('.eyes-layer') : null;
-  if(!ov || !layer) return;
-  if(_eyesActive) return;
-  _eyesActive = true;
+setupJoy('jR',(x,y)=>{
+  jRx = x;
+  jRy = y;
+});
 
-  layer.innerHTML = '';
-  ov.classList.add('active');
+// ==========================================
+// 6. JOYSTICK DESIGN
+// ==========================================
+
+function drawJoy(id,dx,dy) {
+
+  const cv = document.getElementById(id);
+  const ctx = cv.getContext('2d');
+
+  ctx.clearRect(0,0,120,60);
+
+  ctx.fillStyle = '#25232b';
+
+  ctx.beginPath();
+  ctx.ellipse(60,30,55,25,0,0,Math.PI*2);
+  ctx.fill();
+
+  ctx.strokeStyle = '#665b59';
+  ctx.lineWidth = 1.3;
+  ctx.stroke();
+
+  const x = 60+dx*38;
+  const y = 30+dy*16;
+
+  const gradient = ctx.createRadialGradient(
+    x-3,y-3,1,x,y,15
+  );
+
+  gradient.addColorStop(0,'#c6bdb2');
+  gradient.addColorStop(1,'#655d57');
+
+  ctx.fillStyle = gradient;
+
+  ctx.beginPath();
+  ctx.ellipse(x,y,14,10,0,0,Math.PI*2);
+  ctx.fill();
+}
+
+// ==========================================
+// 7. CAMERA
+// ==========================================
+
+let camYaw = 0;
+let camPitch = 0;
+
+let dragging = false;
+let lastX = 0;
+let lastY = 0;
+
+canvas.addEventListener('pointerdown',e=>{
+
+  if (e.pointerType === 'mouse') {
+
+    dragging = true;
+
+    lastX = e.clientX;
+    lastY = e.clientY;
+
+    canvas.setPointerCapture(e.pointerId);
+  }
+});
+
+canvas.addEventListener('pointermove',e=>{
+
+  if (!dragging) return;
+
+  camYaw -= (e.clientX-lastX)*0.004;
+  camPitch -= (e.clientY-lastY)*0.003;
+
+  camPitch = THREE.MathUtils.clamp(
+    camPitch,-1,1
+  );
+
+  lastX = e.clientX;
+  lastY = e.clientY;
+});
+
+canvas.addEventListener('pointerup',()=>{
+  dragging = false;
+});
+
+canvas.addEventListener('pointercancel',()=>{
+  dragging = false;
+});
+
+// ==========================================
+// 8. COORDINATES
+// ==========================================
+
+let showCoords = false;
+
+document.getElementById('coordButton')
+.addEventListener('click',()=>{
+
+  showCoords = !showCoords;
+
+  document.getElementById('coordPanel').style.display =
+    showCoords ? 'block' : 'none';
+});
+
+document.getElementById('copyBtn')
+.addEventListener('click',async ()=>{
+
+  const p = camera.position;
+
+  const text =
+    `X:${p.x.toFixed(2)} Y:${p.y.toFixed(2)} Z:${p.z.toFixed(2)}`;
+
+  try {
+
+    await navigator.clipboard.writeText(text);
+
+    document.getElementById('copyBtn').textContent = 'COPIED';
+
+    setTimeout(()=>{
+      document.getElementById('copyBtn').textContent = 'COPY';
+    },1200);
+
+  } catch(error) {
+
+    console.error('Clipboard unavailable:',error);
+  }
+});
+
+// ==========================================
+// 9. RESIZE
+// ==========================================
+
+function resize() {
 
   const w = window.innerWidth;
-  const h = window.innerHeight;
+  const h = Math.max(1,window.innerHeight-70);
 
-  // Zone où les yeux apparaissent (haut de l'écran)
-  const zoneTop = h * 0.02;
-  const zoneBottom = h * 0.60;
+  renderer.setSize(w,h);
 
-  // Taille adaptée à l'écran (mobile = plus petit)
-  const baseSize = Math.min(w, h);
-  const eyeSizeMin = baseSize * 0.055;
-  const eyeSizeMax = baseSize * 0.095;
-
-  // Grille de placement SERRÉE (marges justes ce qu'il faut pour éviter chevauchement)
-  const maxEyeW = eyeSizeMax;
-  const maxEyeH = eyeSizeMax * 0.6;
-  const cellW = maxEyeW * 1.55;   // ↓ avant 2.0 → plus dense
-  const cellH = maxEyeH * 1.9;    // ↓ avant 2.4 → plus dense
-
-  const cols = Math.max(4, Math.floor(w / cellW));
-  const rows = Math.max(2, Math.floor((zoneBottom - zoneTop) / cellH));
-  const totalCells = cols * rows;
-
-  // Remplissage : 80% à 95% des cellules
-  const fillRatio = 0.80 + Math.random() * 0.15;
-  const eyesToPlace = Math.min(totalCells, Math.floor(totalCells * fillRatio));
-
-  // Génère toutes les cellules possibles
-  const cells = [];
-  for(let r = 0; r < rows; r++){
-    for(let c = 0; c < cols; c++){
-      cells.push({ r, c });
-    }
-  }
-
-  // Mélange
-  for(let i = cells.length - 1; i > 0; i--){
-    const j = Math.floor(Math.random() * (i + 1));
-    [cells[i], cells[j]] = [cells[j], cells[i]];
-  }
-
-  const selected = cells.slice(0, eyesToPlace);
-
-  let appearDelay = 0;
-  const cellW_ = w / cols;
-  const cellH_ = (zoneBottom - zoneTop) / rows;
-
-  selected.forEach(cell => {
-    // Léger jitter DANS la cellule (limité pour éviter de sortir)
-    const jitterX = (Math.random() - 0.5) * cellW_ * 0.25;
-    const jitterY = (Math.random() - 0.5) * cellH_ * 0.25;
-
-    const cx = cell.c * cellW_ + cellW_ / 2 + jitterX;
-    const cy = zoneTop + cell.r * cellH_ + cellH_ / 2 + jitterY;
-
-    // Taille
-    const size = eyeSizeMin + Math.random() * (eyeSizeMax - eyeSizeMin);
-    const eyeW = size;
-    const eyeH = size * 0.5;
-
-    // Rotation : les yeux peuvent être inclinés
-    const rotation = (Math.random() - 0.5) * 36; // -18° à +18°
-
-    appearDelay += 0.08 + Math.random() * 0.18;  // ↓ avant 0.12 → apparition plus rapide
-
-    // Timings uniques par œil
-    const blinkSpeed = (2.6 + Math.random() * 2).toFixed(2);
-    const blinkDelay = (Math.random() * 3).toFixed(2);
-    const driftSpeed = (8 + Math.random() * 5).toFixed(2);
-    const driftDelay = (Math.random() * 3).toFixed(2);
-
-    const unit = document.createElement('div');
-    unit.className = 'eye-unit';
-    unit.style.left = cx + 'px';
-    unit.style.top = cy + 'px';
-    unit.style.setProperty('--eye-w', eyeW + 'px');
-    unit.style.setProperty('--eye-h', eyeH + 'px');
-    unit.style.setProperty('--rot', rotation + 'deg');
-    unit.style.transitionDelay = appearDelay + 's';
-
-    const drift = document.createElement('div');
-    drift.className = 'eye-drift';
-    drift.style.animationDelay = driftDelay + 's';
-    drift.style.animationDuration = driftSpeed + 's';
-
-    const eye = document.createElement('div');
-    eye.className = 'eye-shape';
-    eye.style.animationDelay = blinkDelay + 's';
-    eye.style.animationDuration = blinkSpeed + 's';
-
-    drift.appendChild(eye);
-    unit.appendChild(drift);
-    layer.appendChild(unit);
-
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      unit.classList.add('visible');
-    }));
-  });
-}
-function clearEyesEffect(){
-  if(!_eyesActive) return;
-  _eyesActive = false;
-  const ov = document.getElementById('eyes-overlay');
-  const layer = ov ? ov.querySelector('.eyes-layer') : null;
-  if(ov) ov.classList.remove('active');
-  if(layer){
-    setTimeout(()=>{ layer.innerHTML = ''; }, 1800);
-  }
+  camera.aspect = w/h;
+  camera.updateProjectionMatrix();
 }
 
-/* ══ CLEANUP : efface tout résidu du game screen ══ */
-function clearGameScreen(){
-  const gb = document.getElementById('game-bg');
-  if(gb) gb.style.backgroundImage = '';
-  const dt = document.getElementById('dialogue-text');
-  if(dt) dt.textContent = '';
-  const sn = document.getElementById('speaker-name');
-  if(sn) sn.textContent = '';
-  const cw = document.getElementById('char-wrap');
-  if(cw) cw.style.opacity = '0';
-  const oi = document.getElementById('overlay-img');
-  if(oi){ oi.src=''; oi.style.opacity='0'; }
-  const backBtn = document.getElementById('overlay-back-btn');
-  const nextBtn = document.getElementById('overlay-next-btn');
-  if(backBtn) backBtn.classList.remove('visible');
-  if(nextBtn) nextBtn.classList.remove('visible');
-  document.body.classList.remove('overlay-active');
-  const cwrap = document.getElementById('choices-wrap');
-  if(cwrap){ cwrap.style.display='none'; cwrap.innerHTML=''; }
-  lastBg = null;
-  _lastCharSrc = null;
-}
+window.addEventListener('resize',resize);
+resize();
 
-function isChapterUnlocked(id){
-  if(!id) return false;
-  if(FORCE_LOCKED_CHAPTERS.includes(id)) return false;
-  try{
-    const raw = localStorage.getItem(CH_LS_CHAPTERS);
-    if(raw){
-      const arr = JSON.parse(raw);
-      if(Array.isArray(arr) && arr.includes(id)) return true;
-    }
-  }catch(e){}
-  return false;
-}
+// ==========================================
+// 10. ANIMATION
+// ==========================================
 
-function returnToTitle(){
-  fadeTransition(()=>{
-    clearGameScreen();
-    clearBloodRealism();
-    clearEyesEffect();
-    state.finalRedTransitioning = false;
-    state.nextChapterPromptActive = false;
-    stopMusic();                      // ← AJOUTE CETTE LIGNE
-    resetTitleAnimations();
-    showScreen('title-screen');
-    const bs = document.getElementById('btn-start');
-    if(bs) bs.textContent = t('btnContinue');
-    startIntroMusic();
-  });
-}
-function showNote(text, onDone){
-  const screen = document.getElementById('note-screen');
-  const content = document.getElementById('note-content');
-  if(!screen || !content){ if(onDone) onDone(); return; }
+const clock = new THREE.Clock();
 
-  content.innerHTML = text || '';
-  screen.classList.remove('active');
-  void screen.offsetWidth;
-  requestAnimationFrame(() => screen.classList.add('active'));
+function animate() {
 
-  let clicked = false;
-  const close = (e) => {
-    if(e){ e.preventDefault(); e.stopPropagation(); }
-    if(clicked) return;
-    clicked = true;
-    screen.removeEventListener('click', close);
-    screen.removeEventListener('touchend', close);
-    screen.classList.remove('active');
-    setTimeout(() => {
-      if(onDone) onDone();
-    }, 800);
-  };
-  screen.addEventListener('click', close);
-  screen.addEventListener('touchend', close, {passive:false});
-}
-async function showNextChapterPrompt(){
-  const prompt = document.getElementById('next-chapter-prompt');
-  const txt = document.getElementById('next-chapter-prompt-text');
-  const hint = document.getElementById('next-chapter-prompt-hint');
-  if(!prompt) return;
+  requestAnimationFrame(animate);
 
-  state.nextChapterPromptActive = true;
+  const dt = Math.min(clock.getDelta(),0.05);
 
-  const index = await loadChapterIndex();
-  const currentFile = GAME_CONFIG.chapterFiles[0] || '';
-  let currentIdx = index.findIndex(ch => (ch.file||'') === currentFile);
-  if(currentIdx === -1){
-    const baseName = currentFile.replace('.json','');
-    currentIdx = index.findIndex(ch => (ch.id||'') === baseName);
-  }
-  if(currentIdx === -1) currentIdx = 0;
+  // Le ciel suit la caméra
 
-  const nextChapter = index[currentIdx + 1] || null;
-  const hasNext = !!nextChapter;
-  const nextUnlocked = hasNext && isChapterUnlocked(nextChapter.id);
+  skySphere.position.copy(camera.position);
 
-  if(hasNext && nextUnlocked){
-    txt.textContent = 'Click to see the next chapter';
-    hint.textContent = 'tap to continue';
-  } else if(hasNext){
-    txt.textContent = 'Chapter locked';
-    hint.textContent = 'tap to return home';
-  } else {
-    txt.textContent = 'Return';
-    hint.textContent = 'tap to return home';
-  }
+  // Animation du ciel
 
-  prompt.classList.add('active');
+  skyUniforms.uTime.value = clock.elapsedTime;
 
-  let clicked = false;
-  const handleClick = (e) => {
-    if(e){ e.preventDefault(); e.stopPropagation(); }
-    if(clicked) return;
-    clicked = true;
+  // Rotation caméra
 
-    state.nextChapterPromptActive = false;
-    prompt.removeEventListener('click', handleClick);
-    prompt.removeEventListener('touchend', handleClick);
-    prompt.classList.remove('active');
+  camera.rotation.y = camYaw;
+  camera.rotation.x = camPitch;
 
-    setTimeout(()=>{
-      state.finalRedTransitioning = false;
-      if(hasNext && nextUnlocked){
-        goToNextChapter();
-      } else {
-        returnToTitle();
-      }
-    }, 400);
-  };
+  // Déplacement avant/arrière
 
-  prompt.addEventListener('click', handleClick);
-  prompt.addEventListener('touchend', handleClick, {passive:false});
-}
-
-function showPoem(scene, onDone){
-  const ov=document.getElementById('poem-overlay');
-  const lines=document.getElementById('poem-lines');
-  const author=document.getElementById('poem-author');
-  if(!ov || !lines || !author) return;
-  state.poemActive = true;
-  const poemArr = Array.isArray(scene.poem) ? scene.poem.filter(l => typeof l === 'string') : [];
-  const authorName = (typeof scene.author === 'string') ? scene.author : '';
-  lines.innerHTML='';
-  author.textContent='';
-  ov.classList.remove('active');
-  void ov.offsetWidth;
-  const parchment=ov.querySelector('.poem-parchment');
-  if(parchment) parchment.style.transform='';
-  ov.style.display='flex';
-  requestAnimationFrame(()=>{
-    ov.classList.add('active');
-    poemArr.forEach((line,i)=>{
-      const div=document.createElement('div');
-      div.className='poem-line';
-      div.textContent=String(line||'');
-      div.style.animationDelay=(0.5+i*0.25)+'s';
-      lines.appendChild(div);
-    });
-    author.textContent=authorName;
-  });
-  let closed=false;
-  const close=(e)=>{
-    if(e){e.preventDefault();e.stopPropagation();}
-    if(closed)return;
-    closed=true;
-    ov.classList.remove('active');
-    ov.removeEventListener('click',close);
-    ov.removeEventListener('touchend',close);
-    setTimeout(()=>{
-      ov.style.display='none';
-      lines.innerHTML='';
-      author.textContent='';
-      state.poemActive=false;
-      if(onDone)onDone();
-    },600);
-  };
-  ov.onclick=null;
-  ov.removeEventListener('click',close);
-  ov.removeEventListener('touchend',close);
-  ov.addEventListener('click',close);
-  ov.addEventListener('touchend',close,{passive:false});
-}
-
-function showChapterTitle(label, subtitle, callback){
-  const screen = document.getElementById('chapter-title-screen');
-  const labelEl = document.getElementById('ch-title-label');
-  const subEl = document.getElementById('ch-title-subtitle');
-  if(!screen || !labelEl || !subEl){ if(callback) callback(); return; }
-  state.titleCardActive = true;
-  const safeLabel = String(label || '').trim();
-  labelEl.innerHTML = safeLabel.replace(/(\d+)/, '<span>$1</span>');
-  const safeSub = String(subtitle || '').trim();
-  if(safeSub){
-    subEl.textContent = safeSub;
-    subEl.classList.remove('empty');
-  } else {
-    subEl.textContent = '';
-    subEl.classList.add('empty');
-  }
-  screen.classList.remove('active');
-  void screen.offsetWidth;
-  requestAnimationFrame(()=>{ screen.classList.add('active'); });
-  let advanced = false;
-  const advance = (e)=>{
-    if(e){ e.preventDefault(); e.stopPropagation(); }
-    if(advanced) return;
-    advanced = true;
-    screen.removeEventListener('click', advance);
-    screen.removeEventListener('touchend', advance);
-    screen.classList.remove('active');
-    setTimeout(()=>{
-      state.titleCardActive = false;
-      if(callback) callback();
-    }, 900);
-  };
-  screen.addEventListener('click', advance);
-  screen.addEventListener('touchend', advance, {passive:false});
-  setTimeout(advance, 4500);
-}
-function showMission(scene, onDone){
-  const ov = document.getElementById('mission-overlay');
-  if(!ov){ if(onDone) onDone(); return; }
-
-  document.getElementById('mission-title').textContent = scene.missionTitle || 'MISSION';
-  document.getElementById('mission-warning').textContent = scene.missionWarning || 'FAILURE IS NOT AN OPTION';
-  document.getElementById('mission-text').textContent = scene.text || '';
-
-  // Dialogue d'Es en haut du popup si présent
-  if(scene.speaker){
-    const label = document.querySelector('.mission-label');
-    if(label) label.textContent = '★ ' + String(scene.speaker).toUpperCase() + ' ★';
-  }
-
-  ov.classList.remove('active');
-  void ov.offsetWidth;
-  ov.classList.add('active');
-
-  let done = false;
-  const close = (e)=>{
-    if(e){ e.preventDefault(); e.stopPropagation(); }
-    if(done) return;
-    done = true;
-    ov.removeEventListener('click', close);
-    ov.removeEventListener('touchend', close);
-    btn.removeEventListener('click', close);
-    ov.classList.remove('active');
-    setTimeout(()=>{ if(onDone) onDone(); }, 400);
-  };
-  const btn = document.getElementById('mission-accept-btn');
-  ov.addEventListener('click', close);
-  ov.addEventListener('touchend', close, {passive:false});
-  btn.addEventListener('click', close);
-}
-async function loadChapterIndex(){
-  if(chapterIndexCache) return chapterIndexCache;
-  try{
-    const r = await fetch('json/chapterIndex.json?v='+Date.now(), {cache:'no-store'});
-    if(!r.ok) throw new Error('HTTP '+r.status);
-    chapterIndexCache = await r.json();
-  }catch(e){
-    console.warn('Cannot load chapterIndex.json', e.message);
-    chapterIndexCache = [];
-  }
-  return chapterIndexCache;
-}
-
-function getChapterBadgeFromFile(file){
-  if(!file) return { badge:'', title:'' };
-  const base = String(file).replace(/\.json$/i,'').toLowerCase().trim();
-
-  if(base.includes('prologue')) return { badge:'PROLOGUE', title:'Prologue' };
-  if(base.includes('epilogue')) return { badge:'EPILOGUE', title:'Epilogue' };
-
-  const m = base.match(/chapter[\s_\-]*(\d+)/i);
-  if(m) return { badge:'CHAPTER '+m[1], title:'Chapter '+m[1] };
-
-  const pretty = base.replace(/[_\-]+/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
-  return { badge: pretty.toUpperCase(), title: pretty };
-}
-
-async function goToNextChapter(){
-  clearBloodRealism();
-  clearEyesEffect();
-  const currentFile = (GAME_CONFIG.chapterFiles && GAME_CONFIG.chapterFiles[0]) || '';
-  const index = await loadChapterIndex();
-
-  if(!index.length){ returnToTitle(); return; }
-
-  let currentIdx = index.findIndex(ch => (ch.file||'') === currentFile);
-  if(currentIdx === -1){
-    const baseName = currentFile.replace('.json','');
-    currentIdx = index.findIndex(ch => (ch.id||'') === baseName);
-  }
-  if(currentIdx === -1) currentIdx = 0;
-
-  const nextIdx = currentIdx + 1;
-  if(nextIdx >= index.length){ returnToTitle(); return; }
-
-  const nextChapter = index[nextIdx];
-
-  if(!isChapterUnlocked(nextChapter.id)){ returnToTitle(); return; }
-
-  const nextFile = nextChapter.file || ('chapter'+(nextIdx+1)+'.json');
-
-  try{
-    const raw = localStorage.getItem(LS_KEY) || '{}';
-    const d = JSON.parse(raw);
-    d.lang = 'en';
-    d.firstTime = false;
-    d.targetChapterFile = nextFile;
-    d.sceneIndex = 0;
-    localStorage.setItem(LS_KEY, JSON.stringify(d));
-  }catch(e){}
-
-  state.sceneIndex = 0;
-  state.navStack = [];
-  state.history = [];
-  state.affinity = 0;
-  GAME_CONFIG.chapterFiles = [nextFile];
-
-  await Promise.all([loadChapters(), loadEndings()]);
-  stopMusic();
-  startIntroMusic();
-
-  const derived = getChapterBadgeFromFile(nextFile);
-  const label = nextChapter.label || derived.title;
-  const subtitle = nextChapter.subtitle || nextChapter.chapterName || '';
-
-  fadeTransition(()=>{
-    clearGameScreen();
-    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-    showChapterTitle(label, subtitle, ()=>{
-      showScreen('game-screen');
-      renderAffinity();
-      clearGameScreen();
-      renderScene(state.scenes[0]);
-    });
-  });
-}
-
-function loadVolumeFromStorage(){
-  try{
-    const v=parseFloat(localStorage.getItem(LS_VOL_KEY));
-    if(!isNaN(v))state.volume=Math.max(0,Math.min(1,v));
-    state.muted=localStorage.getItem(LS_MUTE_KEY)==='1';
-  }catch(e){}
-}
-function saveVolumeToStorage(){
-  try{
-    localStorage.setItem(LS_VOL_KEY,String(state.volume));
-    localStorage.setItem(LS_MUTE_KEY,state.muted?'1':'0');
-  }catch(e){}
-}
-function applyVolumeEverywhere(){
-  const effectiveVol=state.muted?0:state.volume;
-  document.querySelectorAll('audio').forEach(a=>{a.volume=effectiveVol;});
-  ['vol-slider','settings-vol-slider'].forEach(id=>{
-    const el=document.getElementById(id);
-    if(el)el.value=state.volume;
-  });
-  ['btn-mute','settings-mute-btn'].forEach(id=>{
-    const el=document.getElementById(id);
-    if(el)el.textContent=state.muted?'\u{1F507}':'\u{1F50A}';
-  });
-  saveVolumeToStorage();
-}
-function setVolume(v){state.volume=Math.max(0,Math.min(1,v));applyVolumeEverywhere();}
-function toggleMute(){state.muted=!state.muted;applyVolumeEverywhere();}
-
-function initCodeScreen(){
-  const L=I18N.en;
-  const input=document.getElementById('code-input');
-  const errEl=document.getElementById('code-error');
-  const btnEl=document.getElementById('btn-code-enter');
-  document.getElementById('code-prompt-text').textContent=L.codePrompt;
-  function validateCode(){
-    const val=input.value;
-    if(val===GAME_CONFIG.secretCode){
-      markCodeValidated();
-      startIntroMusic();
-      if(!checkHasSave()){
-        fadeTransition(()=>showScreen('policy-screen'));
-      }else{
-        resetTitleAnimations();
-        fadeTransition(()=>showScreen('title-screen'));
-      }
-    }else{
-      errEl.textContent=L.codeError;
-      errEl.classList.add('show');
-      input.classList.add('error-flash','shake');
-      setTimeout(()=>{
-        input.classList.remove('error-flash','shake');
-        input.value='';
-        errEl.classList.remove('show');
-      },700);
-    }
-  }
-  input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();validateCode();}});
-  btnEl.addEventListener('click',validateCode);
-}
-
-function applyLang(){
-  const L=I18N.en;
-  document.getElementById('loading-label').textContent=L.loading;
-  document.getElementById('title-sub').textContent=L.titleSub;
-  document.getElementById('btn-start').textContent=checkHasSave()?L.btnContinue:L.btnBegin;
-  document.getElementById('btn-chapters').innerHTML=L.btnChapters;
-  document.getElementById('btn-settings-title').innerHTML=L.btnSettings;
-  document.getElementById('policy-header').textContent=L.policyHeader;
-  document.getElementById('policy-hint').textContent=L.policyHint;
-  document.getElementById('btn-accept').textContent=L.btnAccept;
-  document.getElementById('btn-back-dialogue').textContent=L.btnBack;
-  document.getElementById('btn-resume').textContent=L.btnResume;
-  document.getElementById('btn-save-quit').textContent=L.btnSaveQuit;
-  document.getElementById('btn-restart-game').textContent=L.btnRestart;
-  document.getElementById('btn-restart-end').textContent=L.btnRestartEnd;
-  document.getElementById('settings-vol-label').textContent=L.musicLabel;
-  document.getElementById('history-title-label').textContent=L.historyTitle;
-  document.getElementById('help-title').textContent=L.helpTitle;
-  document.getElementById('btn-close-help').textContent=L.helpClose;
-  document.getElementById('policy-scroll').innerHTML=L.policyContent;
-  document.getElementById('settings-screen-title').textContent=L.settingsTitle;
-  document.getElementById('settings-audio-label').textContent=L.settingsAudio;
-  document.getElementById('btn-settings-close').textContent='\u25C4 '+(L.settingsBack||'BACK').replace(/^[◄◂]\s*/,'');
-  const sdl=document.getElementById('settings-data-label');if(sdl)sdl.textContent=L.settingsData||'DATA';
-  const scl=document.getElementById('settings-credits-label');if(scl)scl.textContent=L.settingsCredits||'CREDITS & INFO';
-  const ssl=document.getElementById('settings-social-label');if(ssl)ssl.textContent=L.settingsSocial||'SOCIAL';
-  const ebd=document.getElementById('btn-export-data');if(ebd)ebd.textContent='⬇ '+(L.exportBtn||'EXPORT');
-  const ibd=document.getElementById('btn-import-data');if(ibd)ibd.textContent='⬆ '+(L.importBtn||'IMPORT');
-  const rbd=document.getElementById('btn-reset-data');if(rbd)rbd.textContent='⚠ '+(L.resetBtn||'RESET');
-  const cred=document.getElementById('btn-open-credits');if(cred)cred.textContent='♥ '+(L.creditsBtn||'CREDITS');
-  const shl=document.getElementById('share-label-share');if(shl)shl.textContent=L.shareLabel||'SHARE';
-  const ptl=document.getElementById('pause-title-label');if(ptl)ptl.textContent='— '+(L.settingsTitle||'PAUSE').replace(/^[—\s]+|[—\s]+$/g,'')+' —';
-  const hr=document.getElementById('help-rows');hr.innerHTML='';
-  const rows=L.helpRows;
-  if(Array.isArray(rows)){
-    rows.forEach(function(row){
-      if(Array.isArray(row)&&row.length>=2)
-        hr.innerHTML+='<div class="help-row"><span class="help-key">'+row[0]+'</span><span class="help-val">'+row[1]+'</span></div>';
-    });
-  }
-}
-
-function checkHasSave(){
-  try{const d=JSON.parse(localStorage.getItem(LS_KEY)||'{}');return d.firstTime===false;}catch(e){return false;}
-}
-function preloadImage(src){
-  if(!src) return Promise.resolve();
-  if(_imageCache.has(src)) return Promise.resolve(_imageCache.get(src));
-  return _preloadOne(src);
-}
-
-async function collectAllImagePaths(){
-  const set = new Set();
-
-  (GAME_CONFIG.preloadImages || []).forEach(s => { if(s) set.add(s); });
-
-  // ═══ Ajout manuel des images de présentation ═══
-  set.add('images/characters/mira.png');
-  set.add('images/characters/rose.png');
-  set.add('images/characters/plum.png');
-  set.add('images/characters/es.png');
-
-  let chapterIndex = [];
-  try {
-    const r = await fetch('json/chapterIndex.json?v='+Date.now(), {cache:'no-store'});
-    if(r.ok) chapterIndex = await r.json();
-  } catch(e){ console.warn('chapterIndex fetch failed', e); }
-  chapterIndexCache = chapterIndex;
-
-  for(const ch of chapterIndex){
-    if(ch.image) set.add(ch.image);
-    if(ch.thumbnail) set.add(ch.thumbnail);
-    if(ch.charImg) set.add(ch.charImg);
-
-    const file = ch.file;
-    if(!file) continue;
-    try{
-      const r = await fetch('json/en/'+file+'?v='+Date.now(), {cache:'no-store'});
-      if(!r.ok) continue;
-      const scenes = await r.json();
-      if(Array.isArray(scenes)){
-    scenes.forEach(sc => {
-  if(sc && sc.bg) set.add(sc.bg);
-  if(sc && sc.charImg) set.add(sc.charImg);
-  if(sc && sc.overlayImg) set.add(sc.overlayImg);
-});
-      }
-    }catch(e){ console.warn('scene fetch failed for', file, e); }
-  }
-
-  return [...set].filter(Boolean);
-}
-
-// ═══ CACHE GLOBAL D'IMAGES PRÉ-DÉCODÉES ═══
-// ── Limité en taille pour éviter de saturer la mémoire mobile ──
-// (sur mobile, garder TOUTES les images d'un chapitre décodées en mémoire
-//  jusqu'à la fin finit par faire planter/vider le rendu de certaines
-//  images lourdes → apparaissent en noir)
-const _IMAGE_CACHE_MAX = 40;
-const _imageCache = new Map();
-function _cacheSet(src, val){
-  if(_imageCache.has(src)) _imageCache.delete(src); // remonte en fin de file
-  _imageCache.set(src, val);
-  while(_imageCache.size > _IMAGE_CACHE_MAX){
-    const oldestKey = _imageCache.keys().next().value;
-    _imageCache.delete(oldestKey);
-  }
-}
-
-async function _preloadOne(src){
-  if(_imageCache.has(src)) return _imageCache.get(src);
-  return new Promise(resolve => {
-    const img = new Image();
-    img.decoding = 'async';
-    img.onload = async () => {
-      try{
-        if(img.decode) await img.decode();   // ← force le décodage GPU
-      }catch(e){}
-      _cacheSet(src, img);
-      resolve(img);
-    };
-    img.onerror = () => {
-      _cacheSet(src, null);
-      resolve(null);
-    };
-    img.src = src;
-  });
-}
-
-async function preloadAssets(){
-  const bar = document.getElementById('loading-bar');
-  const label = document.getElementById('loading-pct');
-  const detail = document.getElementById('loading-detail');
-
-  if(detail) detail.textContent = 'Scanning chapters…';
-  bar.style.width = '2%';
-  label.textContent = '0%';
-
-  let list = [];
-  try {
-    list = await collectAllImagePaths();
-  } catch(e){
-    console.warn('Preload collection error', e);
-  }
-
-  if(!list.length){
-    if(detail) detail.textContent = '';
-    bar.style.width='100%';
-    label.textContent='100%';
-    return;
-  }
-
-  if(detail) detail.textContent = 'Loading images (0 / '+list.length+')…';
-
-  let loaded = 0;
-  const total = list.length;
-  const update = () => {
-    loaded++;
-    const p = Math.round(loaded/total*100);
-    bar.style.width = p+'%';
-    label.textContent = p+'%';
-    if(detail) detail.textContent = 'Loading images ('+loaded+' / '+total+')…';
-  };
-
-  // ═══ BATCHS de 6 pour éviter de saturer mobile ═══
-  const BATCH_SIZE = 6;
-  for(let i = 0; i < list.length; i += BATCH_SIZE){
-    const batch = list.slice(i, i + BATCH_SIZE);
-    await Promise.all(batch.map(src =>
-      _preloadOne(src).then(() => update())
-    ));
-  }
-
-  bar.style.width = '100%';
-  label.textContent = '100%';
-  if(detail) detail.textContent = 'Ready.';
-}
-async function loadChapters(){
-  let all=[];
-  for(const file of GAME_CONFIG.chapterFiles){
-    const path='json/en/'+file+'?v='+Date.now();
-    try{
-      const r=await fetch(path,{cache:'no-store'});if(!r.ok)throw new Error('HTTP '+r.status);
-      const d=await r.json();all=all.concat(d);
-    }catch(e){console.warn('Cannot load',path,e.message);}
-  }
-  if(!all.length){
-    const L=I18N.en;
-    all=[{id:'s_demo',bg:null,charImg:null,speaker:L.systemLabel,text:L.systemFallback,typeSpeed:30,next:'__ending__'}];
-  }
-  state.scenes=all;
-}
-async function loadEndings(){
-  for(const type of ['good','bad']){
-    const path='json/'+type+'_ending.json?v='+Date.now();
-    try{const r=await fetch(path,{cache:'no-store'});if(!r.ok)throw new Error('HTTP '+r.status);state.endingsData[type]=await r.json();}
-    catch(e){console.warn('Cannot load ending',path,e.message);state.endingsData[type]=null;}
-  }
-}
-
-function saveGame(){
-  try{
-    localStorage.setItem(LS_KEY,JSON.stringify({
-      lang:'en',firstTime:false,sceneIndex:state.sceneIndex,
-      navStack:state.navStack.slice(-30),affinity:state.affinity,
-      history:state.history.slice(-60),
-      currentMusic:state.currentMusic,
-      targetChapterFile: GAME_CONFIG.chapterFiles[0] || 'prologue.json'
-    }));
-  }catch(e){}
-}
-function loadSave(){
-  try{
-    const raw=localStorage.getItem(LS_KEY);if(!raw)return false;
-    const d=JSON.parse(raw);
-    state.lang='en';state.firstTime=d.firstTime!==false;
-    state.sceneIndex=d.sceneIndex||0;
-    state.navStack=(d.navStack||[]).map(e=>typeof e==='number'?{sceneIndex:e,affinityDelta:0}:e);
-    state.affinity=d.affinity||0;state.history=d.history||[];
-    state.currentMusic=d.currentMusic||null;
-    if(d.targetChapterFile){
-      GAME_CONFIG.chapterFiles=[d.targetChapterFile];
-    }
-    loadVolumeFromStorage();
-    return true;
-  }catch(e){return false;}
-}
-function resetGame(){
-  try{
-    localStorage.removeItem(LS_KEY);
-    localStorage.removeItem(LS_VOL_KEY);
-    localStorage.removeItem(LS_MUTE_KEY);
-    localStorage.removeItem(CH_LS_CHAPTERS);
-    localStorage.removeItem(CH_LS_ENDINGS_SEEN);
-    localStorage.removeItem("lmtd_gameFlags");   // ← AJOUTE
-  }catch(e){}
-  try{sessionStorage.removeItem(SESSION_CODE_KEY);}catch(e){}
-  location.reload();
-}
-
-function resetTitleAnimations(){
-  const screen=document.getElementById('title-screen');
-  ['.title-sub','.title-main','.title-line','.title-btns'].forEach(sel=>{
-    const node=screen.querySelector(sel);
-    if(!node)return;
-    node.style.animation='none';node.style.opacity='0';
-    void node.offsetWidth;node.style.animation='';node.style.opacity='';
-  });
-}
-function showScreen(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));document.getElementById(id).classList.add('active');}
-function fadeTransition(cb){const fo=document.getElementById('fade-overlay');fo.classList.add('fade-in');setTimeout(()=>{cb();setTimeout(()=>fo.classList.remove('fade-in'),100);},500);}
-
-function updateAffinity(d){
-  if(!d)return;
-state.affinity=Math.max(-20,Math.min(20,state.affinity+d));
-  renderAffinity();
-  showAffinityDelta(d);
-  // ✅ Effet visuel : pulse + secousse
-  const bar = document.getElementById('affinity-bar-outer');
-  if(bar){
-    bar.style.transition = 'transform .15s ease';
-    bar.style.transform = 'scale(1.15)';
-    setTimeout(()=>{ bar.style.transform = 'scale(1)'; }, 180);
-  }
-  const icon = document.getElementById('aff-icon');
-  if(icon){
-    icon.style.transition = 'transform .2s ease';
-    icon.style.transform = d > 0 ? 'scale(1.4) rotate(-8deg)' : 'scale(0.8) rotate(8deg)';
-    setTimeout(()=>{ icon.style.transform = ''; }, 250);
-  }
-}
-function renderAffinity(){
-  const aff = state.affinity;
-  const bar = document.getElementById('affinity-bar');
-  const v = document.getElementById('affinity-val');
-  const icon = document.getElementById('aff-icon');
-  if(!bar || !v) return;
-
-  // Position : -20 = 0%, 0 = 50%, +20 = 100%
-  const pct = ((aff + 20) / 40) * 100;
-  bar.style.width = pct + '%';
-
-  // Couleur de la barre selon le signe
-  if(aff > 0){
-    // Positif → rouge cramoisi
-    bar.style.background = 'linear-gradient(to right, #8B0000, #DC143C)';
-    v.style.color = '#FF6B8A';
-    v.style.borderColor = 'rgba(220,20,60,.6)';
-    v.style.boxShadow = '0 0 15px rgba(220,20,60,.5), inset 0 0 8px rgba(220,20,60,.2)';
-    if(icon) icon.style.filter = 'drop-shadow(0 0 6px #DC143C)';
-  }
-  else if(aff < 0){
-    // Négatif → violet
-    bar.style.background = 'linear-gradient(to right, #4C1D95, #9333EA)';
-    v.style.color = '#C084FC';
-    v.style.borderColor = 'rgba(147,51,234,.6)';
-    v.style.boxShadow = '0 0 15px rgba(147,51,234,.5), inset 0 0 8px rgba(147,51,234,.2)';
-    if(icon) icon.style.filter = 'drop-shadow(0 0 6px #9333EA)';
-  }
-  else{
-    // Zéro → neutre gris
-    bar.style.background = 'linear-gradient(to right, #4B5563, #9CA3AF)';
-    v.style.color = '#C8B8D0';
-    v.style.borderColor = 'rgba(200,160,200,.35)';
-    v.style.boxShadow = 'none';
-    if(icon) icon.style.filter = 'drop-shadow(0 0 4px #888)';
-  }
-
-  // Numéro : +X en positif, X en négatif
-  v.textContent = aff > 0 ? '+'+aff : String(aff);
-}
-function showAffinityDelta(d){
-  const el=document.getElementById('affinity-delta');
-  el.className='';el.textContent=(d>0?'+ ':'\u2212 ')+Math.abs(d);
-  el.style.color=d>0?'var(--crimson)':'#9333ea';void el.offsetWidth;el.className='show';
-}
-
-let bgm=document.getElementById('bgm');
-document.addEventListener('visibilitychange', () => {
-  if(!bgm) return;
-  if(document.hidden){
-    try{ bgm.pause(); }catch(e){}
-  } else {
-    if(state.currentMusic && bgm.src){
-      try{ bgm.play().catch(()=>{}); }catch(e){}
-    }
-  }
-});
-window.addEventListener('pagehide', () => {
-  try{ bgm.pause(); }catch(e){}
-});
-window.addEventListener('beforeunload', () => {
-  try{ bgm.pause(); }catch(e){}
-});
-setInterval(()=>{
-  if(!bgm.paused&&bgm.src&&bgm.duration){
-    try{sessionStorage.setItem('lmtd_music_pos',JSON.stringify({src:bgm.src,pos:bgm.currentTime}));}catch(e){}
-  }
-},1000);
-function startIntroMusic(){
-  if(!bgm) return;
-  if(bgm.src && !bgm.paused && bgm.currentSrc.includes(GAME_CONFIG.introMusic.split('/').pop())) return;
-  bgm.src = GAME_CONFIG.introMusic;
-  bgm.loop = true;
-  bgm.muted = state.muted;
-  bgm.volume = state.muted ? 0 : state.volume;
-  bgm.play().catch(()=>{});
-  state.currentMusic = GAME_CONFIG.introMusic;
-}
-function playMusic(src){
-  if(!src || !bgm) return;
-
-  // ═══ Si c'est déjà la musique en cours ET qu'elle joue → on ne touche à rien ═══
-  if(state.currentMusic === src && !bgm.paused) return;
-
-  // ═══ STOP NET de l'ancienne musique ═══
-  try{
-    bgm.pause();
-    bgm.currentTime = 0;
-  }catch(e){}
-
-  // ═══ Charge et joue la nouvelle ═══
-  state.currentMusic = src;
-  bgm.src = src;
-  bgm.loop = true;
-  bgm.muted = state.muted;
-  bgm.volume = state.muted ? 0 : state.volume;
-  bgm.load();  // ← force le rechargement de la nouvelle source
-  bgm.play().catch(()=>{});
-}
-
-function stopMusic(){
-  try{
-    const old = document.getElementById('bgm');
-    if(old){
-      old.muted = true;
-      old.volume = 0;
-      try{ old.pause(); }catch(e){}
-      try{ old.currentTime = 0; }catch(e){}
-      try{ old.removeAttribute('src'); }catch(e){}
-      try{ old.load(); }catch(e){}
-      old.remove();
-    }
-    bgm = document.createElement('audio');
-    bgm.id = 'bgm';
-    bgm.loop = true;
-    bgm.muted = true;
-    document.body.appendChild(bgm);
-  }catch(e){ console.error('stopMusic error:', e); }
-  state.currentMusic = null;
-}
-
-
-
-async function setBg(src){
-  if(!src || src===lastBg) return;
-  // Force le décodage complet avant d'appliquer
-  await preloadImage(src);
-  const bg = document.getElementById('game-bg');
-  bg.style.backgroundImage = "url('" + src + "')";
-  lastBg = src;
-}
-function setOverlayImage(src){
-  const el = document.getElementById('overlay-img');
-  const backBtn = document.getElementById('overlay-back-btn');
-  const nextBtn = document.getElementById('overlay-next-btn');
-  if(!el) return;
-  if(!src){
-    el.style.opacity='0';
-    el.src='';
-    if(backBtn) backBtn.classList.remove('visible');
-    if(nextBtn) nextBtn.classList.remove('visible');
-    document.body.classList.remove('overlay-active');
-    return;
-  }
-  el.src = src;
-  el.style.opacity = '1';
-  if(nextBtn) nextBtn.classList.add('visible');
-  if(backBtn && state.navStack.length > 0) backBtn.classList.add('visible');
-  document.body.classList.add('overlay-active');
-}
-let _charRenderToken = 0;
-
-async function _waitForDisplayedImage(el, src){
-  if(!el) return false;
-
-  // Si le navigateur a déjà l'image décodée, ne pas attendre un load qui ne viendra pas.
-  if(el.src === src && el.complete && el.naturalWidth > 0){
-    try{ if(el.decode) await el.decode(); }catch(e){}
-    return el.naturalWidth > 0;
-  }
-
-  return new Promise(resolve => {
-    let done = false;
-    const finish = ok => {
-      if(done) return;
-      done = true;
-      el.removeEventListener('load', onload);
-      el.removeEventListener('error', onerror);
-      resolve(ok);
-    };
-    const onload = async () => {
-      try{ if(el.decode) await el.decode(); }catch(e){}
-      finish(el.naturalWidth > 0);
-    };
-    const onerror = () => finish(false);
-    el.addEventListener('load', onload, {once:true});
-    el.addEventListener('error', onerror, {once:true});
-
-    // Le src doit être posé après les listeners pour ne rater aucun événement mobile.
-    el.src = src;
-
-    // Cas où le chargement s'est terminé entre-temps.
-    if(el.complete){
-      if(el.naturalWidth > 0){
-        Promise.resolve().then(onload);
-      }else{
-        Promise.resolve().then(onerror);
-      }
-    }
-  });
-}
-
-async function setCharacter(img, anim){
-  const wrap=document.getElementById('char-wrap'),el=document.getElementById('char-img');
-  if(!wrap || !el) return;
-
-  // Chaque appel invalide le précédent : évite qu'une ancienne image arrive
-  // après une navigation rapide et remette le mauvais personnage à l'écran.
-  const token = ++_charRenderToken;
-
-  if(!img){
-    wrap.style.opacity = '0';
-    wrap.classList.remove('dark-reveal','swing');
-    el.removeAttribute('src');
-    _lastCharSrc = '';
-    return;
-  }
-
-  wrap.classList.remove('dark-reveal','swing');
-  // IMPORTANT : on garde le personnage caché jusqu'à ce que l'image affichée
-  // par le vrai <img> soit chargée ET décodée. C'est le point qui évite le noir
-  // sur certains navigateurs mobiles.
-  wrap.style.opacity = '0';
-
-  let finalSrc = img;
-  try{
-    await preloadImage(img);
-    const cached = _imageCache.get(img);
-    if(cached && cached.src) finalSrc = cached.src;
-  }catch(e){
-    console.warn('preload fail', img, e);
-  }
-
-  if(token !== _charRenderToken) return;
-
-  // Première tentative : utiliser l'image normale.
-  let ready = await _waitForDisplayedImage(el, finalSrc);
-
-  // Si le décodage/rendu mobile a échoué, on force UNE nouvelle requête.
-  if(!ready && token === _charRenderToken){
-    _imageCache.delete(img);
-    const retrySrc = img + (img.indexOf('?')>-1?'&':'?') + 'renderRetry=' + Date.now();
-    ready = await _waitForDisplayedImage(el, retrySrc);
-  }
-
-  if(token !== _charRenderToken || !ready) return;
-
-  el.style.display = '';
-  _lastCharSrc = img;
-
-  // Laisse au moteur mobile une frame pour créer le calque de l'image
-  // avant d'activer l'animation transform (dark_reveal / swing).
-  await new Promise(requestAnimationFrame);
-  await new Promise(requestAnimationFrame);
-
-  if(token !== _charRenderToken) return;
-
-  wrap.style.opacity = '1';
-  void wrap.offsetWidth;
-
-  if(anim === 'dark_reveal'){
-    wrap.classList.add('dark-reveal');
-  } else if(anim === 'swing'){
-    wrap.classList.add('swing');
-  }
-
-  requestAnimationFrame(syncDialogueHeight);
-}
-const DEFAULT_TYPE_SPEED=22;
-function typeText(el,text,speed,onDone){
-  el.textContent='';state.isTyping=true;let i=0;
-  if(state.typing)clearInterval(state.typing);
-  const ms=(typeof speed==='number'&&speed>0)?speed:DEFAULT_TYPE_SPEED;
-  state.typing=setInterval(()=>{
-    el.textContent+=text[i++];
-    if(i>=text.length){clearInterval(state.typing);state.typing=null;state.isTyping=false;if(onDone)onDone();}
-  },ms);
-}
-function skipTyping(text){if(state.typing){clearInterval(state.typing);state.typing=null;}state.isTyping=false;document.getElementById('dialogue-text').textContent=text;}
-
-function addToHistory(sp,tx,ic){state.history.push({speaker:sp,text:tx,isChoice:ic});}
-function renderHistory(){
-  const list=document.getElementById('history-list');list.innerHTML='';
-  state.history.forEach(e=>{
-    const d=document.createElement('div');d.className='history-entry';
-    d.innerHTML=e.isChoice?'<div class="h-choice">\u25B8 '+e.text+'</div>':'<div class="h-name">'+e.speaker+'</div><div>'+e.text+'</div>';
-    list.appendChild(d);
-  });
-  list.scrollTop=list.scrollHeight;
-}
-
-function updateBackBtn(){
-  const b=document.getElementById('btn-back-dialogue');
-  state.navStack.length>0&&!state.awaitingChoice?b.classList.add('visible'):b.classList.remove('visible');
-}
-document.getElementById('btn-back-dialogue').addEventListener('click',()=>{
-  if(state.awaitingChoice||!state.navStack.length)return;
-  if(state.typing){clearInterval(state.typing);state.typing=null;}state.isTyping=false;
-  const entry=state.navStack.pop();
-  if(entry.affinityDelta){state.affinity=Math.max(-20,Math.min(20,state.affinity-entry.affinityDelta));renderAffinity();showAffinityDelta(-entry.affinityDelta);}
-  state.sceneIndex=entry.sceneIndex;renderScene(state.scenes[entry.sceneIndex],true);
-});
-
-function getSceneIndex(id){return state.scenes.findIndex(s=>s.id===id);}
-function showCharactersIntro(scene, onDone){
-  const overlay = document.getElementById('chars-intro-overlay');
-  const pairEl = document.getElementById('chars-pair');
-  const countEl = document.getElementById('chars-count');
-  const backBtn = document.getElementById('chars-back');
-  const nextBtn = document.getElementById('chars-next');
-  if(!overlay || !pairEl){ if(onDone) onDone(); return; }
-
-  if(scene.music) playMusic(scene.music);
-
-   const chars = scene.characters || [];
-  const isMobile = window.innerWidth <= 600;
-  const perPage = isMobile ? 1 : 2;   // 1 perso sur mobile, 2 sur PC
-  const totalPairs = Math.ceil(chars.length / perPage);
-  let pairIndex = 0;
-
-  overlay.classList.add('active');
-  function renderPair(){
-    const i = pairIndex * perPage;
-    const pair = chars.slice(i, i + perPage);
-    pairEl.innerHTML = '';
-
-    pair.forEach((c, idx) => {
-      // Sur mobile (1 perso), pas de classe left/right
-      const sideClass = perPage === 1 ? 'center' : (idx === 0 ? 'left' : 'right');
-      const card = document.createElement('div');
-      card.className = 'char-card ' + sideClass;
-      if(c.name.toLowerCase() === 'es') card.classList.add('es');
-      card.innerHTML = `
-        <img class="char-card-img" src="${c.img}" alt="${c.name}" onerror="this.style.display='none'">
-        <div class="char-card-name">${c.name}</div>
-        <div class="char-card-info">
-          <div class="info-line"><span class="info-key">Personality</span><span class="info-val">${c.personality}</span></div>
-          <div class="info-line"><span class="info-key">Favorite</span><span class="info-val">${c.favorite}</span></div>
-          <div class="info-line"><span class="info-key">Hobby</span><span class="info-val">${c.hobby}</span></div>
-        </div>
-      `;
-      pairEl.appendChild(card);
-    });
-
-    // Fade in
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      pairEl.querySelectorAll('.char-card').forEach(c => c.classList.add('visible'));
-    }));
-
-    // Update compteur
-    if(countEl) countEl.textContent = (pairIndex + 1) + ' / ' + totalPairs;
-
-    // Update boutons
-    if(backBtn) backBtn.disabled = false;
-    if(nextBtn){
-      if(pairIndex === totalPairs - 1){
-        nextBtn.textContent = 'END CHAPTER 1';
-        nextBtn.classList.add('end');
-      } else {
-        nextBtn.textContent = 'NEXT ▸';
-        nextBtn.classList.remove('end');
-      }
-    }
-  }
-
-  function changePair(newIndex){
-    // Fade out
-    pairEl.querySelectorAll('.char-card').forEach(c => c.classList.remove('visible'));
-    setTimeout(() => {
-      pairIndex = newIndex;
-      renderPair();
-    }, 500);
-  }
-
-   // Handlers
-  backBtn.onclick = (e) => {
-    e.stopPropagation();
-    if(pairIndex > 0){
-      changePair(pairIndex - 1);
-    } else {
-      // Retour à la scène précédente (chapter1_144)
-      overlay.classList.remove('active');
-      setTimeout(() => {
-        if(onDone) onDone('back');
-      }, 600);
-    }
-  };
-  nextBtn.onclick = (e) => {
-    e.stopPropagation();
-    if(pairIndex < totalPairs - 1){
-      changePair(pairIndex + 1);
-    } else {
-      // Fin du chapitre
-      overlay.classList.remove('active');
-      setTimeout(() => {
-        if(onDone) onDone();
-      }, 600);
-    }
-  };
-
-  // Premier affichage
-  pairEl.innerHTML = '';
-  setTimeout(renderPair, 200);
-}
-
-function renderScene(scene,fromBack){
-  if(!scene){triggerEnding();return;}
-
-  // ═══ CONDITION : redirige selon un flag ═══
-  if(scene.type === 'condition'){
-    const val = window.gameFlags[scene.flag] || false;
-    const nextId = val ? scene.nextTrue : scene.nextFalse;
-    console.log("🔀 Condition:", scene.flag, "=", val, "→", nextId);
-    if(nextId){
-      const idx = getSceneIndex(nextId);
-      if(idx !== -1){
-        state.sceneIndex = idx;
-        renderScene(state.scenes[idx]);
-      }
-    }
-    return;
-  }
-
-  if(scene.bloodEffect){
-    triggerBloodEffect(scene.bloodEffect);
-  } else {
-    advanceBloodFade();
-  }
-
-  if(typeof scene.bloodRealism === 'number'){
-    setBloodRealism(scene.bloodRealism);
-  }
-
-  if(scene.eyesEffect === true){
-    triggerEyesEffect();
-  } else {
-    clearEyesEffect();
-  }
-  if(scene.type==='eyes_close'){
-    closeEyes(()=>{
-      const idx = getSceneIndex(scene.next);
-      if(idx !== -1){
-        // On recharge la page une seule fois après la fermeture des yeux,
-        // puis on reprend directement sur la scène suivante.
-        state.sceneIndex = idx;
-        try{
-          sessionStorage.setItem('LMTD_RESUME_AFTER_EYES', '1');
-        }catch(e){}
-        saveGame();
-        location.reload();
-      }
-    });
-    return;
-  }
-
-  if(scene.type==='eyes_open'){
-    openEyes(()=>{
-      const idx = getSceneIndex(scene.next);
-      if(idx !== -1){
-        state.sceneIndex = idx;
-        renderScene(state.scenes[idx]);
-      }
-    });
-    return;
-  }
-    if(scene.type==='mission'){
-    document.getElementById('dialogue-wrap').style.display='none';
-    document.getElementById('choices-wrap').style.display='none';
-    if(scene.bg) setBg(scene.bg);
-    if(scene.music) playMusic(scene.music);
-    showMission(scene, function(){
-      document.getElementById('dialogue-wrap').style.display='';
-      if(scene.next && scene.next !== '__ending__') navigateTo(scene.next);
-      else triggerEnding();
-    });
-    return;
-  }
-    if(scene.type==='mission'){
-    document.getElementById('dialogue-wrap').style.display='none';
-    document.getElementById('choices-wrap').style.display='none';
-    if(scene.bg) setBg(scene.bg);
-    if(scene.music) playMusic(scene.music);
-    showMission(scene, function(){
-      document.getElementById('dialogue-wrap').style.display='';
-      if(scene.next && scene.next !== '__ending__') navigateTo(scene.next);
-      else triggerEnding();
-    });
-    return;
-  }     if(scene.type==='characters_intro'){
-    const overlay = document.getElementById('chars-intro-overlay');
-    document.getElementById('dialogue-wrap').style.display='none';
-    document.getElementById('choices-wrap').style.display='none';
-    document.body.classList.add('overlay-active');
-    showCharactersIntro(scene, function(action){
-      // ═══ BACK depuis la 1ère paire → scène précédente ═══
-      if(action === 'back'){
-        overlay.classList.remove('active');
-        document.body.classList.remove('overlay-active');
-        if(state.navStack.length){
-          const entry = state.navStack.pop();
-          if(entry.affinityDelta){
-            state.affinity = Math.max(-20, Math.min(20, state.affinity - entry.affinityDelta));
-            renderAffinity();
-          }
-          state.sceneIndex = entry.sceneIndex;
-          renderScene(state.scenes[entry.sceneIndex], true);
-        }
-        return;
-      }
-
-      // ═══ END ou NEXT ═══
-      if(scene.next === '__end_chapter_prompt__'){
-        stopMusic();
-        clearGameScreen();
-        clearEyesEffect();
-        clearBloodRealism();
-        setCharacter(null);
-        document.getElementById('game-bg').style.backgroundImage = '';
-        document.getElementById('game-screen').classList.remove('active');
-        document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-        document.body.classList.remove('overlay-active');
-        showNextChapterPrompt();
-      } else {
-        document.getElementById('dialogue-wrap').style.display='';
-        document.body.classList.remove('overlay-active');
-        if(scene.next && scene.next !== '__ending__'){
-          navigateTo(scene.next);
-        } else {
-          triggerEnding();
-        }
-      }
-    });
-    return;
-  }
-  if(scene.type==='minigame'){
-    triggerMinigame(scene,function(){
-      if(scene.next&&scene.next!=='__ending__')navigateTo(scene.next);
-      else triggerEnding();
-    });
-    return;
-  }
-
-  if(scene.type==='poem'){
-    document.getElementById('dialogue-wrap').style.display='none';
-    document.getElementById('choices-wrap').style.display='none';
-    document.getElementById('dialogue-continue').style.display='none';
-    if(scene.bg)setBg(scene.bg);
-    if(scene.music)playMusic(scene.music);
-    showPoem(scene, function(){
-      document.getElementById('dialogue-wrap').style.display='';
-      document.getElementById('dialogue-continue').style.display='';
-      if(scene.next && scene.next !== '__ending__') navigateTo(scene.next);
-      else triggerEnding();
-    });
-    return;
-  }
-
-      if(scene.bg)setBg(scene.bg);
-
-  // ── Gestion de la persistance du personnage ──
-  if(typeof scene.charImg === 'string' && scene.charImg.length > 0){
-    setCharacter(scene.charImg, scene.charAnim||null);
-    state.persistChar = scene.persistChar === true;
-  } else if(scene.persistChar === false){
-    setCharacter(null);
-    state.persistChar = false;
-  } else if(!state.persistChar){
-    setCharacter(null);
-  }
-
-  setOverlayImage(scene.overlayImg||null);
-  if(scene.music)playMusic(scene.music);
-  document.getElementById('speaker-name').textContent=scene.speaker||'';
-  const cw=document.getElementById('choices-wrap');
-  cw.style.display='none';cw.innerHTML='';
-  document.getElementById('dialogue-wrap').style.display='';
-  document.getElementById('dialogue-continue').style.display='';
-  state.awaitingChoice=false;state.pendingChoices=scene.choices||null;
-  const dialogueDiv=document.getElementById('dialogue-text');
-  if(scene.glitch){
-    dialogueDiv.classList.add('glitch');
-  }else{
-    dialogueDiv.classList.remove('glitch');
-  }
-  if(scene.speaker === '???'){
-    dialogueDiv.classList.add('speaker-unknown');
-  }else{
-    dialogueDiv.classList.remove('speaker-unknown');
-  }
-  addToHistory(scene.speaker||'',scene.text||'',false);
-  typeText(document.getElementById('dialogue-text'),scene.text||'',scene.typeSpeed,null);
-  updateBackBtn();saveGame();
-  requestAnimationFrame(syncDialogueHeight);
-  if(scene.next&&scene.next!=='__ending__'&&scene.next!=='__suite_suivante__'){
-    const ni=getSceneIndex(scene.next);
-    if(ni!==-1&&state.scenes[ni]&&state.scenes[ni].bg)preloadImage(state.scenes[ni].bg);
-    if(ni!==-1&&state.scenes[ni]&&state.scenes[ni].charImg)preloadImage(state.scenes[ni].charImg);
-  }
-}
-function advance(){
-  const _ov = document.getElementById('overlay-img');
-  if(_ov && _ov.style.opacity === '1') return;  // ← AJOUT : bloque tout tant que la lettre est là
-    if(state.eyesTransitioning)return;
-  
-  if(state.poemActive)return;
-  if(state.titleCardActive)return;
-  if(state.awaitingChoice)return;
-  if(state.finalRedTransitioning)return;
-  if(state.nextChapterPromptActive)return;
-  if(state.missionActive)return;
-  const scene=state.scenes[state.sceneIndex];if(!scene)return;
-  if(state.isTyping){skipTyping(scene.text||'');return;}
-  if(state.pendingChoices){renderChoices(state.pendingChoices);state.pendingChoices=null;return;}
-
-  if(scene.finalRed && scene.next === '__suite_suivante__'){
-    state.finalRedTransitioning = true;
-    setFinalRed(true);
-
-    setTimeout(()=>{ stopMusic(); }, 1200);
-
-    (async () => {
-      try{
-        const index = await loadChapterIndex();
-        const currentFile = GAME_CONFIG.chapterFiles[0] || '';
-        let currentIdx = index.findIndex(ch => (ch.file||'') === currentFile);
-        if(currentIdx === -1){
-          const baseName = currentFile.replace('.json','');
-          currentIdx = index.findIndex(ch => (ch.id||'') === baseName);
-        }
-        if(currentIdx === -1) currentIdx = 0;
-        const next = index[currentIdx + 1];
-        if(next && next.id){
-          chLoadUnlocked();
-          chState.unlockedChapters.add(next.id);
-          try{
-            localStorage.setItem(CH_LS_CHAPTERS, JSON.stringify([...chState.unlockedChapters]));
-            console.log('✅ Auto-unlocked:', next.id);
-          }catch(e){}
-        }
-      }catch(e){ console.warn('auto-unlock failed', e); }
-
-      setTimeout(()=>{
-        showNextChapterPrompt();
-      }, 1400);
-    })();
-    return;
-  }
-
-  if(scene.next==='__ending__'){triggerEnding();return;}
-  if(scene.next==='__suite_suivante__'){goToNextChapter();return;}
-  if(scene.next)navigateTo(scene.next);
-}
-function navigateTo(id,affinityDelta){
-  affinityDelta=affinityDelta||0;
-  if(!id){triggerEnding();return;}
-  if(id==='__ending__'){triggerEnding();return;}
-  if(id==='__suite_suivante__'){goToNextChapter();return;}
-  const idx=getSceneIndex(id);if(idx===-1){triggerEnding();return;}
-  state.navStack.push({sceneIndex:state.sceneIndex,affinityDelta:affinityDelta});
-  state.sceneIndex=idx;renderScene(state.scenes[idx]);
-}
-function renderChoices(choices){
-  state.awaitingChoice=true;updateBackBtn();
-  const cw=document.getElementById('choices-wrap');
-  document.getElementById('dialogue-continue').style.display='none';
-  document.getElementById('dialogue-wrap').style.display='';
-  cw.innerHTML='';cw.style.display='flex';
-  choices.forEach(ch=>{
-    const btn=document.createElement('button');
-    btn.type='button';
-    btn.className='choice-btn';
-    btn.textContent=ch.text;
-    let fired = false;
-    const onClick = (e)=>{
-      if(e){ e.preventDefault(); e.stopPropagation(); }
-      if(fired) return;
-      fired = true;
-           try{
-        addToHistory(t('youLabel'), ch.text, true);
-        const delta = (typeof ch.affinityChange === 'number') ? ch.affinityChange
-                    : (typeof ch.affinityDelta === 'number')  ? ch.affinityDelta
-                    : 0;
-        if(delta) updateAffinity(delta);
-
-        // ═══ FLAGS ═══
-        if(ch.setFlag){
-          Object.assign(window.gameFlags, ch.setFlag);
-          saveFlags();
-          console.log("🚩 Flag set:", window.gameFlags);
-        }
-
-        cw.style.display='none';
-        state.awaitingChoice=false;
-        state.pendingChoices=null;
-        document.getElementById('dialogue-continue').style.display='';
-        if(ch.next==='__ending__'){ triggerEnding(); return; }
-        if(ch.next==='__suite_suivante__'){ goToNextChapter(); return; }
-        if(ch.next) navigateTo(ch.next, delta);
-        else triggerEnding();
-      }catch(err){
-        console.error('[Choice click error]', err);
-        fired = false;
-      }
-    };
-    btn.addEventListener('click', onClick);
-    cw.appendChild(btn);
-  });
-  requestAnimationFrame(syncDialogueHeight);
-}
-async function triggerEnding(){
-  const aff=state.affinity;
-  const endingType=aff>=0?'good':'bad';
-  const data=state.endingsData[endingType];
-  let ending=null;
-  if(data&&Array.isArray(data)){
-    ending=data.find(e=>aff>=e.minAffinity&&aff<=e.maxAffinity);
-    if(!ending)ending=data[data.length-1];
-  }
-  if(!ending){
-    ending=aff>=0
-      ?{type:'ENDING',title:'The End',text:'Your story comes to a close.',music:'music/true_ending.mp3'}
-      :{type:'BAD ENDING',title:'The End',text:'Darkness falls.',music:'music/bad_ending.mp3'};
-  }
-  document.getElementById('ending-type').textContent=ending.type||'';
-  document.getElementById('ending-title').textContent=ending.title||'';
-  document.getElementById('ending-text').textContent=ending.text||'';
-  document.getElementById('ending-type').style.color=endingType==='bad'?'#ff6b6b':'var(--blood)';
-  fadeTransition(()=>showScreen('ending-screen'));
-  if(ending.music)playMusic(ending.music);
-  else playMusic(endingType==='bad'?'music/bad_ending.mp3':'music/true_ending.mp3');
-}
-function showMission(scene, onDone){
-  const ov = document.getElementById('mission-overlay');
-  if(!ov){ if(onDone) onDone(); return; }
-  document.getElementById('mission-title').textContent = scene.missionTitle || '';
-  state.missionActive = true;
-  ov.classList.remove('active');
-  void ov.offsetWidth;
-  requestAnimationFrame(()=>ov.classList.add('active'));
-  let done = false;
-  const close = (e)=>{
-    if(e){ e.preventDefault(); e.stopPropagation(); }
-    if(done) return;
-    done = true;
-    state.missionActive = false;
-    ov.removeEventListener('click', close);
-    ov.removeEventListener('touchend', close);
-    ov.classList.remove('active');
-    setTimeout(()=>{ if(onDone) onDone(); }, 500);
-  };
-  ov.addEventListener('click', close);
-  ov.addEventListener('touchend', close, {passive:false});
-}
-function triggerMinigame(scene,onComplete){
-  const file=scene.minigameFile||('minigames/'+(scene.name||scene.minigame)+'.html');
-  const ov=document.getElementById('minigame-overlay'),frm=document.getElementById('minigame-frame');
-  try{sessionStorage.setItem('LMTD_CFG',JSON.stringify({affinity:state.affinity}));}catch(e){}
-  stopMusic();
-  document.body.classList.add('minigame-active');
-  window.LMTD_MINIGAME_DONE=function(result){
-    ov.style.display='none';frm.src='';window.LMTD_MINIGAME_DONE=null;
-    document.body.classList.remove('minigame-active');
-    if(result&&result.affinity)updateAffinity(result.affinity);
-    if(result && typeof result.success === 'boolean'){
-      const targetId = result.success ? scene.nextSuccess : scene.nextFail;
-      if(targetId){
-        const idx = getSceneIndex(targetId);
-        if(idx !== -1){
-          state.navStack.push({sceneIndex:state.sceneIndex,affinityDelta:0});
-          state.sceneIndex = idx;
-          renderScene(state.scenes[idx]);
-          return;
-        }
-      }
-    }
-    onComplete();
-  };
-  window.LMTD_MINIGAME_BACK=function(){
-    ov.style.display='none';frm.src='';window.LMTD_MINIGAME_BACK=null;
-    document.body.classList.remove('minigame-active');
-    if(state.navStack.length){
-      const entry = state.navStack.pop();
-      if(entry.affinityDelta){
-        state.affinity = Math.max(-20, Math.min(20, state.affinity - entry.affinityDelta));
-        renderAffinity();
-      }
-      state.sceneIndex = entry.sceneIndex;
-      renderScene(state.scenes[entry.sceneIndex], true);
-    }
-  };
-  frm.src=file;ov.style.display='block';
-}
-function exportData(){
-  try{
-    const data={
-      save:localStorage.getItem(LS_KEY)||'{}',
-      volume:localStorage.getItem(LS_VOL_KEY)||'0.7',
-      muted:localStorage.getItem(LS_MUTE_KEY)||'0',
-      chapters:localStorage.getItem(CH_LS_CHAPTERS)||'[]',
-      endings:localStorage.getItem(CH_LS_ENDINGS_SEEN)||'[]',
-      gameFlags:localStorage.getItem("lmtd_gameFlags")||'{}',
-    };
-    const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
-    const url=URL.createObjectURL(blob);
-    const a=document.createElement('a');a.href=url;
-    a.download='LoveYouToDeathSAVE.json';
-    document.body.appendChild(a);a.click();
-    setTimeout(()=>{URL.revokeObjectURL(url);a.remove();},1000);
-    showGamePopup(t('exportBtn')||'EXPORT',t('exportSuccess')||'Export OK.',[{label:'OK',fn:closeGamePopup}]);
-  }catch(e){console.error(e);}
-}
-function triggerImport(){document.getElementById('import-file-input').click();}
-document.addEventListener('DOMContentLoaded',()=>{
-  const inp=document.getElementById('import-file-input');
-  if(inp)inp.addEventListener('change',e=>{
-    const file=e.target.files[0];if(!file)return;
-    const reader=new FileReader();
-    reader.onload=ev=>{
-      try{
-        const data=JSON.parse(ev.target.result);
-if(data.save)localStorage.setItem(LS_KEY,data.save);
-if(data.volume)localStorage.setItem(LS_VOL_KEY,data.volume);
-if(data.muted)localStorage.setItem(LS_MUTE_KEY,data.muted);
-if(data.chapters)localStorage.setItem(CH_LS_CHAPTERS,data.chapters);
-if(data.endings)localStorage.setItem(CH_LS_ENDINGS_SEEN,data.endings);
-if(data.gameFlags)localStorage.setItem("lmtd_gameFlags",data.gameFlags);   // ← AJOUTE
-        showGamePopup(t('importBtn')||'IMPORT',t('importSuccess')||'Imported.',[{label:'OK',fn:()=>{closeGamePopup();location.reload();}}]);
-      }catch(ex){
-        showGamePopup('ERROR',t('importError')||'Invalid file.',[{label:'OK',fn:closeGamePopup}]);
-      }
-    };
-    reader.readAsText(file);
-    inp.value='';
-  });
-});
-function showResetPopup(){
-  const L=I18N.en;
-  showGamePopup(
-    L.resetPopupTitle||'RESET',
-    L.resetPopupText||'This will erase all your progress.',
-    [
-      {label:L.resetCancel||'CANCEL',fn:closeGamePopup},
-      {label:L.resetConfirm||'RESET',fn:()=>{closeGamePopup();resetGame();},cls:'confirm'}
-    ]
+  const forward = new THREE.Vector3(
+    -Math.sin(camYaw),
+    0,
+    -Math.cos(camYaw)
   );
-}
-function showGamePopup(title,text,btns){
-  document.getElementById('game-popup-title').textContent=title;
-  document.getElementById('game-popup-text').textContent=text;
-  const container=document.getElementById('game-popup-btns');
-  container.innerHTML='';
-  btns.forEach(b=>{
-    const btn=document.createElement('button');
-    btn.type='button';
-    btn.className='game-popup-btn'+(b.cls?' '+b.cls:'');
-    btn.textContent=b.label;
-    btn.addEventListener('click',b.fn);
-    container.appendChild(btn);
-  });
-  document.getElementById('game-popup-overlay').style.display='flex';
-}
-function closeGamePopup(){document.getElementById('game-popup-overlay').style.display='none';}
-document.getElementById('game-popup-overlay').addEventListener('click',e=>{
-  if(e.target===document.getElementById('game-popup-overlay'))closeGamePopup();
-});
 
-function openCredits(){
-  const L=I18N.en;
-  document.getElementById('policy-header').textContent=L.policyHeader;
-  document.getElementById('policy-scroll').innerHTML=L.policyContent;
-  document.getElementById('policy-bar').style.width='100%';
-  document.getElementById('policy-hint').style.display='none';
-  document.getElementById('btn-accept').style.display='none';
-  let backBtn=document.getElementById('btn-credits-policy-back');
-  if(!backBtn){
-    backBtn=document.createElement('button');
-    backBtn.type='button';
-    backBtn.id='btn-credits-policy-back';
-    backBtn.className='btn-accept ready';
-    backBtn.style.cssText='opacity:1;pointer-events:all;background:transparent;border:1px solid rgba(200,160,200,.3);';
-    document.querySelector('.policy-footer').appendChild(backBtn);
-    backBtn.addEventListener('click',closeCredits);
-  }
-  backBtn.textContent='◂ '+(L.settingsBack||'BACK').replace(/^[◄◂◀]\s*/i,'');
-  backBtn.style.display='';
-  document.getElementById('policy-screen').dataset.infoMode='1';
-  fadeTransition(()=>showScreen('policy-screen'));
-}
-function closeCredits(){
-  document.getElementById('policy-hint').style.display='';
-  document.getElementById('btn-accept').style.display='';
-  const backBtn=document.getElementById('btn-credits-policy-back');
-  if(backBtn)backBtn.style.display='none';
-  document.getElementById('policy-screen').dataset.infoMode='';
-  fadeTransition(()=>showScreen('settings-screen'));
-}
+  // Déplacement gauche/droite
 
-document.addEventListener('DOMContentLoaded',()=>{
-  const shareBtn=document.getElementById('share-link-btn');
-  if(shareBtn){
-    shareBtn.addEventListener('click',e=>{
-      if(navigator.share){
-        e.preventDefault();
-        navigator.share({title:'Love You To Death',url:'https://pioupioucoder.github.io/LoveYouToDeath/'}).catch(()=>{});
-      }else if(navigator.clipboard){
-        e.preventDefault();
-        navigator.clipboard.writeText('https://pioupioucoder.github.io/LoveYouToDeath/').then(()=>{
-          showGamePopup('SHARE','Link copied to clipboard!',[{label:'OK',fn:closeGamePopup}]);
-        }).catch(()=>{});
-      }
-    });
-  }
-});
+  const right = new THREE.Vector3(
+    Math.cos(camYaw),
+    0,
+    -Math.sin(camYaw)
+  );
 
-function spawnSettingsPetals(){
-  const container=document.getElementById('settings-petals-container');
-  if(!container||container.dataset.spawned)return;
-  container.dataset.spawned='1';
-  for(let i=0;i<22;i++){
-    const p=document.createElement('div');p.className='settings-petal';
-    const size=6+Math.random()*12;
-    p.style.cssText=
-      'left:'+Math.random()*100+'%;'+
-      'width:'+size+'px;height:'+size+'px;'+
-      'animation-duration:'+(8+Math.random()*14)+'s;'+
-      'animation-delay:'+Math.random()*12+'s;'+
-      'opacity:0;';
-    const cols=['var(--crimson)','var(--blood)','rgba(201,168,76,.8)','rgba(200,100,150,.7)'];
-    p.style.background='radial-gradient(circle at 40% 40%,'+cols[i%cols.length]+',transparent)';
-    container.appendChild(p);
+  camera.position.addScaledVector(
+    forward,-jLy*6.5*dt
+  );
+
+  camera.position.addScaledVector(
+    right,jLx*6.5*dt
+  );
+
+  // Hauteur constante
+
+  camera.position.y = 1.7;
+
+  // Rotation avec le joystick droit
+
+  camYaw -= jRx*1.8*dt;
+
+  camPitch = THREE.MathUtils.clamp(
+    camPitch-jRy*1.2*dt,
+    -1,
+    1
+  );
+
+  // Coordonnées
+
+  if (showCoords) {
+
+    document.getElementById('cx').textContent =
+      camera.position.x.toFixed(2);
+
+    document.getElementById('cy').textContent =
+      camera.position.y.toFixed(2);
+
+    document.getElementById('cz').textContent =
+      camera.position.z.toFixed(2);
   }
-}
-function openSettings(fromScreenId){
-  state._settingsFrom=fromScreenId||'title-screen';
-  applyVolumeEverywhere();
-  spawnSettingsPetals();
-  fadeTransition(()=>showScreen('settings-screen'));
+
+  // Mise à jour du décor
+
+  if (world && typeof world.update === 'function') {
+    world.update(dt,clock.elapsedTime);
+  }
+
+  renderer.render(scene,camera);
+
+  // Dessin des joysticks
+
+  drawJoy('jL',jLx,jLy);
+  drawJoy('jR',jRx,jRy);
 }
 
-function startGame(fromIdx){
-  fromIdx=fromIdx||0;stopMusic();
-  clearBloodRealism();
-  clearEyesEffect();
-  state.sceneIndex=fromIdx;
-  state.finalRedTransitioning=false;
-  state.nextChapterPromptActive=false;
-  clearGameScreen();
-  showScreen('game-screen');
-  renderAffinity();
-  renderScene(state.scenes[fromIdx]);
-}
+animate();
 
-async function boot(){
-  loadVolumeFromStorage();
-  state.lang='en';
-  applyLang();
-  applyVolumeEverywhere();
-
-  await preloadAssets();
-
-  // Après la scène de fermeture des yeux, le reload sert uniquement à
-  // reprendre la scène suivante du même chapitre. Il ne lance pas le chapitre 2.
-  let resumeAfterEyes = false;
-  try{
-    resumeAfterEyes = sessionStorage.getItem('LMTD_RESUME_AFTER_EYES') === '1';
-    if(resumeAfterEyes) sessionStorage.removeItem('LMTD_RESUME_AFTER_EYES');
-  }catch(e){}
-
-  if(resumeAfterEyes){
-    loadSave();
-    await Promise.all([loadChapters(), loadEndings()]);
-    showScreen('game-screen');
-    renderAffinity();
-    clearGameScreen();
-    const scene = state.scenes[state.sceneIndex];
-    if(scene){
-      renderScene(scene);
-      return;
-    }
-  }
-
-  syncDialogueHeight();
-  window.addEventListener('resize',syncDialogueHeight);
-  window.addEventListener('orientationchange',()=>setTimeout(syncDialogueHeight,200));
-
-  if(isCodeValidated()){
-    initCodeScreen();
-    startIntroMusic();
-    fadeTransition(()=>showScreen('title-screen'));
-  }else{
-    initCodeScreen();
-    fadeTransition(()=>{
-      showScreen('code-screen');
-      setTimeout(()=>{const inp=document.getElementById('code-input');if(inp)inp.focus();},700);
-    });
-  }
-}
-
-document.getElementById('btn-start').addEventListener('click',async()=>{
-  const rawSave = localStorage.getItem(LS_KEY);
-  if(!rawSave){
-    fadeTransition(()=>showScreen('policy-screen'));
-    return;
-  }
-
-  let saveData = null;
-  try{ saveData = JSON.parse(rawSave); }catch(e){ saveData = null; }
-
-  if(!saveData || saveData.firstTime !== false){
-    fadeTransition(()=>showScreen('policy-screen'));
-    return;
-  }
-
-  applyLang();
-
-  const isFreshGame = saveData.sceneIndex === 0
-                   && (!saveData.navStack || saveData.navStack.length === 0)
-                   && !saveData.targetChapterFile;
-
-  const index = await loadChapterIndex();
-  if(!index.length){
-    console.warn('chapterIndex.json is empty');
-    return;
-  }
-
-  let targetFile;
-  if(isFreshGame){
-    const firstEntry = index[0];
-    targetFile = firstEntry.file || 'prologue.json';
-    state.sceneIndex = 0;
-    state.navStack = [];
-    state.history = [];
-    state.affinity = 0;
-  } else {
-    targetFile = saveData.targetChapterFile || (index[0].file || 'prologue.json');
-    loadSave();
-  }
-
-  GAME_CONFIG.chapterFiles = [targetFile];
-  state.finalRedTransitioning = false;
-  state.nextChapterPromptActive = false;
-
-  await Promise.all([loadChapters(), loadEndings()]);
-
-  const entry = index.find(ch => (ch.file||'') === targetFile) || index[0];
-  const derived = getChapterBadgeFromFile(targetFile);
-  const label = entry.title || derived.title;
-  const subtitle = entry.subtitle || GAME_CONFIG.firstChapterSubtitle || '';
-
-  startIntroMusic();
-
-  const startNow = ()=>{
-    fadeTransition(() => {
-      stopMusic();
-      showScreen('game-screen');
-      renderAffinity();
-      clearGameScreen();
-      const sceneIdx = Math.max(0, Math.min(state.scenes.length-1, state.sceneIndex || 0));
-      const scene = state.scenes[sceneIdx] || state.scenes[0];
-      state.sceneIndex = sceneIdx;
-      renderScene(scene);
-    });
-  };
-
-  const isResumingMidChapter = !isFreshGame && (state.sceneIndex > 0 || (state.navStack && state.navStack.length > 0));
-
-  // ═══ La note ne concerne QUE le chapitre 1, jamais le prologue,
-  //     et ne doit s'afficher qu'une seule fois ═══
-  const CHAPTER1_NOTE_KEY = 'lmtd_chapter1_note_seen';
-  const isChapter1Target = !!(index[1] && targetFile === index[1].file);
-  let chapter1NoteAlreadySeen = false;
-  try{ chapter1NoteAlreadySeen = localStorage.getItem(CHAPTER1_NOTE_KEY) === '1'; }catch(e){}
-
-  if(isResumingMidChapter || !isChapter1Target || chapter1NoteAlreadySeen){
-    startNow();
-  } else {
-    fadeTransition(()=>{
-      document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-           const noteText = `
-        <span class="note-title">Note</span>
-        Hi Etoile! Chapter 1 is longer than the prologue and will take around 15 minutes to complete.<br><br>
-        All events and characters are fictional, and any resemblance to real people or events is purely coincidental.<br><br>
-        It contains some graphic content and sensitive topics that may be upsetting or triggering, depending on the person, although it's still pretty soft overall.<br><br>
-        And my heart isn't actually as dark as this, I promise, it's just fiction! Well… some emotions are inspired by real feelings, and most importantly, I didn't write anything randomly.<br><br>
-        <b>VERY IMPORTANT:</b> Please make sure to save your file! There's a chance I might mess up the code, and you could lose your progress as well as your affinity!!<br><br>
-        Thank you, kisses, I love you very much!! 💜
-      `;
-      showNote(noteText, () => {
-        try{ localStorage.setItem(CHAPTER1_NOTE_KEY, '1'); }catch(e){}
-        showChapterTitle(label, subtitle, startNow);
-      });
-    });
-  }
-});
-document.getElementById('btn-chapters').addEventListener('click',()=>{openChaptersScreen();});
-document.getElementById('btn-settings-title').addEventListener('click',()=>{openSettings('title-screen');});
-document.getElementById('btn-settings-close').addEventListener('click',()=>{
-  saveVolumeToStorage();
-  fadeTransition(()=>{
-    const target=state._settingsFrom||'title-screen';
-    if(target==='title-screen')resetTitleAnimations();
-    showScreen(target);
-    if(target==='title-screen')startIntroMusic();
-  });
-});
-document.getElementById('settings-vol-slider').addEventListener('input',e=>{setVolume(parseFloat(e.target.value));});
-document.getElementById('settings-mute-btn').addEventListener('click',()=>{toggleMute();});
-
-const policyScroll=document.getElementById('policy-scroll');
-policyScroll.addEventListener('scroll',()=>{
-  if(document.getElementById('policy-screen').dataset.infoMode==='1')return;
-  const{scrollTop,scrollHeight,clientHeight}=policyScroll;
-  const pct=scrollTop/(scrollHeight-clientHeight);
-  document.getElementById('policy-bar').style.width=Math.min(100,pct*100)+'%';
-  if(pct>=0.98)document.getElementById('btn-accept').classList.add('ready');
-});
-document.getElementById('btn-accept').addEventListener('click',async()=>{
-  if(!document.getElementById('btn-accept').classList.contains('ready'))return;
-  state.firstTime=false;
-  await Promise.all([loadChapters(),loadEndings()]);
-  saveGame();
-  resetTitleAnimations();
-  fadeTransition(()=>showScreen('title-screen'));
-});
-
-document.getElementById('dialogue-box').addEventListener('click',e=>{if(e.target.id==='btn-back-dialogue')return;advance();});
-document.getElementById('game-bg').addEventListener('click',advance);
-document.getElementById('char-wrap').addEventListener('click',advance);
-document.getElementById('btn-history').addEventListener('click',()=>{renderHistory();document.getElementById('history-overlay').style.display='flex';});
-document.getElementById('btn-close-history').addEventListener('click',()=>{document.getElementById('history-overlay').style.display='none';});
-document.getElementById('btn-help').addEventListener('click',()=>{document.getElementById('help-overlay').style.display='flex';});
-document.getElementById('btn-close-help').addEventListener('click',()=>{document.getElementById('help-overlay').style.display='none';});
-
-document.getElementById('overlay-back-btn').addEventListener('click',(e)=>{
-  e.stopPropagation();
-  e.preventDefault();
-  if(!state.navStack.length) return;
-  setOverlayImage(null);
-  const entry = state.navStack.pop();
-  if(entry.affinityDelta){
-    state.affinity = Math.max(-20, Math.min(20, state.affinity - entry.affinityDelta));
-    renderAffinity();
-  }
-  state.sceneIndex = entry.sceneIndex;
-  renderScene(state.scenes[entry.sceneIndex], true);
-});
-
-document.getElementById('overlay-next-btn').addEventListener('click',(e)=>{
-  e.stopPropagation();
-  e.preventDefault();
-  setOverlayImage(null);
-  const scene = state.scenes[state.sceneIndex];
-  if(!scene) return;
-  if(scene.next === '__ending__') triggerEnding();
-  else if(scene.next === '__suite_suivante__') goToNextChapter();
-  else if(scene.next) navigateTo(scene.next);
-});
-document.getElementById('btn-pause').addEventListener('click',()=>{
-  saveGame();
-  document.getElementById('pause-modal').style.display='flex';
-});
-document.getElementById('btn-resume').addEventListener('click',()=>{
-  document.getElementById('pause-modal').style.display='none';
-});
-document.getElementById('btn-save-quit').addEventListener('click',()=>{
-  saveGame();
-  // ═══ Ferme le mini-jeu s'il est ouvert ═══
-  const mg = document.getElementById('minigame-overlay');
-  const fr = document.getElementById('minigame-frame');
-  if(mg) mg.style.display = 'none';
-  if(fr) fr.src = '';
-  document.body.classList.remove('minigame-active');
-  fadeTransition(()=>{
-    document.getElementById('pause-modal').style.display='none';
-    resetTitleAnimations();
-    showScreen('title-screen');
-    document.getElementById('btn-start').textContent=t('btnContinue');
-    startIntroMusic();
-  });
-});
-document.getElementById('btn-restart-game').addEventListener('click',()=>{
-  const L=I18N.en;
-  showGamePopup(L.btnRestart||'RESTART',L.confirmRestart||'Restart?',[
-    {label:L.resetCancel||'CANCEL',fn:closeGamePopup},
-    {label:L.resetConfirm||'RESTART',fn:()=>{closeGamePopup();document.getElementById('pause-modal').style.display='none';resetGame();},cls:'confirm'}
-  ]);
-});
-document.getElementById('btn-restart-end').addEventListener('click',()=>{
-  const L=I18N.en;
-  showGamePopup(L.btnRestartEnd||'RESTART',L.confirmRestartEnd||'Restart?',[
-    {label:L.resetCancel||'CANCEL',fn:closeGamePopup},
-    {label:L.resetConfirm||'RESTART',fn:()=>{closeGamePopup();resetGame();},cls:'confirm'}
-  ]);
-});
-const volSlider=document.getElementById('vol-slider');
-volSlider.value=state.volume;
-volSlider.addEventListener('input',()=>{setVolume(parseFloat(volSlider.value));});
-const btnMute=document.getElementById('btn-mute');
-btnMute.addEventListener('click',()=>{toggleMute();});
-
-(function(){
-  const c=document.getElementById('particles'),colors=['#DC143C','#8B0000','#FF6B8A','#C9A84C'];
-  for(let i=0;i<20;i++){
-    const p=document.createElement('div');p.className='particle';
-    p.style.cssText='left:'+Math.random()*100+'%;animation-duration:'+(6+Math.random()*10)+'s;animation-delay:'+Math.random()*8+'s;width:'+(2+Math.random()*3)+'px;height:'+(2+Math.random()*3)+'px;background:'+colors[i%colors.length]+';';
-    c.appendChild(p);
-  }
-})();
-document.addEventListener('click',e=>{
-  const r=document.createElement('div');r.className='ripple';
-  r.style.left=e.clientX+'px';r.style.top=e.clientY+'px';
-  document.body.appendChild(r);setTimeout(()=>r.remove(),600);
-});
-document.addEventListener('keydown',e=>{
-  if(document.getElementById('code-screen').classList.contains('active'))return;
-  if(state.nextChapterPromptActive){
-    if(e.key===' '||e.key==='Enter'||e.key==='Escape'){
-      e.preventDefault();
-      document.getElementById('next-chapter-prompt').click();
-    }
-    return;
-  }
-  if(state.titleCardActive){
-    if(e.key===' '||e.key==='Enter'||e.key==='Escape'){
-      e.preventDefault();
-      document.getElementById('chapter-title-screen').click();
-    }
-    return;
-  }
-  if(document.getElementById('poem-overlay').classList.contains('active')){
-    if(e.key===' '||e.key==='Enter'||e.key==='Escape'){
-      e.preventDefault();
-      document.getElementById('poem-overlay').click();
-    }
-    return;
-  }
- if(e.key===' '||e.key==='Enter'){
-  e.preventDefault();
-  const _ov = document.getElementById('overlay-img');
-  if(_ov && _ov.style.opacity === '1') return;
-  advance();
-}
-  if(e.key==='Backspace'&&!state.awaitingChoice)document.getElementById('btn-back-dialogue').click();
-  if(e.key==='Escape'){
-    const h=document.getElementById('history-overlay').style.display==='flex';
-    const hp=document.getElementById('help-overlay').style.display==='flex';
-    const p=document.getElementById('pause-modal').style.display==='flex';
-    if(h)document.getElementById('history-overlay').style.display='none';
-    else if(hp)document.getElementById('help-overlay').style.display='none';
-    else if(p)document.getElementById('pause-modal').style.display='none';
-    else if(document.getElementById('game-screen').classList.contains('active'))document.getElementById('pause-modal').style.display='flex';
-  }
-});
-
-const CH_LS_CHAPTERS='lmtd_chapters_v1';
-const CH_LS_ENDINGS_SEEN='lmtd_endings_seen_v1';
-const chState={chaptersData:[],goodEndings:[],badEndings:[],unlockedChapters:new Set(),seenEndings:new Set(),loaded:false};
-const CH_LABELS={
-  eyebrow:'— chapters —',backBtn:'◂ BACK',
-  locked:'Locked — complete the previous chapter to unlock.',
-  chapterNum:'CHAPTER',endings:'ENDINGS',
-  endingsLocked:'Complete chapters to unlock endings.',
-  good:'GOOD ENDING',bad:'BAD ENDING',affRange:'Affinity',
-  noChapters:'No chapters found in chapterIndex.json.',
-  chaptersLabel:'CHAPTERS',journeyLabel:'YOUR JOURNEY',
-  completeMsg:'✦ All stories told ✦',
-};
-function chLoadUnlocked(){
-  try{
-    const raw=localStorage.getItem(CH_LS_CHAPTERS);
-    if(raw) JSON.parse(raw).forEach(id=>chState.unlockedChapters.add(id));
-  }catch(e){}
-}
-function chLoadSeenEndings(){try{const raw=localStorage.getItem(CH_LS_ENDINGS_SEEN);if(raw)JSON.parse(raw).forEach(id=>chState.seenEndings.add(id));}catch(e){}}
-window.LMTD_UNLOCK_CHAPTER=function(id){chState.unlockedChapters.add(id);try{localStorage.setItem(CH_LS_CHAPTERS,JSON.stringify([...chState.unlockedChapters]));}catch(e){}};
-function chApplyLangUI(){
-  const L=CH_LABELS;
-  document.getElementById('ch-eyebrow').textContent=L.eyebrow;
-  document.getElementById('ch-progress-label').textContent=L.journeyLabel;
-  document.getElementById('ch-chapters-label').textContent=L.chaptersLabel;
-  document.getElementById('ch-endings-label').textContent=L.endings;
-}
-function chRenderProgressBar(){
-  const data=chState.chaptersData;
-  if(!data.length)return;
-  const total=data.length;
-  let completed=0;
-  const save={};
-  try{const raw=localStorage.getItem(LS_KEY);if(raw)Object.assign(save,JSON.parse(raw));}catch(e){}
-  data.forEach((ch,idx)=>{
-    const id=ch.id||('chapter'+(idx+1));
-    if(idx===0){
-      if(save.sceneIndex>0)completed++;
-      else if(idx+1<data.length){
-        const nextId=data[idx+1].id||('chapter'+(idx+2));
-        if(chState.unlockedChapters.has(nextId))completed++;
-      }
-    }else{
-      if(chState.unlockedChapters.has(id)){
-        if(idx+1<data.length){
-          const nextId=data[idx+1].id||('chapter'+(idx+2));
-          if(chState.unlockedChapters.has(nextId))completed++;
-        }else{
-          if(chState.seenEndings.size>0)completed++;
-        }
-      }
-    }
-  });
-  const pct=total>1?Math.max(0,Math.min(100,(completed/total)*100)):0;
-  document.getElementById('ch-progress-fill').style.width=pct+'%';
-  document.getElementById('ch-progress-count').textContent=completed+' / '+total;
-  const ticksEl=document.getElementById('ch-progress-ticks');
-  ticksEl.innerHTML='';
-  data.forEach((ch,idx)=>{
-    if(idx===0||idx===total-1)return;
-    const tick=document.createElement('div');
-    tick.className='ch-progress-tick';
-    tick.style.left=((idx/total)*100)+'%';
-    if(idx<completed)tick.classList.add('done');
-    else if(idx===completed)tick.classList.add('current');
-    ticksEl.appendChild(tick);
-  });
-  const endingsEl=document.getElementById('ch-progress-endings');
-  endingsEl.innerHTML='';
-  const L=CH_LABELS;
-  const hasGood=chState.goodEndings.length>0,hasBad=chState.badEndings.length>0;
-  const goodSeen=[...chState.seenEndings].some(id=>id.startsWith('good'));
-  const badSeen=[...chState.seenEndings].some(id=>id.startsWith('bad'));
-  if(hasGood){
-    const pip=document.createElement('div');pip.className='ch-ending-pip';
-    const dot=document.createElement('div');dot.className='ch-ending-pip-dot'+(goodSeen?' unlocked-good':'');
-    const lbl=document.createElement('span');lbl.textContent=L.good;
-    pip.appendChild(dot);pip.appendChild(lbl);endingsEl.appendChild(pip);
-  }
-  if(hasBad){
-    const pip=document.createElement('div');pip.className='ch-ending-pip';
-    const dot=document.createElement('div');dot.className='ch-ending-pip-dot'+(badSeen?' unlocked-bad':'');
-    const lbl=document.createElement('span');lbl.textContent=L.bad;
-    pip.appendChild(dot);pip.appendChild(lbl);endingsEl.appendChild(pip);
-  }
-  if(total>0&&completed>=total&&(!hasGood||goodSeen)&&(!hasBad||badSeen)){
-    const msg=document.createElement('div');msg.className='ch-progress-complete-msg show';
-    msg.textContent=CH_LABELS.completeMsg;
-    endingsEl.appendChild(msg);
-  }
-}
-function chRenderAll(){
-  const L=CH_LABELS;
-  const grid=document.getElementById('ch-chapters-grid');
-  grid.innerHTML='';
-  if(!chState.chaptersData.length){
-    document.getElementById('ch-status').style.display='block';
-    document.getElementById('ch-status-text').textContent=L.noChapters;
-    return;
-  }
-  document.getElementById('ch-status').style.display='none';
-  document.getElementById('ch-chapters-section').style.display='block';
-  setTimeout(()=>grid.classList.add('visible'),80);
-
-  chState.chaptersData.forEach((ch,idx)=>{
-    const id = ch.id || ('chapter'+(idx+1));
-    const forceLocked = FORCE_LOCKED_CHAPTERS.includes(id);
-    const unlocked = !forceLocked && (idx===0 || chState.unlockedChapters.has(id));
-
-    const file = ch.file || ('chapter'+(idx+1)+'.json');
-    const derived = getChapterBadgeFromFile(file);
-
-    const card = document.createElement('div');
-    card.className = 'ch-card' + (unlocked?'':' locked') + (idx===0?' chapter-one':'');
-
-    const thumb = document.createElement('div');
-    thumb.className = 'ch-card-thumb';
-
-    const bgImage = ch.image || ch.thumbnail || null;
-    if(bgImage){
-      thumb.style.backgroundImage = "url('"+bgImage+"')";
-    }
-
-    const charImg = ch.charImg || null;
-    if(charImg){
-      const cimg = document.createElement('img');
-      cimg.className = 'ch-card-char-img';
-      cimg.src = charImg;
-      cimg.alt = ch.charName || '';
-      cimg.draggable = false;
-      cimg.onerror = function(){ this.style.display='none'; };
-      thumb.appendChild(cimg);
-    }
-
-    if(!bgImage && !charImg){
-      thumb.innerHTML = '<div class="ch-card-thumb-placeholder">&#9829;</div>';
-    }
-
-    const numBadge = document.createElement('div');
-    numBadge.className = 'ch-card-num';
-    numBadge.textContent = derived.badge;
-    thumb.appendChild(numBadge);
-
-    if(!unlocked){
-      const lb = document.createElement('div');
-      lb.className = 'ch-card-badge-locked';
-      lb.textContent = '🔒';
-      thumb.appendChild(lb);
-    }
-    card.appendChild(thumb);
-
-    const body = document.createElement('div');
-    body.className = 'ch-card-body';
-
-    const title = document.createElement('div');
-    title.className = 'ch-card-title';
-    title.textContent = ch.title || derived.title;
-
-    const sub = document.createElement('div');
-    sub.className = 'ch-card-subtitle';
-    sub.textContent = unlocked ? (ch.description||'') : L.locked;
-
-    const meta = document.createElement('div');
-    meta.className = 'ch-card-meta';
-    const tag = document.createElement('div');
-    tag.className = 'ch-card-tag';
-    tag.textContent = ch.tag || derived.badge;
-    const arrow = document.createElement('div');
-    arrow.className = 'ch-card-arrow';
-    arrow.textContent = '→';
-    meta.appendChild(tag);
-    meta.appendChild(arrow);
-
-    body.appendChild(title);
-    body.appendChild(sub);
-    body.appendChild(meta);
-    card.appendChild(body);
-
-    if(unlocked) card.addEventListener('click',()=>chLaunchChapter(ch,idx));
-    grid.appendChild(card);
-  });
-
-  chRenderEndings(L);
-  chRenderProgressBar();
-}
-function chRenderEndings(L){
-  const section=document.getElementById('ch-endings-section');
-  const container=document.getElementById('ch-endings-container');
-  section.style.display='block';container.innerHTML='';
-  const hasGood=chState.goodEndings.length>0,hasBad=chState.badEndings.length>0;
-  if(!hasGood&&!hasBad){
-    container.innerHTML='<div class="ch-ending-locked-msg">'+L.endingsLocked+'</div>';
-    return;
-  }
-  const wrap=document.createElement('div');wrap.className='ch-ending-cards';
-  const all=[
-    ...chState.goodEndings.map(e=>({...e,_type:'good'})),
-    ...chState.badEndings.map(e=>({...e,_type:'bad'}))
-  ];
-  all.forEach(e=>{
-    const card=document.createElement('div');card.className='ch-ending-card '+e._type;
-    const typeLabel=e._type==='good'?L.good:L.bad;
-    card.innerHTML=
-      '<div class="ch-ending-card-type">'+typeLabel+'</div>'+
-      '<div class="ch-ending-card-title">'+(e.title||'—')+'</div>'+
-      '<div class="ch-ending-card-range">'+L.affRange+': '+e.minAffinity+' → '+e.maxAffinity+'</div>';
-    wrap.appendChild(card);
-  });
-  container.appendChild(wrap);
-}
-function chLaunchChapter(ch,idx){
-  try{
-    const raw=localStorage.getItem(LS_KEY)||'{}';
-    const d=JSON.parse(raw);
-    d.lang='en';
-    d.firstTime=idx===0?d.firstTime:false;
-    d.targetChapterFile=ch.file||('chapter'+(idx+1)+'.json');
-    d.sceneIndex=0;
-    localStorage.setItem(LS_KEY,JSON.stringify(d));
-  }catch(e){}
-
-  fadeTransition(()=>{
-    state.sceneIndex=0;
-    state.navStack=[];
-    state.finalRedTransitioning=false;
-    state.nextChapterPromptActive=false;
-    clearBloodRealism();
-    clearEyesEffect();
-    clearGameScreen();
-
-    const file=ch.file||('chapter'+(idx+1)+'.json');
-    GAME_CONFIG.chapterFiles=[file];
-    applyLang();
-    Promise.all([loadChapters(),loadEndings()]).then(()=>{
-      stopMusic();
-      startIntroMusic();
-      const derived = getChapterBadgeFromFile(file);
-      const label = ch.label || ch.title || derived.title;
-      const subtitle = ch.subtitle || ch.chapterName || '';
-      document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-      showChapterTitle(label, subtitle, ()=>{
-        showScreen('game-screen');
-        renderAffinity();
-        clearGameScreen();
-        renderScene(state.scenes[0]);
-      });
-    });
-  });
-}
-async function openChaptersScreen(){
-  const chParts=document.getElementById('ch-particles');
-  if(chParts&&!chParts.dataset.spawned){
-    chParts.dataset.spawned='1';
-    const colors=['#DC143C','#8B0000','#FF6B8A','#C9A84C'];
-    for(let i=0;i<18;i++){
-      const p=document.createElement('div');p.className='particle';
-      p.style.cssText='left:'+Math.random()*100+'%;animation-duration:'+(7+Math.random()*10)+'s;animation-delay:'+Math.random()*8+'s;width:'+(2+Math.random()*3)+'px;height:'+(2+Math.random()*3)+'px;background:'+colors[i%colors.length]+';';
-      chParts.appendChild(p);
-    }
-  }
-  chLoadUnlocked();
-  chLoadSeenEndings();
-  chApplyLangUI();
-  if(!chState.loaded){
-    document.getElementById('ch-status').style.display='block';
-    document.getElementById('ch-status-text').textContent=CH_LABELS.noChapters;
-    try{chState.chaptersData = chapterIndexCache || await fetch('json/chapterIndex.json?v='+Date.now(),{cache:'no-store'}).then(r=>r.json());}
-    catch(e){chState.chaptersData=[];}
-    try{chState.goodEndings=await fetch('json/good_ending.json?v='+Date.now(),{cache:'no-store'}).then(r=>r.json());}catch(e){chState.goodEndings=[];}
-    try{chState.badEndings=await fetch('json/bad_ending.json?v='+Date.now(),{cache:'no-store'}).then(r=>r.json());}catch(e){chState.badEndings=[];}
-    chState.loaded=true;
-  }
-  const eyebrow=document.getElementById('ch-eyebrow');
-  const divider=document.querySelector('#chapters-screen .ch-header-divider');
-  const progress=document.getElementById('ch-progress-section');
-  [eyebrow,divider,progress].forEach(el=>{
-    if(!el)return;
-    el.style.animation='none';el.style.opacity='0';
-    void el.offsetWidth;el.style.animation='';el.style.opacity='';
-  });
-  const grid=document.getElementById('ch-chapters-grid');
-  grid.classList.remove('visible');
-  fadeTransition(()=>showScreen('chapters-screen'));
-  setTimeout(()=>chRenderAll(),100);
-}
-document.getElementById('btn-chapters-back').addEventListener('click',()=>{
-  fadeTransition(()=>{
-    resetTitleAnimations();
-    showScreen('title-screen');
-  });
-});
-
-boot();
 </script>
 </body>
 </html>

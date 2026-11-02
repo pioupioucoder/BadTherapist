@@ -1,214 +1,216 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#0A0A0F">
-<link rel="icon" type="image/png" href="images/logo.png">
-<title>Credits & Information — Bad Therapist</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Credits | Bad Therapist</title>
+    <link rel="icon" type="image/png" href="images/logo.png">
 
-<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600&family=IM+Fell+English:ital@0;1&display=swap" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
 
-<style>
-:root {
-  --bg:#0A0A0F;
-  --silver:#E8DDF0;
-  --blood:#8B0000;
-  --gold:#C9A84C;
-}
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
 
-* { box-sizing:border-box; }
+        :root {
+            --black: #080808;
+            --gray: #777;
+            --light: #ccc;
+            --white: #f2f2f2;
+        }
 
-body {
-  margin:0;
-  min-height:100vh;
-  background:var(--bg);
-  color:var(--silver);
-  font-family:'IM Fell English',serif;
-  padding:24px;
-  position:relative;
-}
+        body {
+            min-height: 100vh;
+            background:
+                radial-gradient(ellipse at center, #202020 0%, #101010 55%, #080808 100%);
+            color: var(--white);
+            font-family: 'VT323', monospace;
+            font-size: 22px;
+            overflow-x: hidden;
+        }
 
-body::before {
-  content:"";
-  position:fixed;
-  inset:0;
-  pointer-events:none;
-  background:radial-gradient(ellipse at 50% 0%,#210813 0%,transparent 55%);
-}
+        body::before {
+            content: "";
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 10;
+            background: repeating-linear-gradient(
+                to bottom,
+                transparent 0px,
+                transparent 2px,
+                rgba(0, 0, 0, 0.22) 3px,
+                rgba(0, 0, 0, 0.22) 4px
+            );
+        }
 
-body::after {
-  content:"";
-  position:fixed;
-  inset:13px;
-  border:1px solid rgba(201,168,76,.12);
-  pointer-events:none;
-}
+        .page {
+            width: min(700px, 90%);
+            margin: 0 auto;
+            padding: 35px 0 60px;
+        }
 
-main {
-  position:relative;
-  width:min(760px,100%);
-  margin:auto;
-  z-index:1;
-}
+        header {
+            margin-bottom: 55px;
+        }
 
-header {
-  display:flex;
-  justify-content:space-between;
-  align-items:center;
-  gap:14px;
-  border-bottom:1px solid rgba(201,168,76,.25);
-  padding:8px 0 20px;
-}
+        .back {
+            color: var(--gray);
+            text-decoration: none;
+            font-family: 'Press Start 2P', monospace;
+            font-size: 10px;
+            transition: color 0.2s;
+        }
 
-a {
-  color:#d8c8d6;
-  text-decoration:none;
-}
+        .back:hover {
+            color: var(--white);
+        }
 
-a:hover { color:white; }
+        h1 {
+            font-family: 'Press Start 2P', monospace;
+            font-size: clamp(22px, 5vw, 34px);
+            text-align: center;
+            margin-bottom: 45px;
+            letter-spacing: 2px;
+            text-shadow: 3px 3px 0 #555;
+        }
 
-.back,.tag,.eyebrow,h2,footer {
-  font-family:Cinzel,serif;
-  letter-spacing:.15em;
-}
+        .section {
+            padding: 25px;
+            background: rgba(255, 255, 255, 0.025);
+            border: 1px solid #444;
+            position: relative;
+        }
 
-.back { font-size:10px; }
-.tag { font-size:9px; color:var(--gold); }
+        .section::before,
+        .section::after {
+            content: "";
+            position: absolute;
+            width: 8px;
+            height: 8px;
+            background: var(--light);
+        }
 
-h1 {
-  font:500 clamp(2.6rem,8vw,5rem)/1.08 Cinzel,serif;
-  letter-spacing:.06em;
-  margin:48px 0 42px;
-  text-shadow:0 0 35px rgba(220,20,60,.2);
-}
+        .section::before {
+            top: -1px;
+            left: -1px;
+        }
 
-section {
-  padding:27px 0;
-  border-top:1px solid rgba(201,168,76,.2);
-}
+        .section::after {
+            bottom: -1px;
+            right: -1px;
+        }
 
-.eyebrow {
-  font-size:10px;
-  color:#b36a79;
-  margin-bottom:15px;
-}
+        h2 {
+            font-family: 'Press Start 2P', monospace;
+            font-size: 12px;
+            margin-bottom: 25px;
+            color: var(--light);
+        }
 
-h2 {
-  font-size:12px;
-  font-weight:500;
-  color:var(--silver);
-  margin:0 0 17px;
-}
+        .music-list {
+            display: flex;
+            flex-direction: column;
+            gap: 22px;
+        }
 
-p {
-  font-size:15px;
-  line-height:1.9;
-  color:#aa9eae;
-  margin:0 0 14px;
-}
+        .music-item {
+            padding-bottom: 18px;
+            border-bottom: 1px solid #333;
+        }
 
-ul {
-  padding-left:21px;
-  color:#aa9eae;
-  line-height:1.9;
-}
+        .music-item:last-child {
+            border-bottom: none;
+            padding-bottom: 0;
+        }
 
-li {
-  padding-left:4px;
-  margin-bottom:7px;
-}
+        .song-title {
+            display: inline-block;
+            color: var(--white);
+            text-decoration: none;
+            margin-bottom: 5px;
+        }
 
-strong {
-  color:#e8ddef;
-  font-weight:normal;
-}
+        .song-title:hover {
+            color: var(--light);
+            text-decoration: underline;
+        }
 
-.note {
-  color:#c5a4b0;
-  font-style:italic;
-}
+        .artist {
+            color: var(--gray);
+        }
 
-footer {
-  border-top:1px solid rgba(201,168,76,.2);
-  padding-top:18px;
-  margin-top:36px;
-  display:flex;
-  justify-content:space-between;
-  gap:12px;
-  font-size:9px;
-  color:#6e6372;
-}
+        a:focus-visible {
+            outline: 2px solid var(--white);
+            outline-offset: 4px;
+        }
 
-@media(max-width:480px) {
-  body { padding:18px; }
-  header,footer {
-    align-items:flex-start;
-    flex-direction:column;
-  }
-}
-</style>
+        @media (max-width: 500px) {
+            .page {
+                padding-top: 25px;
+            }
+
+            header {
+                margin-bottom: 45px;
+            }
+
+            .section {
+                padding: 18px;
+            }
+
+            h2 {
+                font-size: 10px;
+            }
+        }
+    </style>
 </head>
 
 <body>
-<main>
+    <div class="page">
 
-<header>
-  <a class="back" href="settings.html">← BACK TO SETTINGS</a>
-  <span class="tag">BAD THERAPIST</span>
-</header>
+        <header>
+            <a class="back" href="settings.html">← BACK</a>
+        </header>
 
-<h1>Credits &<br>Information</h1>
+        <main>
+            <h1>CREDITS</h1>
 
-<section>
-  <div class="eyebrow">01 / Credits</div>
-  <h2>THE CREATOR</h2>
-  <p>Bad Therapist is an independent visual novel project.</p>
-  <p class="note">Thank you for taking the time to experience this story.</p>
-</section>
+            <section class="section">
+                <h2>MUSIC</h2>
 
-<section>
-  <div class="eyebrow">02 / Information</div>
-  <h2>ABOUT THE PROJECT</h2>
+                <div class="music-list">
 
-  <p>Bad Therapist is a narrative visual novel currently in development. The story and its characters will evolve as new chapters are added.</p>
+                    <div class="music-item">
+                        <a class="song-title"
+                           href="https://soundcloud.com/name_music_channel/halloween-song?si=2560b39ea00a40edb4dd8b6510edc328&amp;utm_source=clipboard&amp;utm_medium=text&amp;utm_campaign=social_sharing"
+                           target="_blank"
+                           rel="noopener noreferrer"
+                           aria-label="Listen to Ghost Land Mystery by Heart of Unicornia on SoundCloud">
+                            Ghost Land Mystery ↗
+                        </a>
+                        <div class="artist">by Heart of Unicornia</div>
+                    </div>
 
-  <p>Your choices may influence the way certain events unfold. Some scenes, routes and endings may become available as you progress.</p>
+                    <div class="music-item">
+                        <a class="song-title"
+                           href="https://soundcloud.com/name_music_channel/i-made-this-song-without-listening-to-it?si=e07d6aea3a014688a838d9fcb18b7238&amp;utm_source=clipboard&amp;utm_medium=text&amp;utm_campaign=social_sharing"
+                           target="_blank"
+                           rel="noopener noreferrer"
+                           aria-label="Listen to I made this song without listening to it by Heart of Unicornia on SoundCloud">
+                            I made this song without listening to it ↗
+                        </a>
+                        <div class="artist">by Heart of Unicornia</div>
+                    </div>
 
-  <p>This is a work of fiction. The themes and situations presented in the story are part of its narrative.</p>
-</section>
+                </div>
+            </section>
+        </main>
 
-<section>
-  <div class="eyebrow">03 / How to play</div>
-  <h2>CONTROLS</h2>
-
-  <ul>
-    <li><strong>Tap / Click:</strong> Advance dialogue.</li>
-    <li><strong>Dialogue:</strong> Click again while text is appearing to finish the text animation.</li>
-    <li><strong>Choices:</strong> Select an option when a choice appears. Your decision may affect the story.</li>
-    <li><strong>Back:</strong> Return to a previous scene when the option is available.</li>
-    <li><strong>History:</strong> Review previous dialogue when this feature is available.</li>
-    <li><strong>Settings:</strong> Adjust the volume, import or export your save, or reset your progress.</li>
-    <li><strong>Auto-save:</strong> Your progress is stored in your browser when the game saves.</li>
-  </ul>
-</section>
-
-<section>
-  <div class="eyebrow">04 / Important</div>
-  <h2>YOUR SAVE DATA</h2>
-
-  <p>Your progress is stored locally in your browser. Clearing your browser data or changing browsers may cause you to lose it.</p>
-
-  <p>To keep a backup, open Settings and use Export. You can later restore your progress using Import.</p>
-
-  <p class="note">If you encounter a bug, try refreshing the page. If the issue persists, report it to the creator.</p>
-</section>
-
-<footer>
-  <span>BAD THERAPIST</span>
-  <span>END OF FILE · 001</span>
-</footer>
-
-</main>
+    </div>
 </body>
 </html>
