@@ -4,8 +4,13 @@
     const VOLUME_KEY = 'lmtd_volume';
     const MUTE_KEY = 'lmtd_muted';
     const POSITION_KEY = 'bt_intro_position';
+    const ACCEPTED_KEY = 'bt_intro_accepted';
 
     const DEFAULT_VOLUME = 0.7;
+
+    let currentAudio = null;
+    let restorePromise = Promise.resolve();
+    let resumeListenersAdded = false;
 
     function getVolume() {
         const value = Number(localStorage.getItem(VOLUME_KEY));
@@ -40,7 +45,7 @@
         applySettings();
     }
 
-    function savePosition(audio) {
+    function savePosition(audio = currentAudio) {
         if (!audio || !Number.isFinite(audio.currentTime)) return;
 
         try {
@@ -54,57 +59,99 @@
     }
 
     function restorePosition(audio) {
-        let position = 0;
+        return new Promise(resolve => {
+            let position = 0;
 
-        try {
-            position = Number(
-                sessionStorage.getItem(POSITION_KEY) || 0
-            );
-        } catch (error) {
-            console.warn('Could not restore audio position:', error);
-        }
-
-        if (!Number.isFinite(position) || position < 0) {
-            position = 0;
-        }
-
-        const applyPosition = () => {
-            if (
-                Number.isFinite(audio.duration) &&
-                audio.duration > 0
-            ) {
-                audio.currentTime = position % audio.duration;
+            try {
+                position = Number(
+                    sessionStorage.getItem(POSITION_KEY) || 0
+                );
+            } catch (error) {
+                console.warn('Could not restore audio position:', error);
             }
-        };
 
-        if (audio.readyState >= 1) {
-            applyPosition();
-        } else {
-            audio.addEventListener(
-                'loadedmetadata',
-                applyPosition,
-                { once: true }
-            );
-        }
-    }
+            if (!Number.isFinite(position) || position < 0) {
+                position = 0;
+            }
 
-    function startAudio(audio) {
-        applySettings();
+            const applyPosition = () => {
+                if (
+                    Number.isFinite(audio.duration) &&
+                    audio.duration > 0
+                ) {
+                    audio.currentTime = position % audio.duration;
+                }
 
-        audio.play().catch(() => {
-            // If autoplay is blocked, wait for user interaction.
-            const resume = () => {
-                applySettings();
-
-                audio.play().catch(() => {});
-
-                document.removeEventListener('click', resume);
-                document.removeEventListener('keydown', resume);
+                resolve();
             };
 
-            document.addEventListener('click', resume, { once: true });
-            document.addEventListener('keydown', resume, { once: true });
+            if (audio.readyState >= 1) {
+                applyPosition();
+            } else {
+                audio.addEventListener(
+                    'loadedmetadata',
+                    applyPosition,
+                    { once: true }
+                );
+
+                audio.addEventListener(
+                    'error',
+                    resolve,
+                    { once: true }
+                );
+            }
         });
+    }
+
+    function addResumeListeners(audio) {
+        if (resumeListenersAdded) return;
+
+        resumeListenersAdded = true;
+
+        const resume = () => {
+            if (sessionStorage.getItem(ACCEPTED_KEY) !== '1') return;
+
+            applySettings();
+
+            audio.play().catch(() => {});
+
+            document.removeEventListener('click', resume);
+            document.removeEventListener('keydown', resume);
+            resumeListenersAdded = false;
+        };
+
+        document.addEventListener('click', resume);
+        document.addEventListener('keydown', resume);
+    }
+
+    async function start() {
+        const audio = document.getElementById('intro-music');
+
+        if (!audio) return;
+
+        currentAudio = audio;
+
+        sessionStorage.setItem(ACCEPTED_KEY, '1');
+
+        applySettings();
+
+        await restorePromise;
+
+        if (!audio.paused) return;
+
+        audio.play().catch(() => {
+            addResumeListeners(audio);
+        });
+    }
+
+    function stop() {
+        if (currentAudio) {
+            savePosition(currentAudio);
+            currentAudio.pause();
+        }
+
+        sessionStorage.removeItem(ACCEPTED_KEY);
+        sessionStorage.removeItem(POSITION_KEY);
     }
 
     function init() {
@@ -114,7 +161,9 @@
 
         if (!intro) return;
 
-        restorePosition(intro);
+        currentAudio = intro;
+
+        restorePromise = restorePosition(intro);
 
         intro.addEventListener('timeupdate', () => {
             savePosition(intro);
@@ -124,18 +173,35 @@
             savePosition(intro);
         });
 
-        window.addEventListener('beforeunload', () => {
-            savePosition(intro);
-        });
+        // Only resume if the player already accepted the entry question.
+        if (sessionStorage.getItem(ACCEPTED_KEY) === '1') {
+            start();
+        }
 
-        startAudio(intro);
-
-        // Apply the shared settings to audio elements added later.
+        // Keep audio settings synchronized with newly added audio elements.
         const observer = new MutationObserver(applySettings);
 
         observer.observe(document.body, {
             childList: true,
             subtree: true
+        });
+
+        // Stop the music when leaving the game for another site
+        // in the same tab. Links opening a new tab are not affected.
+        document.addEventListener('click', event => {
+            const link = event.target.closest('a[href]');
+
+            if (!link || link.target === '_blank') return;
+
+            try {
+                const destination = new URL(link.href, location.href);
+
+                if (destination.origin !== location.origin) {
+                    stop();
+                }
+            } catch (error) {
+                // Ignore invalid URLs.
+            }
         });
     }
 
@@ -144,7 +210,9 @@
         isMuted,
         setVolume,
         setMuted,
-        applySettings
+        applySettings,
+        start,
+        stop
     };
 
     if (document.readyState === 'loading') {

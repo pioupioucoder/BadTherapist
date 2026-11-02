@@ -8,6 +8,7 @@
 <title>Bad Therapist</title>
 
 <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+<script src="audio-manager.js" defer></script>
 
 <style>
 :root {
@@ -38,7 +39,6 @@ body {
     position: relative;
 }
 
-/* Background */
 .background {
     position: fixed;
     inset: 0;
@@ -58,7 +58,20 @@ body {
     background-size: 32px 32px;
 }
 
-/* CRT scanlines */
+/* Transparent intro image */
+.intro-art {
+    position: fixed;
+    z-index: 1;
+    width: min(65vw, 650px);
+    max-height: 75svh;
+    object-fit: contain;
+    object-position: center;
+    opacity: .55;
+    pointer-events: none;
+    user-select: none;
+    filter: drop-shadow(0 0 18px rgba(0,0,0,.5));
+}
+
 .scanlines {
     position: fixed;
     inset: 0;
@@ -74,7 +87,6 @@ body {
     );
 }
 
-/* Screen frame */
 .frame {
     position: fixed;
     inset: 15px;
@@ -105,7 +117,7 @@ body {
     border-width: 0 2px 2px 0;
 }
 
-/* Main */
+/* Main menu */
 main {
     width: min(700px, 90%);
     text-align: center;
@@ -128,7 +140,19 @@ main {
     }
 }
 
-/* Small top label */
+.menu-content {
+    animation: floating 4s ease-in-out infinite;
+}
+
+@keyframes floating {
+    0%, 100% {
+        transform: translateY(0);
+    }
+    50% {
+        transform: translateY(-9px);
+    }
+}
+
 .system-label {
     font-size: 19px;
     letter-spacing: .24em;
@@ -136,7 +160,6 @@ main {
     margin-bottom: 43px;
 }
 
-/* Game title */
 h1 {
     font-family: 'Press Start 2P', monospace;
     font-size: clamp(27px, 6vw, 54px);
@@ -148,27 +171,84 @@ h1 {
     text-shadow:
         3px 3px 0 #555,
         6px 6px 0 rgba(0,0,0,.8);
-    position: relative;
 }
 
-/* Pixel glitch */
-.glitch {
+/* E glitch */
+.glitch-e {
     display: inline-block;
-    animation: glitch 7s infinite;
+    position: relative;
+    animation: e-glitch 5s infinite steps(1);
 }
 
-@keyframes glitch {
-    0%, 94%, 96%, 100% {
+.glitch-e::before,
+.glitch-e::after {
+    content: "E";
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.glitch-e::before {
+    color: #aaa;
+    text-shadow: -3px 0 #fff;
+    animation: e-glitch-before 5s infinite steps(1);
+}
+
+.glitch-e::after {
+    color: #777;
+    text-shadow: 3px 0 #ddd;
+    animation: e-glitch-after 5s infinite steps(1);
+}
+
+@keyframes e-glitch {
+    0%, 12%, 14%, 47%, 49%, 100% {
         transform: translate(0);
         opacity: 1;
+        filter: none;
     }
-    95% {
-        transform: translate(3px,-2px);
-        opacity: .65;
+    13% {
+        transform: translate(3px, -2px) skewX(-12deg);
+        opacity: .55;
+        filter: blur(1px);
+    }
+    48% {
+        transform: translate(-2px, 1px) scaleY(.8);
+        opacity: .7;
+        filter: blur(.5px);
     }
 }
 
-/* Divider */
+@keyframes e-glitch-before {
+    0%, 12%, 14%, 47%, 49%, 100% {
+        opacity: 0;
+        transform: translate(0);
+    }
+    13% {
+        opacity: .8;
+        transform: translate(-4px, 1px);
+    }
+    48% {
+        opacity: .6;
+        transform: translate(3px, -2px);
+    }
+}
+
+@keyframes e-glitch-after {
+    0%, 12%, 14%, 47%, 49%, 100% {
+        opacity: 0;
+        transform: translate(0);
+    }
+    13% {
+        opacity: .7;
+        transform: translate(4px, -1px);
+    }
+    48% {
+        opacity: .8;
+        transform: translate(-3px, 2px);
+    }
+}
+
 .divider {
     width: 180px;
     height: 4px;
@@ -179,7 +259,6 @@ h1 {
         0 -5px 0 #333;
 }
 
-/* Buttons */
 nav {
     display: flex;
     flex-direction: column;
@@ -227,7 +306,81 @@ nav a:hover::before {
     opacity: 1;
 }
 
-/* Responsive */
+/* Entry question */
+#entry-screen {
+    position: fixed;
+    inset: 0;
+    z-index: 6;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 25px;
+    text-align: center;
+    background: transparent;
+    animation: entry-appear .8s ease both;
+}
+
+@keyframes entry-appear {
+    from {
+        opacity: 0;
+        filter: blur(4px);
+    }
+    to {
+        opacity: 1;
+        filter: blur(0);
+    }
+}
+
+#entry-screen.hidden {
+    display: none;
+}
+
+.entry-question {
+    font-family: 'Press Start 2P', monospace;
+    font-size: clamp(15px, 3vw, 23px);
+    line-height: 1.9;
+    max-width: 600px;
+    margin-bottom: 38px;
+    text-shadow: 3px 3px 0 #333;
+}
+
+.entry-buttons {
+    display: flex;
+    gap: 18px;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.entry-buttons button {
+    width: 150px;
+    padding: 15px;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 11px;
+    color: #aaa;
+    background: #171717;
+    border: 2px solid #555;
+    box-shadow: 4px 4px 0 #050505;
+    cursor: pointer;
+    transition: .15s ease;
+}
+
+.entry-buttons button:hover {
+    color: #fff;
+    background: #353535;
+    border-color: #ddd;
+    transform: translate(-2px,-2px);
+}
+
+.entry-buttons button:active {
+    transform: translate(2px,2px);
+}
+
+/* Hidden until entry is accepted */
+#game-menu.hidden {
+    display: none;
+}
+
 @media(max-width:480px) {
     h1 {
         font-size: clamp(22px, 7vw, 34px);
@@ -239,6 +392,15 @@ nav a:hover::before {
 
     nav a {
         width: min(245px, 85vw);
+    }
+
+    .intro-art {
+        width: 90vw;
+        max-height: 65svh;
+    }
+
+    .entry-buttons button {
+        width: 125px;
     }
 }
 
@@ -254,19 +416,85 @@ nav a:hover::before {
 <body>
 
 <div class="background"></div>
+
+<img
+    class="intro-art"
+    src="images/intro.png"
+    alt=""
+    draggable="false"
+>
+
 <div class="frame"></div>
 <div class="scanlines"></div>
 
-<main>
-    <h1>BAD<br>THERA<span class="glitch">PIST</span></h1>
+<audio id="intro-music" src="audio/intro.mp3" loop preload="auto"></audio>
 
-    <div class="divider"></div>
+<!-- First screen -->
+<section id="entry-screen">
+    <p class="entry-question">Do you wanna waste your time?</p>
 
-    <nav>
-        <a href="world_base.html?launch=1">PLAY</a>
-        <a href="settings.html">SETTINGS</a>
-    </nav>
+    <div class="entry-buttons">
+        <button id="yes-button" type="button">YES</button>
+        <button id="no-button" type="button">NO</button>
+    </div>
+</section>
+
+<!-- Main menu -->
+<main id="game-menu" class="hidden">
+    <div class="menu-content">
+
+        <h1>BAD<br>TH<span class="glitch-e">E</span>RAPIST</h1>
+
+        <div class="divider"></div>
+
+        <nav>
+            <a href="world_base.html?launch=1">PLAY</a>
+            <a href="settings.html">SETTINGS</a>
+        </nav>
+
+    </div>
 </main>
+
+<script>
+(() => {
+    const entryScreen = document.getElementById('entry-screen');
+    const gameMenu = document.getElementById('game-menu');
+    const yesButton = document.getElementById('yes-button');
+    const noButton = document.getElementById('no-button');
+
+    const ACCEPTED_KEY = 'bt_intro_accepted';
+
+    function showMenu() {
+        entryScreen.classList.add('hidden');
+        gameMenu.classList.remove('hidden');
+    }
+
+    // If the player already accepted during this tab session,
+    // return directly to the menu.
+    if (sessionStorage.getItem(ACCEPTED_KEY) === '1') {
+        showMenu();
+    }
+
+    yesButton.addEventListener('click', () => {
+        sessionStorage.setItem(ACCEPTED_KEY, '1');
+
+        showMenu();
+
+        if (window.BadTherapistAudio) {
+            window.BadTherapistAudio.start();
+        }
+    });
+
+    noButton.addEventListener('click', () => {
+        if (window.BadTherapistAudio) {
+            window.BadTherapistAudio.stop();
+        }
+
+        sessionStorage.removeItem(ACCEPTED_KEY);
+        window.location.href = 'https://krismeow.straw.page/';
+    });
+})();
+</script>
 
 </body>
 </html>
