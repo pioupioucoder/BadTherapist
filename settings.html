@@ -286,9 +286,7 @@
                 <h2>EXTERNAL LINKS</h2>
 
                 <div class="links">
-                    <a href="https://pioupioucoder.github.io/BadTherapist/" target="_blank" rel="noopener noreferrer">
-                        SHARE GAME ↗
-                    </a>
+                  <a href="#" id="share-game">SHARE GAME ↗</a>
 
                     <a href="https://youtube.com/@krismeowofficial?si=qd-ctk7MqisbWY7w" target="_blank" rel="noopener noreferrer">
                         YOUTUBE ↗
@@ -456,6 +454,29 @@
 
             location.reload();
         });
+
+        // SHARE GAME
+document.getElementById('share-game').addEventListener('click', async (event) => {
+    event.preventDefault();
+
+    const gameUrl = 'https://pioupioucoder.github.io/BadTherapist/';
+
+    try {
+        if (navigator.share) {
+            await navigator.share({
+                title: 'Bad Therapist',
+                url: gameUrl
+            });
+        } else {
+            await navigator.clipboard.writeText(gameUrl);
+            alert('Game link copied to clipboard!');
+        }
+    } catch (error) {
+        if (error.name !== 'AbortError') {
+            alert('Could not share the link.');
+        }
+    }
+});
     </script>
 
 </body>
