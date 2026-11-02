@@ -1,6 +1,7 @@
 // illusion.js – image darkwall.png sur les murs (fond transparent)
 import * as THREE from 'three';
 import { buildWorld as buildOutside } from './immeuble.js';
+import { buildCorridor } from './corridor.js';
 
 // bedroom.js – la chambre (copie d'illusion.js) adaptée à world_base.html
 // La fenêtre affiche en temps réel l'extérieur de immeuble.js,
@@ -355,35 +356,20 @@ export function buildWorld(scene, opts) {
     floor.receiveShadow = true;
     scene.add(floor);
 
-    // ─── MURS EXTÉRIEURS ──────────────────────────────────────────
-    plane(ROOM_W, WALL_H, mWall, 0, WALL_H / 2, 0, 0, 0);
+    // ─── COULOIR (corridor.js) : derrière le mur d'entrée, visible en temps réel ──
+    const corridor = buildCorridor(scene, { wallH: WALL_H, nearZ: 0 });
 
+    // ─── MUR DU FOND : FENÊTRE SUR L'IMMEUBLE ─────────────────────
     (function() {
         const fw = 2.8, fh = 2.0;
-        const doorW = 1.2, doorH = 2.2;
-        const doorX = ROOM_W / 2 - 1.8;
         const fz = HALF_D + 0.01;
         const yc = WALL_H / 2;
+        const yTop = yc + fh / 2, yBot = yc - fh / 2;
 
-        box(-fw / 2 - (-ROOM_W / 2), WALL_H, 0.05, mWall, ((-ROOM_W / 2) + (-fw / 2)) / 2, WALL_H / 2, fz);
-        const xGap1 = fw / 2, xGap2 = doorX - doorW / 2;
-        if (xGap2 > xGap1) {
-            const w = xGap2 - xGap1;
-            box(w, WALL_H, 0.05, mWall, (xGap1 + xGap2) / 2, WALL_H / 2, fz);
-        }
-        box(ROOM_W / 2 - (doorX + doorW / 2), WALL_H, 0.05, mWall, (doorX + doorW / 2 + ROOM_W / 2) / 2, WALL_H / 2, fz);
-
-        const yTop = Math.max(yc + fh / 2, doorH);
-        if (WALL_H > yTop) {
-            box(ROOM_W, WALL_H - yTop, 0.05, mWall, 0, (yTop + WALL_H) / 2, fz);
-        }
-        const yBotFen = yc - fh / 2;
-        if (yBotFen > 0) {
-            box(fw, yBotFen - 0, 0.05, mWall, 0, (0 + yBotFen) / 2, fz);
-        }
-        if (yTop > doorH) {
-            box(doorW, yTop - doorH, 0.05, mWall, doorX, (doorH + yTop) / 2, fz);
-        }
+        box(ROOM_W / 2 - fw / 2, WALL_H, 0.05, mWall, -(ROOM_W / 2 + fw / 2) / 2, WALL_H / 2, fz);
+        box(ROOM_W / 2 - fw / 2, WALL_H, 0.05, mWall, (ROOM_W / 2 + fw / 2) / 2, WALL_H / 2, fz);
+        box(fw, WALL_H - yTop, 0.05, mWall, 0, (yTop + WALL_H) / 2, fz);
+        box(fw, yBot, 0.05, mWall, 0, yBot / 2, fz);
 
         const mGlass2 = new THREE.MeshLambertMaterial({ color: 0x88bbdd, transparent: true, opacity: 0.12, side: THREE.DoubleSide });
         windowView.makePane(fw + 0.02, fh + 0.02, 0, yc, fz + 0.002);
@@ -400,7 +386,27 @@ export function buildWorld(scene, opts) {
         box(fw, 0.04, 0.05, frameMat, 0, yc, fz + 0.02);
         box(0.04, fh, 0.05, frameMat, 0, yc, fz + 0.02);
 
-        const doorZ = HALF_D + 0.02;
+    })();
+
+    // ─── MUR D'ENTRÉE (en face du joueur) : PORTE AU MILIEU → COULOIR ──
+    (function() {
+        const doorW = 1.2, doorH = 2.2;
+        const doorX = 0;
+        const wz = 0;
+        const doorZ = wz + 0.01;
+
+        // Face +z = côté chambre, face -z = côté couloir
+        const mBoth = [mWall, mWall, mWall, mWall, mWall, corridor.wallMaterial];
+        function wallPiece(w, h, x, y) {
+            const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.05), mBoth);
+            m.position.set(x, y, wz);
+            scene.add(m);
+        }
+        const sideW = ROOM_W / 2 - doorW / 2;
+        wallPiece(sideW, WALL_H, -(ROOM_W / 2 + doorW / 2) / 2, WALL_H / 2);
+        wallPiece(sideW, WALL_H, (ROOM_W / 2 + doorW / 2) / 2, WALL_H / 2);
+        wallPiece(doorW, WALL_H - doorH, doorX, (doorH + WALL_H) / 2);
+
         const frameMatDoor = mDoorFrame;
         box(0.08, doorH, 0.08, frameMatDoor, doorX - doorW / 2 - 0.04, doorH / 2 + 0.025, doorZ);
         box(0.08, doorH, 0.08, frameMatDoor, doorX + doorW / 2 + 0.04, doorH / 2 + 0.025, doorZ);
@@ -414,16 +420,19 @@ export function buildWorld(scene, opts) {
         const doorGroup = new THREE.Group();
         doorGroup.position.set(doorW / 2, 0, 0);
         const doorMesh = new THREE.Mesh(new THREE.BoxGeometry(doorW, doorH, 0.04), mDoor);
-        doorMesh.position.set(0, 0, 0);
         doorMesh.castShadow = true; doorMesh.receiveShadow = true;
         doorGroup.add(doorMesh);
-        const handle = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), mHandle);
-        handle.position.set(0.35, -0.2, 0.06);
-        doorGroup.add(handle);
-        const handleBase = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.12, 6), mHandle);
-        handleBase.rotation.x = Math.PI / 2;
-        handleBase.position.set(0.35, -0.2, 0.04);
-        doorGroup.add(handleBase);
+
+        // Poignées des deux côtés
+        [1, -1].forEach(function(side) {
+            const handle = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), mHandle);
+            handle.position.set(0.35, -0.2, 0.06 * side);
+            doorGroup.add(handle);
+            const handleBase = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.12, 6), mHandle);
+            handleBase.rotation.x = Math.PI / 2;
+            handleBase.position.set(0.35, -0.2, 0.04 * side);
+            doorGroup.add(handleBase);
+        });
 
         const clickArea = new THREE.Mesh(new THREE.PlaneGeometry(doorW * 1.2, doorH * 1.2),
             new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, side: THREE.DoubleSide }));
@@ -458,22 +467,11 @@ export function buildWorld(scene, opts) {
     const mBaseboard = new THREE.MeshStandardMaterial({ color: 0x6a1a1a, roughness: 0.7 });
     const baseH = 0.12;
     const baseDepth = 0.03;
-    box(ROOM_W, baseH, baseDepth, mBaseboard, 0, baseH / 2, 0.02);
+    box(ROOM_W / 2 - 0.6, baseH, baseDepth, mBaseboard, -(ROOM_W / 2 + 0.6) / 2, baseH / 2, 0.02);
+    box(ROOM_W / 2 - 0.6, baseH, baseDepth, mBaseboard, (ROOM_W / 2 + 0.6) / 2, baseH / 2, 0.02);
     box(ROOM_W, baseH, baseDepth, mBaseboard, 0, baseH / 2, HALF_D - 0.02);
     box(baseDepth, baseH, HALF_D, mBaseboard, -ROOM_W / 2 + 0.02, baseH / 2, HALF_D / 2);
     box(baseDepth, baseH, HALF_D, mBaseboard, ROOM_W / 2 - 0.02, baseH / 2, HALF_D / 2);
-
-    // ─── COLLISION MUR INTÉRIEUR ────────────────────────────────
-    const wallCollider = new THREE.Mesh(
-        new THREE.BoxGeometry(ROOM_W, WALL_H, 0.05),
-        new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, side: THREE.DoubleSide })
-    );
-    wallCollider.position.set(0, WALL_H / 2, 0);
-    wallCollider.userData.isWall = true;
-    wallCollider.userData.collisionType = 'wall';
-    wallCollider.name = 'wallCollider';
-    scene.add(wallCollider);
-
 
     // ─── LIT ──────────────────────────────────────────────────────
     function createBed() {
@@ -1107,8 +1105,8 @@ export function buildWorld(scene, opts) {
 
     // État actuel
     const isOpen = window._doorOpen;
-    // Angle cible : 0 si fermé, -PI/2 si ouvert (la porte s'ouvre vers l'extérieur)
-    const targetAngle = isOpen ? 0 : -Math.PI / 2;
+    // Angle cible : 0 si fermé, +PI/2 si ouvert (la porte s'ouvre vers le couloir)
+    const targetAngle = isOpen ? 0 : Math.PI / 2;
     // Inverser l'état
     window._doorOpen = !isOpen;
     window._doorData.isOpen = window._doorOpen;
@@ -1267,6 +1265,7 @@ export function buildWorld(scene, opts) {
         update(dt, time) {
             updateMonologue(camera.position);
             windowView.update(dt, time);
+            corridor.update(dt, time);
         }
     };
 }
