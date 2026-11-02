@@ -1,10 +1,10 @@
-
 <!DOCTYPE html>
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>World Base</title>
+<title>Bad Therapist</title>
+<link rel="icon" type="image/png" href="./images/logo.png">
 
 <style>
 * {
@@ -35,6 +35,143 @@ html, body {
   touch-action: none;
 }
 
+/* ==========================================
+   HUD
+========================================== */
+
+#homeButton {
+  position: fixed;
+  top: 14px;
+  left: 14px;
+  z-index: 30;
+}
+
+#topHud {
+  position: fixed;
+  top: 14px;
+  right: 14px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  z-index: 30;
+}
+
+.hud-icon {
+  width: 42px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(23, 23, 32, 0.9);
+  border: 1px solid #625047;
+  border-radius: 10px;
+  color: #d9c5b5;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+.hud-icon:hover,
+.hud-icon:active {
+  background: #39313b;
+  color: white;
+}
+
+.hud-icon svg {
+  width: 21px;
+  height: 21px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+#moneyDisplay {
+  padding: 11px 13px;
+  background: rgba(23, 23, 32, 0.9);
+  border: 1px solid #7c3535;
+  border-radius: 10px;
+  color: #ff5555;
+  font: bold 15px monospace;
+  white-space: nowrap;
+}
+
+/* ==========================================
+   PANELS
+========================================== */
+
+.hud-panel {
+  display: none;
+  position: fixed;
+  top: 68px;
+  right: 14px;
+  width: min(280px, calc(100vw - 28px));
+  padding: 16px;
+  background: rgba(23, 23, 32, 0.97);
+  border: 1px solid #625047;
+  border-radius: 10px;
+  color: #ddd0c3;
+  z-index: 40;
+  font: 12px/1.8 monospace;
+}
+
+.panel-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+  color: #d9c5b5;
+  letter-spacing: 1px;
+}
+
+.panel-close {
+  background: none;
+  border: none;
+  color: #aaa;
+  font-size: 20px;
+  cursor: pointer;
+}
+
+#copyBtn {
+  display: block;
+  width: 100%;
+  padding: 6px;
+  margin-top: 7px;
+  background: #302733;
+  color: white;
+  border: 1px solid #625047;
+  border-radius: 4px;
+  cursor: pointer;
+  font: 10px monospace;
+}
+
+#inventoryGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.inventory-slot {
+  aspect-ratio: 1;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid #51464b;
+  border-radius: 5px;
+}
+
+#mapPlaceholder {
+  height: 150px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed #625047;
+  color: #777;
+  letter-spacing: 2px;
+}
+
+/* ==========================================
+   JOYSTICKS
+========================================== */
+
 #hud {
   position: fixed;
   bottom: 0;
@@ -55,54 +192,9 @@ html, body {
   touch-action: none;
 }
 
-#paramBar {
-  position: fixed;
-  top: 12px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 30;
-}
-
-.pBtn {
-  background: rgba(23, 23, 32, 0.9);
-  color: #d9c5b5;
-  border: 1px solid #625047;
-  border-radius: 20px;
-  padding: 9px 17px;
-  font: 11px monospace;
-  letter-spacing: 1px;
-  cursor: pointer;
-}
-
-.pBtn:active {
-  background: #39313b;
-}
-
-#coordPanel {
-  display: none;
-  position: fixed;
-  top: 60px;
-  left: 12px;
-  padding: 12px;
-  background: rgba(23, 23, 32, 0.95);
-  border: 1px solid #625047;
-  border-radius: 8px;
-  color: #ddd0c3;
-  font: 12px/1.8 monospace;
-  z-index: 40;
-}
-
-#copyBtn {
-  display: block;
-  width: 100%;
-  padding: 6px;
-  margin-top: 7px;
-  background: #302733;
-  color: white;
-  border: 1px solid #625047;
-  border-radius: 4px;
-  cursor: pointer;
-}
+/* ==========================================
+   ERROR
+========================================== */
 
 #errorPanel {
   display: none;
@@ -119,7 +211,43 @@ html, body {
   white-space: pre-wrap;
 }
 
+/* ==========================================
+   MOBILE
+========================================== */
+
 @media (max-width: 480px) {
+
+  #homeButton {
+    top: 10px;
+    left: 8px;
+  }
+
+  #topHud {
+    top: 10px;
+    right: 8px;
+    gap: 5px;
+  }
+
+  .hud-icon {
+    width: 36px;
+    height: 36px;
+  }
+
+  .hud-icon svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  #moneyDisplay {
+    padding: 9px 8px;
+    font-size: 12px;
+  }
+
+  .hud-panel {
+    top: 58px;
+    right: 8px;
+  }
+
   #hud {
     height: 70px;
   }
@@ -144,20 +272,127 @@ html, body {
 
 <canvas id="gc"></canvas>
 
-<div id="paramBar">
-  <button class="pBtn" id="coordButton">
-    📍 COORDINATES
+<!-- ==========================================
+     HOME BUTTON - LEFT
+========================================== -->
+
+<button class="hud-icon" id="homeButton" aria-label="Home" title="Home">
+  <svg viewBox="0 0 24 24">
+    <path d="m3 10 9-7 9 7"/>
+    <path d="M5 9v12h14V9"/>
+    <path d="M9 21v-7h6v7"/>
+  </svg>
+</button>
+
+<!-- ==========================================
+     RIGHT HUD
+========================================== -->
+
+<div id="topHud">
+
+  <!-- POSITION -->
+  <button class="hud-icon" id="positionButton"
+          aria-label="Position" title="Position">
+    <svg viewBox="0 0 24 24">
+      <path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"/>
+      <circle cx="12" cy="10" r="2.5"/>
+    </svg>
   </button>
+
+  <!-- ITEMS -->
+  <button class="hud-icon" id="itemButton"
+          aria-label="Items" title="Items">
+    <svg viewBox="0 0 24 24">
+      <path d="M4 7h16v14H4z"/>
+      <path d="M8 7V4h8v3"/>
+      <path d="M4 12h16"/>
+    </svg>
+  </button>
+
+  <!-- MAP -->
+  <button class="hud-icon" id="mapButton"
+          aria-label="Map" title="Map">
+    <svg viewBox="0 0 24 24">
+      <path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3z"/>
+      <path d="M9 3v15"/>
+      <path d="M15 6v15"/>
+    </svg>
+  </button>
+
+  <!-- MONEY -->
+  <div id="moneyDisplay">-3000 $</div>
+
 </div>
 
-<div id="coordPanel">
-  WORLD POSITION<br>
+<!-- ==========================================
+     POSITION PANEL
+========================================== -->
+
+<div class="hud-panel" id="coordPanel">
+
+  <div class="panel-title">
+    <span>POSITION</span>
+    <button class="panel-close" data-close="coordPanel">×</button>
+  </div>
+
   X: <span id="cx">0</span><br>
   Y: <span id="cy">1.7</span><br>
   Z: <span id="cz">0</span>
 
   <button id="copyBtn">COPY</button>
+
 </div>
+
+<!-- ==========================================
+     INVENTORY PANEL
+========================================== -->
+
+<div class="hud-panel" id="itemPanel">
+
+  <div class="panel-title">
+    <span>INVENTORY</span>
+    <button class="panel-close" data-close="itemPanel">×</button>
+  </div>
+
+  <div id="inventoryGrid">
+    <div class="inventory-slot"></div>
+    <div class="inventory-slot"></div>
+    <div class="inventory-slot"></div>
+    <div class="inventory-slot"></div>
+
+    <div class="inventory-slot"></div>
+    <div class="inventory-slot"></div>
+    <div class="inventory-slot"></div>
+    <div class="inventory-slot"></div>
+
+    <div class="inventory-slot"></div>
+    <div class="inventory-slot"></div>
+    <div class="inventory-slot"></div>
+    <div class="inventory-slot"></div>
+  </div>
+
+</div>
+
+<!-- ==========================================
+     MAP PANEL
+========================================== -->
+
+<div class="hud-panel" id="mapPanel">
+
+  <div class="panel-title">
+    <span>MAP</span>
+    <button class="panel-close" data-close="mapPanel">×</button>
+  </div>
+
+  <div id="mapPlaceholder">
+    MAP UNAVAILABLE
+  </div>
+
+</div>
+
+<!-- ==========================================
+     JOYSTICK HUD
+========================================== -->
 
 <div id="hud">
   <canvas id="jL" width="120" height="60"></canvas>
@@ -283,8 +518,6 @@ const skyMaterial = new THREE.ShaderMaterial({
 
       float h = dir.y;
 
-      // Couleurs du ciel
-
       vec3 topColor = vec3(0.055,0.075,0.115);
       vec3 upperColor = vec3(0.075,0.095,0.145);
       vec3 middleColor = vec3(0.105,0.115,0.155);
@@ -309,7 +542,7 @@ const skyMaterial = new THREE.ShaderMaterial({
         smoothstep(0.65,1.0,h)
       );
 
-      // Lueur orange à l'horizon
+      // HORIZON GLOW
 
       float horizonGlow = exp(
         -pow((h + 0.105)*8.0,2.0)
@@ -323,7 +556,7 @@ const skyMaterial = new THREE.ShaderMaterial({
              horizonGlow *
              sunsetSide;
 
-      // Nuages lointains
+      // DISTANT CLOUDS
 
       vec2 cloudUV = vec2(
         dir.x * 3.2,
@@ -358,7 +591,7 @@ const skyMaterial = new THREE.ShaderMaterial({
         cloudOpacity
       );
 
-      // Étoiles
+      // STARS
 
       vec2 starUV = dir.xz * 900.0;
 
@@ -393,7 +626,7 @@ skySphere.renderOrder = -100;
 scene.add(skySphere);
 
 // ==========================================
-// 3. ÉCLAIRAGE GLOBAL
+// 3. GLOBAL LIGHTING
 // ==========================================
 
 scene.add(
@@ -417,12 +650,8 @@ moonLight.position.set(-40,70,-100);
 scene.add(moonLight);
 
 // ==========================================
-// 4. CHARGEMENT DU DÉCOR
+// 4. WORLD LOADING
 // ==========================================
-
-// Par défaut : immeuble.js
-// Possibilité de choisir un autre décor
-// avec ?world=maison.js
 
 const params = new URLSearchParams(
   window.location.search
@@ -631,22 +860,84 @@ canvas.addEventListener('pointercancel',()=>{
 });
 
 // ==========================================
-// 8. COORDINATES
+// 8. HUD INTERACTIONS
 // ==========================================
 
-let showCoords = false;
+// HOME: RETURN TO MENU AND RESTART INTRO MUSIC
 
-document.getElementById('coordButton')
-.addEventListener('click',()=>{
+document.getElementById('homeButton')
+.addEventListener('click', () => {
 
-  showCoords = !showCoords;
+  // Reset the intro music position.
+  // The accepted state is preserved.
 
-  document.getElementById('coordPanel').style.display =
-    showCoords ? 'block' : 'none';
+  sessionStorage.setItem('bt_intro_position', '0');
+
+  window.location.href = 'index.html';
 });
 
+// PANELS
+
+const panels = [
+  'coordPanel',
+  'itemPanel',
+  'mapPanel'
+];
+
+function togglePanel(panelId) {
+
+  const selectedPanel = document.getElementById(panelId);
+
+  const isAlreadyOpen =
+    selectedPanel.style.display === 'block';
+
+  panels.forEach(id => {
+    document.getElementById(id).style.display = 'none';
+  });
+
+  selectedPanel.style.display =
+    isAlreadyOpen ? 'none' : 'block';
+}
+
+// POSITION
+
+document.getElementById('positionButton')
+.addEventListener('click', () => {
+  togglePanel('coordPanel');
+});
+
+// ITEMS
+
+document.getElementById('itemButton')
+.addEventListener('click', () => {
+  togglePanel('itemPanel');
+});
+
+// MAP
+
+document.getElementById('mapButton')
+.addEventListener('click', () => {
+  togglePanel('mapPanel');
+});
+
+// CLOSE PANELS
+
+document.querySelectorAll('.panel-close').forEach(button => {
+
+  button.addEventListener('click', () => {
+
+    document.getElementById(
+      button.dataset.close
+    ).style.display = 'none';
+
+  });
+
+});
+
+// COPY COORDINATES
+
 document.getElementById('copyBtn')
-.addEventListener('click',async ()=>{
+.addEventListener('click', async () => {
 
   const p = camera.position;
 
@@ -659,13 +950,14 @@ document.getElementById('copyBtn')
 
     document.getElementById('copyBtn').textContent = 'COPIED';
 
-    setTimeout(()=>{
+    setTimeout(() => {
       document.getElementById('copyBtn').textContent = 'COPY';
-    },1200);
+    }, 1200);
 
   } catch(error) {
 
     console.error('Clipboard unavailable:',error);
+
   }
 });
 
@@ -699,20 +991,18 @@ function animate() {
 
   const dt = Math.min(clock.getDelta(),0.05);
 
-  // Le ciel suit la caméra
+  // SKY FOLLOWS CAMERA
 
   skySphere.position.copy(camera.position);
 
-  // Animation du ciel
-
   skyUniforms.uTime.value = clock.elapsedTime;
 
-  // Rotation caméra
+  // CAMERA ROTATION
 
   camera.rotation.y = camYaw;
   camera.rotation.x = camPitch;
 
-  // Déplacement avant/arrière
+  // FORWARD / BACKWARD MOVEMENT
 
   const forward = new THREE.Vector3(
     -Math.sin(camYaw),
@@ -720,7 +1010,7 @@ function animate() {
     -Math.cos(camYaw)
   );
 
-  // Déplacement gauche/droite
+  // LEFT / RIGHT MOVEMENT
 
   const right = new THREE.Vector3(
     Math.cos(camYaw),
@@ -736,11 +1026,11 @@ function animate() {
     right,jLx*6.5*dt
   );
 
-  // Hauteur constante
+  // CONSTANT HEIGHT
 
   camera.position.y = 1.7;
 
-  // Rotation avec le joystick droit
+  // RIGHT JOYSTICK CAMERA ROTATION
 
   camYaw -= jRx*1.8*dt;
 
@@ -750,9 +1040,9 @@ function animate() {
     1
   );
 
-  // Coordonnées
+  // COORDINATES
 
-  if (showCoords) {
+  if (document.getElementById('coordPanel').style.display === 'block') {
 
     document.getElementById('cx').textContent =
       camera.position.x.toFixed(2);
@@ -764,7 +1054,7 @@ function animate() {
       camera.position.z.toFixed(2);
   }
 
-  // Mise à jour du décor
+  // WORLD UPDATE
 
   if (world && typeof world.update === 'function') {
     world.update(dt,clock.elapsedTime);
@@ -772,7 +1062,7 @@ function animate() {
 
   renderer.render(scene,camera);
 
-  // Dessin des joysticks
+  // JOYSTICK DRAWING
 
   drawJoy('jL',jLx,jLy);
   drawJoy('jR',jRx,jRy);
