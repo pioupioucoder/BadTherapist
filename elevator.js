@@ -117,13 +117,13 @@ export function buildElevator(parent, opts) {
     return new THREE.CanvasTexture(c);
   }
 
-  const mSteel = new THREE.MeshLambertMaterial({ map: steelTex(2, 1, '#aab0b5'), color: 0xd6dadd });
+  const mSteel = new THREE.MeshLambertMaterial({ map: steelTex(2, 1, '#8f959a'), color: 0x9a9fa4 });
   const mSteelPlain = new THREE.MeshLambertMaterial({ color: 0x8d9398 });
   const mSteelDark = new THREE.MeshLambertMaterial({ color: 0x4a4f54 });
-  const mDoor = new THREE.MeshLambertMaterial({ map: steelTex(1, 1, '#b2b7bc'), color: 0xd0d4d8 });
-  const mFloor = new THREE.MeshLambertMaterial({ map: graniteTex(), color: 0xb0b0b0 });
+  const mDoor = new THREE.MeshLambertMaterial({ map: steelTex(1, 1, '#999ea3'), color: 0xa4a8ac });
+  const mFloor = new THREE.MeshLambertMaterial({ map: graniteTex(), color: 0x8a8a8a });
   const mCeil = new THREE.MeshLambertMaterial({ color: 0x6b7075 });
-  const mRail = new THREE.MeshLambertMaterial({ color: 0xc4c8cc });
+  const mRail = new THREE.MeshLambertMaterial({ color: 0x9a9ea2 });
   const mLightPanel = new THREE.MeshBasicMaterial({ color: 0xfff1dc });
 
   function box(g, w, h, d, mat, x, y, z) {
@@ -203,7 +203,7 @@ export function buildElevator(parent, opts) {
   const cabLeafR = box(cab, DW / 2, DH, 0.04, mDoor, DW / 4, DH / 2, CD / 2 - 0.03);
 
   // Éclairage de la cabine
-  const cabLight = new THREE.PointLight(0xfff2e0, 0.8, 6);
+  const cabLight = new THREE.PointLight(0xfff2e0, 0.35, 6);
   cabLight.position.set(0, CH - 0.3, 0);
   cab.add(cabLight);
 
@@ -322,9 +322,9 @@ export function buildElevator(parent, opts) {
     new THREE.MeshBasicMaterial({ map: panelTex })
   );
   panelMesh.rotation.y = -Math.PI / 2;
-  panelMesh.position.set(CW / 2 - 0.01, 1.2, CD / 2 - 0.5);
+  panelMesh.position.set(CW / 2 - 0.025, 1.2, CD / 2 - 0.5);
   cab.add(panelMesh);
-  box(cab, 0.03, 0.81, 0.26, mSteelDark, CW / 2 - 0.0, 1.2, CD / 2 - 0.5);
+  box(cab, 0.02, 0.81, 0.26, mSteelDark, CW / 2 - 0.01, 1.2, CD / 2 - 0.5);
 
   // ==========================================
   // PALIERS (un par étage desservi)
@@ -410,7 +410,7 @@ export function buildElevator(parent, opts) {
       new THREE.PlaneGeometry(0.1, 0.2),
       new THREE.MeshBasicMaterial({ map: plateTex })
     );
-    plateMesh.position.set(DW / 2 + 0.4, 1.1, 0.012);
+    plateMesh.position.set(DW / 2 + 0.4, 1.1, 0.02);
     g.add(plateMesh);
     box(g, 0.12, 0.22, 0.02, mSteelDark, DW / 2 + 0.4, 1.1, 0.002);
     plateMesh.userData.level = L;
@@ -617,9 +617,11 @@ export function buildElevator(parent, opts) {
     // Fermeture automatique (pas tant que quelqu'un est dans l'embrasure)
     if (state.doorTarget === 1 && !state.moving) {
       const px = camera.position.x, pz = camera.position.z;
-      const inDoorway = isInsideCab(px, pz) ||
-        (physics && physics.level === state.level && Math.abs(px) < 0.9 && Math.abs(pz - WALL_Z) < 1.0);
-      if (inDoorway) state.doorTimer = Math.max(state.doorTimer, 2);
+      const inCabDoorway = isInsideCab(px, pz) && pz > CAB_Z1 - 0.9 && Math.abs(px) < 0.8;
+      const inLandingDoorway = physics && physics.level === state.level &&
+        Math.abs(px) < 0.8 && pz >= CAB_Z1 && pz < WALL_Z + 1.0;
+      const inDoorway = inCabDoorway || inLandingDoorway;
+      if (inDoorway) state.doorTimer = Math.max(state.doorTimer, 1.5);
       state.doorTimer -= dt;
       if (state.doorTimer <= 0) closeDoors();
     }
