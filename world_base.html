@@ -18,7 +18,7 @@ html, body {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: #aeb8c0;
+  background: #252829;
   font-family: Arial, sans-serif;
   touch-action: none;
   user-select: none;
@@ -129,7 +129,8 @@ html, body {
   cursor: pointer;
 }
 
-#copyBtn {
+#copyBtn,
+#resetPosBtn {
   display: block;
   width: 100%;
   padding: 6px;
@@ -300,6 +301,7 @@ html, body {
   Z: <span id="cz">0</span>
 
   <button id="copyBtn">COPY</button>
+  <button id="resetPosBtn">RESET POSITION</button>
 </div>
 
 <div class="hud-panel" id="itemPanel">
@@ -364,10 +366,9 @@ renderer.outputEncoding = THREE.sRGBEncoding;
 
 const scene = new THREE.Scene();
 
-scene.fog = new THREE.FogExp2(
-  0xb4b8b9,
-  0.00045
-);
+scene.fog = new THREE.FogExp2(0x000000, 0.011);
+scene.fog.color.setRGB(0.145, 0.157, 0.160); // = couleur de l'horizon du ciel
+renderer.setClearColor(scene.fog.color);
 
 const camera = new THREE.PerspectiveCamera(
   65,
@@ -380,7 +381,7 @@ camera.position.set(0, 1.7, 13);
 camera.rotation.order = 'YXZ';
 
 // ==========================================
-// 2. SHARED SKY - OVERCAST WINTER AFTERNOON
+// 2. SHARED SKY - DARK SNOWY OVERCAST (FROZEN, NO DAY/NIGHT)
 // ==========================================
 
 const skyUniforms = {
@@ -410,10 +411,6 @@ const skyMaterial = new THREE.ShaderMaterial({
     varying vec3 vDirection;
     uniform float uTime;
 
-    // ======================================
-    // NOISE
-    // ======================================
-
     float hash(vec3 p) {
       p = fract(p * 0.3183099 + vec3(0.1));
       p *= 17.0;
@@ -421,282 +418,67 @@ const skyMaterial = new THREE.ShaderMaterial({
     }
 
     float noise(vec3 p) {
-
       vec3 i = floor(p);
       vec3 f = fract(p);
-
       f = f * f * (3.0 - 2.0 * f);
-
-      float n000 = hash(i);
-      float n100 = hash(i + vec3(1.0,0.0,0.0));
-      float n010 = hash(i + vec3(0.0,1.0,0.0));
-      float n110 = hash(i + vec3(1.0,1.0,0.0));
-
-      float n001 = hash(i + vec3(0.0,0.0,1.0));
-      float n101 = hash(i + vec3(1.0,0.0,1.0));
-      float n011 = hash(i + vec3(0.0,1.0,1.0));
-      float n111 = hash(i + vec3(1.0,1.0,1.0));
-
-      float x00 = mix(n000,n100,f.x);
-      float x10 = mix(n010,n110,f.x);
-      float x01 = mix(n001,n101,f.x);
-      float x11 = mix(n011,n111,f.x);
-
-      float y0 = mix(x00,x10,f.y);
-      float y1 = mix(x01,x11,f.y);
-
-      return mix(y0,y1,f.z);
+      float a = mix(hash(i), hash(i + vec3(1.0,0.0,0.0)), f.x);
+      float b = mix(hash(i + vec3(0.0,1.0,0.0)), hash(i + vec3(1.0,1.0,0.0)), f.x);
+      float c = mix(hash(i + vec3(0.0,0.0,1.0)), hash(i + vec3(1.0,0.0,1.0)), f.x);
+      float d = mix(hash(i + vec3(0.0,1.0,1.0)), hash(i + vec3(1.0,1.0,1.0)), f.x);
+      return mix(mix(a, b, f.y), mix(c, d, f.y), f.z);
     }
 
     float fbm(vec3 p) {
-
-      float value = 0.0;
-      float amplitude = 0.5;
-
-      for(int i = 0; i < 5; i++) {
-
-        value += noise(p) * amplitude;
-
-        p *= 2.0;
-        amplitude *= 0.5;
+      float v = 0.0;
+      float a = 0.5;
+      for (int i = 0; i < 5; i++) {
+        v += noise(p) * a;
+        p *= 2.03;
+        a *= 0.5;
       }
-
-      return value;
+      return v;
     }
-
-    // ======================================
-    // SKY
-    // ======================================
 
     void main() {
 
       vec3 dir = normalize(vDirection);
+      float h = max(dir.y, 0.0);
 
-      float h = dir.y;
+      // Doit rester identique a la couleur du brouillard (scene.fog.color)
+      vec3 horizon = vec3(0.145, 0.157, 0.160);
+      vec3 zenith  = vec3(0.030, 0.036, 0.042);
 
-      // Subtle blue atmosphere behind the clouds.
-      // Blue is intentionally very restrained.
+      vec3 col = mix(horizon, zenith, pow(smoothstep(0.0, 0.85, h), 0.7));
 
-      vec3 horizonBlue = vec3(0.43, 0.49, 0.53);
-      vec3 middleBlue  = vec3(0.37, 0.46, 0.53);
-      vec3 upperBlue   = vec3(0.34, 0.43, 0.50);
+      // Nuages lourds qui derivent lentement. Pas de cycle jour/nuit.
+      vec3 q = vec3(dir.x, dir.y * 2.6, dir.z) * 2.2;
+      q.x += uTime * 0.045;
+      q.z += uTime * 0.018;
 
-      vec3 sky = mix(
-        horizonBlue,
-        middleBlue,
-        smoothstep(-0.18, 0.25, h)
-      );
+      float big  = fbm(q);
+      float fine = fbm(dir * 7.5 + vec3(uTime * 0.09, 0.0, uTime * 0.035));
+      float c = big * 0.72 + fine * 0.28;
 
-      sky = mix(
-        sky,
-        upperBlue,
-        smoothstep(0.25, 0.85, h)
-      );
+      float density = smoothstep(0.28, 0.66, c);
 
-      // ======================================
-      // CLOUD MOVEMENT
-      // ======================================
+      vec3 under = vec3(0.040, 0.046, 0.052);
+      vec3 top   = vec3(0.235, 0.238, 0.236);
+      vec3 cloud = mix(under, top, smoothstep(0.30, 0.80, fine) * 0.9);
 
-      vec3 cloudPosition = dir * 3.2;
+      // Lueur de la ville reflechie par les nuages de neige
+      float glow = exp(-pow(h * 3.4, 2.0));
+      cloud += vec3(0.20, 0.12, 0.06) * glow * 0.35;
 
-      // Slow, horizontal movement.
-      cloudPosition.x += uTime * 0.006;
-      cloudPosition.z += uTime * 0.0015;
+      col = mix(col, cloud, density * 0.92);
+      col += vec3(0.050, 0.036, 0.022) * glow * 0.7;
 
-      // ======================================
-      // LARGE DISTANT CLOUD MASSES
-      // ======================================
+      // Raccord parfait avec le brouillard a l'horizon
+      col = mix(horizon, col, smoothstep(0.0, 0.12, h));
 
-      float largeClouds = fbm(cloudPosition);
+      // Leger grain contre les bandes dans les degrades sombres
+      col += (hash(dir * 1000.0) - 0.5) * 0.012;
 
-      // A high coverage threshold keeps
-      // most of the blue hidden.
-
-      float cloudCoverage = smoothstep(
-        0.31,
-        0.49,
-        largeClouds
-      );
-
-      // ======================================
-      // SMALLER CLOUD DETAILS
-      // ======================================
-
-      vec3 detailPosition = dir * 10.0;
-
-      detailPosition.x += uTime * 0.009;
-      detailPosition.z += uTime * 0.002;
-
-      float cloudDetails = fbm(detailPosition);
-
-      // Additional soft, distant cloud texture.
-
-      float fineClouds = noise(
-        dir * 24.0 +
-        vec3(uTime * 0.012, 0.0, uTime * 0.003)
-      );
-
-      float cloudTexture =
-        largeClouds * 0.72 +
-        cloudDetails * 0.20 +
-        fineClouds * 0.08;
-
-      // ======================================
-      // CLOUD DISTRIBUTION
-      // ======================================
-
-      float cloudZone = smoothstep(
-        -0.24,
-        -0.02,
-        h
-      );
-
-      // Clouds cover the upper sky too,
-      // without looking like a flat ceiling.
-
-      float upperCoverage = smoothstep(
-        -0.15,
-        0.35,
-        h
-      );
-
-      float coverage = mix(
-        0.91,
-        0.82,
-        upperCoverage
-      );
-
-      float clouds = smoothstep(
-        coverage - 0.13,
-        coverage + 0.10,
-        cloudTexture
-      );
-
-      // Keep the horizon heavily overcast.
-
-      float cloudMask = mix(
-        clouds,
-        max(clouds, 0.78),
-        smoothstep(-0.25, 0.02, h)
-      );
-
-      // ======================================
-      // CLOUD COLORS
-      // ======================================
-
-      // Soft white-grey cloud tops.
-
-      vec3 cloudLight = vec3(
-        0.72,
-        0.73,
-        0.72
-      );
-
-      // Natural grey undersides.
-
-      vec3 cloudShadow = vec3(
-        0.43,
-        0.45,
-        0.46
-      );
-
-      // Slightly warmer clouds near sunset.
-
-      vec3 cloudWarm = vec3(
-        0.67,
-        0.59,
-        0.52
-      );
-
-      // Variation between cloud tops and shadows.
-
-      float cloudBrightness = smoothstep(
-        0.36,
-        0.68,
-        cloudDetails
-      );
-
-      vec3 cloudColor = mix(
-        cloudShadow,
-        cloudLight,
-        cloudBrightness
-      );
-
-      // ======================================
-      // LATE AFTERNOON LIGHT
-      // ======================================
-
-      // A very subtle warm glow near the horizon.
-
-      float sunsetGlow = exp(
-        -pow((h + 0.035) * 5.0, 2.0)
-      );
-
-      // Restrict the orange tint to a portion
-      // of the horizon.
-
-      float sunsetDirection = smoothstep(
-        -0.65,
-        0.65,
-        dir.x
-      );
-
-      float warmLight =
-        sunsetGlow *
-        sunsetDirection *
-        0.28;
-
-      cloudColor = mix(
-        cloudColor,
-        cloudWarm,
-        warmLight
-      );
-
-      // Slightly darker cloud undersides.
-
-      float underside = smoothstep(
-        0.0,
-        0.5,
-        -h
-      );
-
-      cloudColor *= 1.0 - underside * 0.10;
-
-      // ======================================
-      // FINAL CLOUD BLENDING
-      // ======================================
-
-      sky = mix(
-        sky,
-        cloudColor,
-        cloudMask * cloudZone
-      );
-
-      // A soft atmospheric grey near the horizon.
-
-      float horizonMist = exp(
-        -pow((h + 0.10) * 4.0, 2.0)
-      );
-
-      vec3 mistColor = vec3(
-        0.58,
-        0.57,
-        0.55
-      );
-
-      mistColor = mix(
-        mistColor,
-        vec3(0.62, 0.54, 0.47),
-        sunsetDirection * 0.22
-      );
-
-      sky = mix(
-        sky,
-        mistColor,
-        horizonMist * 0.18
-      );
-
-      gl_FragColor = vec4(sky, 1.0);
+      gl_FragColor = vec4(col, 1.0);
     }
   `
 });
@@ -722,17 +504,17 @@ scene.add(skySphere);
 
 scene.add(
   new THREE.AmbientLight(
-    0xc2c5c5,
-    0.55
+    0x8d9aa6,
+    0.055
   )
 );
 
 // Sky light: cold and diffuse.
 
 const hemisphere = new THREE.HemisphereLight(
-  0xd2d8dc,
-  0x777575,
-  0.68
+  0x7f909d,
+  0x23201e,
+  0.085
 );
 
 scene.add(hemisphere);
@@ -740,8 +522,8 @@ scene.add(hemisphere);
 // Weak sunlight filtered by thick clouds.
 
 const daylight = new THREE.DirectionalLight(
-  0xd5d4cf,
-  0.38
+  0x8fa0ad,
+  0.035
 );
 
 daylight.position.set(
@@ -751,6 +533,179 @@ daylight.position.set(
 );
 
 scene.add(daylight);
+
+// ==========================================
+// 3b. SHARED SNOW (same in every world, visible through windows)
+// ==========================================
+
+const snow = (() => {
+
+  const VERT = `
+    uniform float uTime, uSize, uScale, uFall, uMax, uFogD;
+    uniform vec3 uCam, uBox;
+    uniform vec2 uWind;
+    uniform vec3 uExMin[4];
+    uniform vec3 uExMax[4];
+    attribute vec4 aRand;
+    varying float vAlpha;
+
+    void main() {
+      vec3 p = position * uBox;
+
+      float fall = uFall * (0.75 + 0.5 * aRand.z);
+      p.y -= uTime * fall;
+
+      float amp = 0.3 + 0.8 * aRand.w;
+      float sw1 = sin(uTime * (0.8 + aRand.x) + aRand.y * 40.0);
+      float sw2 = cos(uTime * (0.7 + aRand.y) + aRand.x * 40.0);
+
+      p.x += uWind.x * (0.7 + 0.6 * aRand.y) + sw1 * amp;
+      p.z += uWind.y * (0.7 + 0.6 * aRand.x) + sw2 * amp;
+
+      vec3 rel = mod(p - vec3(uCam.x, 0.0, uCam.z), uBox);
+      vec3 world = vec3(uCam.x - uBox.x * 0.5 + rel.x, rel.y, uCam.z - uBox.z * 0.5 + rel.z);
+
+      vec4 mv = modelViewMatrix * vec4(world, 1.0);
+      gl_Position = projectionMatrix * mv;
+
+      float dist = max(-mv.z, 0.01);
+      float raw = uSize * (0.55 + 0.9 * aRand.w) * uScale / dist;
+      gl_PointSize = clamp(raw, 1.6, uMax);
+
+      float edge = max(abs(world.x - uCam.x) / (uBox.x * 0.5), abs(world.z - uCam.z) / (uBox.z * 0.5));
+      float a = 1.0 - smoothstep(0.75, 1.0, edge);
+      a *= smoothstep(0.0, 0.5, world.y);
+      a *= 1.0 - smoothstep(uBox.y - 4.0, uBox.y, world.y);
+      a *= smoothstep(0.25, 1.2, dist);
+      a *= exp(-pow(uFogD * dist, 2.0));
+      a *= min(1.0, raw / 1.6 + 0.2);
+
+      // Zones sans neige (interieur d'une piece)
+      for (int i = 0; i < 4; i++) {
+        if (world.x > uExMin[i].x && world.x < uExMax[i].x &&
+            world.y > uExMin[i].y && world.y < uExMax[i].y &&
+            world.z > uExMin[i].z && world.z < uExMax[i].z) {
+          a = 0.0;
+        }
+      }
+
+      vAlpha = a;
+    }
+  `;
+
+  const FRAG = `
+    uniform vec3 uColor;
+    uniform float uSoft, uOpacity;
+    varying float vAlpha;
+
+    void main() {
+      float d = length(gl_PointCoord - 0.5) * 2.0;
+      float a = (1.0 - smoothstep(uSoft, 1.0, d)) * vAlpha * uOpacity;
+      if (a < 0.01) discard;
+      gl_FragColor = vec4(uColor, a);
+    }
+  `;
+
+  const group = new THREE.Group();
+  group.visible = false; // OFF par defaut : chaque lieu exterieur l'active
+  scene.add(group);
+
+  const exMin = [];
+  const exMax = [];
+  for (let i = 0; i < 4; i++) {
+    exMin.push(new THREE.Vector3(1e5, 1e5, 1e5));
+    exMax.push(new THREE.Vector3(-1e5, -1e5, -1e5));
+  }
+
+  const fogD = scene.fog ? scene.fog.density : 0.011;
+  const mats = [];
+
+  function layer(count, size, fall, box, soft, opacity, maxSize) {
+
+    const pos = new Float32Array(count * 3);
+    const rr = new Float32Array(count * 4);
+
+    for (let i = 0; i < pos.length; i++) pos[i] = Math.random();
+    for (let i = 0; i < rr.length; i++) rr[i] = Math.random();
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('aRand', new THREE.BufferAttribute(rr, 4));
+
+    const mat = new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: { value: 0 },
+        uSize: { value: size },
+        uScale: { value: 600 },
+        uFall: { value: fall },
+        uMax: { value: maxSize },
+        uFogD: { value: fogD },
+        uCam: { value: new THREE.Vector3() },
+        uBox: { value: box },
+        uWind: { value: new THREE.Vector2() },
+        uExMin: { value: exMin },
+        uExMax: { value: exMax },
+        uColor: { value: new THREE.Vector3(0.80, 0.84, 0.88) },
+        uSoft: { value: soft },
+        uOpacity: { value: opacity }
+      },
+      vertexShader: VERT,
+      fragmentShader: FRAG,
+      transparent: true,
+      depthWrite: false
+    });
+
+    const pts = new THREE.Points(geo, mat);
+    pts.frustumCulled = false;
+    group.add(pts);
+    mats.push(mat);
+  }
+
+  // fins, moyens, gros flous proches
+  layer(2400, 0.022, 1.6, new THREE.Vector3(70, 28, 70), 0.35, 0.85, 8);
+  layer(700,  0.055, 1.3, new THREE.Vector3(46, 26, 46), 0.25, 0.90, 16);
+  layer(110,  0.140, 1.0, new THREE.Vector3(24, 20, 24), 0.0,  0.55, 56);
+
+  let wx = 0;
+  let wz = 0;
+  let nEx = 0;
+  const buf = new THREE.Vector2();
+
+  return {
+
+    // Pas de neige a l'interieur de cette boite (ex. une chambre)
+    excludeBox(minX, minY, minZ, maxX, maxY, maxZ) {
+      if (nEx >= 4) return;
+      exMin[nEx].set(minX, minY, minZ);
+      exMax[nEx].set(maxX, maxY, maxZ);
+      nEx++;
+    },
+
+    setEnabled(v) {
+      group.visible = !!v;
+    },
+
+    update(dt, time) {
+
+      if (!group.visible) return;
+
+      wx += (1.1 + 0.6 * Math.sin(time * 0.13) + 0.3 * Math.sin(time * 0.41)) * dt;
+      wz += (0.2 + 0.15 * Math.sin(time * 0.09)) * dt;
+
+      renderer.getDrawingBufferSize(buf);
+      const scale = buf.y / (2 * Math.tan(camera.fov * Math.PI / 360));
+
+      for (const m of mats) {
+        const u = m.uniforms;
+        u.uTime.value = time;
+        u.uScale.value = scale;
+        u.uWind.value.set(wx, wz);
+        u.uCam.value.copy(camera.position);
+      }
+    }
+  };
+
+})();
 
 // ==========================================
 // 4. WORLD LOADING
@@ -778,7 +733,8 @@ try {
 
  world = worldModule.buildWorld(scene, {
   camera,
-  renderer
+  renderer,
+  snow
 });
 
 } catch (error) {
@@ -967,6 +923,138 @@ canvas.addEventListener('pointercancel', () => {
 });
 
 // ==========================================
+// 7b. SAVED POSITION (cache navigateur + export JSON)
+// ==========================================
+
+const SAVE_KEY = 'bt_player_state';
+const SPAWN = {
+  x: camera.position.x,
+  y: camera.position.y,
+  z: camera.position.z,
+  yaw: 0,
+  pitch: 0
+};
+
+function readState() {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    const obj = raw ? JSON.parse(raw) : null;
+    if (obj && obj.worlds && typeof obj.worlds === 'object') return obj;
+  } catch (error) {
+    console.warn('Sauvegarde illisible :', error);
+  }
+  return { version: 1, last: null, worlds: {} };
+}
+
+function writeState(state) {
+  try {
+    localStorage.setItem(SAVE_KEY, JSON.stringify(state));
+  } catch (error) {
+    console.warn('Sauvegarde impossible :', error);
+  }
+}
+
+function currentPose() {
+  return {
+    x: +camera.position.x.toFixed(3),
+    y: +camera.position.y.toFixed(3),
+    z: +camera.position.z.toFixed(3),
+    yaw: +camYaw.toFixed(4),
+    pitch: +camPitch.toFixed(4)
+  };
+}
+
+function applyPose(p) {
+  if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.z)) return false;
+
+  camera.position.set(p.x, Number.isFinite(p.y) ? p.y : 1.7, p.z);
+  camYaw = Number.isFinite(p.yaw) ? p.yaw : 0;
+  camPitch = THREE.MathUtils.clamp(Number.isFinite(p.pitch) ? p.pitch : 0, -1, 1);
+
+  camera.rotation.y = camYaw;
+  camera.rotation.x = camPitch;
+  return true;
+}
+
+function saveNow() {
+  const state = readState();
+  state.version = 1;
+  state.last = worldFile;
+  state.worlds[worldFile] = Object.assign(currentPose(), { t: Date.now() });
+  writeState(state);
+}
+
+// Restauration au chargement (?spawn=start pour forcer le point de depart)
+
+if (params.get('spawn') !== 'start') {
+  applyPose(readState().worlds[worldFile]);
+}
+
+// Sauvegarde automatique : toutes les secondes si on a bouge, et en quittant la page
+
+let saveClock = 0;
+let lastSaved = '';
+
+function savePosition(dt) {
+  saveClock += dt;
+  if (saveClock < 1) return;
+  saveClock = 0;
+
+  const key = JSON.stringify(currentPose());
+  if (key === lastSaved) return;
+
+  lastSaved = key;
+  saveNow();
+}
+
+window.addEventListener('pagehide', saveNow);
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) saveNow();
+});
+
+// API pour ton export / import JSON existant
+
+window.BadTherapist = window.BadTherapist || {};
+
+Object.assign(window.BadTherapist, {
+
+  // A mettre dans ton JSON d'export : player: BadTherapist.getPlayerState()
+  getPlayerState() {
+    saveNow();
+    return readState();
+  },
+
+  // A appeler quand tu importes un JSON : BadTherapist.setPlayerState(data.player)
+  setPlayerState(state) {
+    if (!state || !state.worlds) return;
+    writeState(state);
+    applyPose(state.worlds[worldFile]);
+  },
+
+  resetPosition() {
+    const state = readState();
+    delete state.worlds[worldFile];
+    writeState(state);
+    applyPose(SPAWN);
+    lastSaved = '';
+  }
+});
+
+document.getElementById('resetPosBtn')
+.addEventListener('click', () => {
+
+  window.BadTherapist.resetPosition();
+
+  const button = document.getElementById('resetPosBtn');
+  button.textContent = 'DONE';
+
+  setTimeout(() => {
+    button.textContent = 'RESET POSITION';
+  }, 1200);
+});
+
+// ==========================================
 // 8. HUD INTERACTIONS
 // ==========================================
 
@@ -974,6 +1062,8 @@ canvas.addEventListener('pointercancel', () => {
 
 document.getElementById('homeButton')
 .addEventListener('click', () => {
+
+  saveNow();
 
   sessionStorage.setItem('bt_intro_position', '0');
 
@@ -1153,6 +1243,14 @@ function animate() {
     document.getElementById('cz').textContent =
       camera.position.z.toFixed(2);
   }
+
+  // SAVE POSITION
+
+  savePosition(dt);
+
+  // SHARED SNOW
+
+  snow.update(dt, clock.elapsedTime);
 
   // WORLD UPDATE
 
