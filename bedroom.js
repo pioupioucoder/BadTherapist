@@ -2,6 +2,8 @@
 import * as THREE from 'three';
 import { buildWorld as buildOutside } from './immeuble.js';
 import { buildCorridor } from './corridor.js';
+import { buildElevator } from './elevator.js';
+import { buildGroundFloor } from './rdc.js';
 
 // bedroom.js – la chambre (copie d'illusion.js) adaptée à world_base.html
 // La fenêtre affiche en temps réel l'extérieur de immeuble.js,
@@ -357,7 +359,113 @@ export function buildWorld(scene, opts) {
     scene.add(floor);
 
     // ─── COULOIR (corridor.js) : derrière le mur d'entrée, visible en temps réel ──
-    const corridor = buildCorridor(scene, { wallH: WALL_H, nearZ: 0 });
+    // ─── PHYSIQUE : collisions simples (rectangles x/z, par étage) ──
+    // level 6 = étage de la chambre / du couloir, level 0 = rez-de-chaussée,
+    // sans level = valable partout (cabine d'ascenseur)
+    const FLOOR_H = 3.15;
+    const FLOOR_NUMBER = 6;                       // numéro de l'étage de la chambre
+    const LEVEL_Y = { 6: 0, 0: -FLOOR_NUMBER * FLOOR_H };
+    const physics = {
+        colliders: [],
+        level: FLOOR_NUMBER,
+        add: function(c) { this.colliders.push(c); return c; }
+    };
+
+    // Chambre (niveau 6) : murs extérieurs, mur d'entrée avec la porte au milieu
+    const doorOpenBlock = function() { return !(window._doorOpen && !window._doorAnimating); };
+    physics.add({ x0: -ROOM_W / 2 - 0.6, x1: -ROOM_W / 2, z0: -1, z1: HALF_D + 0.6, level: 6 });
+    physics.add({ x0: ROOM_W / 2, x1: ROOM_W / 2 + 0.6, z0: -1, z1: HALF_D + 0.6, level: 6 });
+    physics.add({ x0: -ROOM_W / 2 - 0.6, x1: ROOM_W / 2 + 0.6, z0: HALF_D, z1: HALF_D + 0.6, level: 6 });
+    physics.add({ x0: -ROOM_W / 2 - 0.6, x1: -2.5, z0: -1, z1: 0, level: 6 });
+    physics.add({ x0: 2.5, x1: ROOM_W / 2 + 0.6, z0: -1, z1: 0, level: 6 });
+    physics.add({ x0: -2.5, x1: -0.6, z0: -0.15, z1: 0.15, level: 6 });
+    physics.add({ x0: 0.6, x1: 2.5, z0: -0.15, z1: 0.15, level: 6 });
+    physics.add({ x0: -0.6, x1: 0.6, z0: -0.15, z1: 0.15, level: 6, active: doorOpenBlock });
+
+    // ─── COULOIR + ASCENSEUR + REZ-DE-CHAUSSÉE ──────────────────────
+    const corridor = buildCorridor(scene, { wallH: WALL_H, nearZ: 0, farWall: false, physics: physics, level: 6 });
+    const ELEV_Z = -26;   // mur du fond du couloir (nearZ - longueur du couloir)
+
+    const elevator = buildElevator(scene, {
+        z: ELEV_Z,
+        camera: camera,
+        canvas: canvas,
+        physics: physics,
+        floorH: FLOOR_H,
+        baseFloor: FLOOR_NUMBER,
+        levels: { 6: { y: LEVEL_Y[6] }, 0: { y: LEVEL_Y[0] } },
+        startLevel: 6,
+        enabledFloors: [0, 6]       // pour le moment : RDC et l'étage actuel
+    });
+    elevator.addLanding({ level: 6, width: 5, wallH: WALL_H, wallMaterial: corridor.wallMaterial });
+
+    const rdc = buildGroundFloor(scene, { y: LEVEL_Y[0], z: ELEV_Z, physics: physics, level: 0 });
+    elevator.addLanding({ level: 0, width: rdc.width, wallH: rdc.wallH, wallMaterial: rdc.wallMaterial });
+
+    let playerLevel = FLOOR_NUMBER;
+    let lastX = null, lastZ = null;
+    const PLAYER_R = 0.3;
+
+    function pushOut(px, pz) {
+        for (let it = 0; it < 3; it++) {
+            for (let i = 0; i < physics.colliders.length; i++) {
+                const c = physics.colliders[i];
+                if (c.level !== undefined && c.level !== physics.level) continue;
+                if (c.active && !c.active()) continue;
+                const cx = Math.max(c.x0, Math.min(c.x1, px));
+                const cz = Math.max(c.z0, Math.min(c.z1, pz));
+                const dx = px - cx, dz = pz - cz;
+                const d2 = dx * dx + dz * dz;
+                if (d2 >= PLAYER_R * PLAYER_R) continue;
+                if (d2 > 1e-8) {
+                    const d = Math.sqrt(d2);
+                    const push = PLAYER_R - d;
+                    px += dx / d * push;
+                    pz += dz / d * push;
+                } else {
+                    // centre à l'intérieur du rectangle : on sort par le côté le plus proche
+                    const l = px - c.x0, r = c.x1 - px, t = pz - c.z0, b = c.z1 - pz;
+                    const m = Math.min(l, r, t, b);
+                    if (m === l) px = c.x0 - PLAYER_R;
+                    else if (m === r) px = c.x1 + PLAYER_R;
+                    else if (m === t) pz = c.z0 - PLAYER_R;
+                    else pz = c.z1 + PLAYER_R;
+                }
+            }
+        }
+        return [px, pz];
+    }
+
+    // Collisions + hauteur du joueur (appelé à chaque frame)
+    function updatePlayerPhysics() {
+        const x1 = camera.position.x, z1 = camera.position.z;
+        if (lastX === null) { lastX = x1; lastZ = z1; }
+
+        const inside = elevator.isInsideCab(x1, z1);
+        const moving = elevator.state.moving;
+        if (inside && !moving) playerLevel = elevator.state.level;
+        physics.level = (inside && moving) ? null : playerLevel;
+
+        // Déplacement en petits pas pour ne jamais traverser un mur
+        const dx = x1 - lastX, dz = z1 - lastZ;
+        const dist = Math.sqrt(dx * dx + dz * dz);
+        const steps = dist > 3 ? 1 : Math.max(1, Math.ceil(dist / 0.1));
+        let px = lastX, pz = lastZ;
+        for (let i = 0; i < steps; i++) {
+            px += dx / steps;
+            pz += dz / steps;
+            const r = pushOut(px, pz);
+            px = r[0]; pz = r[1];
+        }
+        camera.position.x = px;
+        camera.position.z = pz;
+        lastX = px; lastZ = pz;
+
+        // Hauteur : dans la cabine on suit la cabine, sinon on suit l'étage
+        const insideNow = elevator.isInsideCab(px, pz);
+        const baseY = insideNow ? elevator.getCabY() : LEVEL_Y[playerLevel];
+        camera.position.y = baseY + 1.7;
+    }
 
     // ─── MUR DU FOND : FENÊTRE SUR L'IMMEUBLE ─────────────────────
     (function() {
@@ -1264,8 +1372,13 @@ export function buildWorld(scene, opts) {
     return {
         update(dt, time) {
             updateMonologue(camera.position);
-            windowView.update(dt, time);
+            elevator.update(dt);
+            updatePlayerPhysics();
             corridor.update(dt, time);
+            // La vue de la fenêtre n'est utile qu'à l'étage de la chambre
+            if (playerLevel === FLOOR_NUMBER && !(elevator.isInsideCab(camera.position.x, camera.position.z) && elevator.state.moving)) {
+                windowView.update(dt, time);
+            }
         }
     };
 }

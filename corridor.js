@@ -140,9 +140,24 @@ export function buildCorridor(parent, opts) {
   plane(HALL_W, HALL_LEN, mFloor, 0, FLOOR_Y, 0, -Math.PI / 2);
   plane(HALL_W, HALL_LEN, mCeil, 0, WALL_H, 0, Math.PI / 2);
 
-  // Plinthes
-  box(0.12, 0.35, HALL_LEN, mPanel, -HALL_W / 2 + 0.06, 0.17, 0);
-  box(0.12, 0.35, HALL_LEN, mPanel, HALL_W / 2 - 0.06, 0.17, 0);
+  // Plinthes : elles s'arrêtent de chaque côté des portes (rien ne traverse le seuil)
+  const DOOR_GAP = 0.85;   // demi-largeur libre autour du centre de chaque porte
+  const doorZsLeft = [-7.5, 2.5];   // portes sur le mur gauche
+  const doorZsRight = [-2.5, 7.5];  // portes sur le mur droit
+
+  function plinthSide(x, doorZs) {
+    let start = -HALL_LEN / 2;
+    function seg(a, b) {
+      if (b - a > 0.05) box(0.12, 0.35, b - a, mPanel, x, 0.17, (a + b) / 2);
+    }
+    doorZs.slice().sort(function(a, b) { return a - b; }).forEach(function(dz) {
+      seg(start, dz - DOOR_GAP);
+      start = dz + DOOR_GAP;
+    });
+    seg(start, HALL_LEN / 2);
+  }
+  plinthSide(-HALL_W / 2 + 0.06, doorZsLeft);
+  plinthSide(HALL_W / 2 - 0.06, doorZsRight);
 
   // Murs latéraux
   plane(HALL_LEN, WALL_H, mWall, -HALL_W / 2, WALL_H / 2, 0, 0, Math.PI / 2);
@@ -330,42 +345,24 @@ export function buildCorridor(parent, opts) {
   });
 
   // ==========================================
-  // ASCENSEUR (fond du couloir)
+  // FOND DU COULOIR
   // ==========================================
-
-  (function() {
-
-    const ez = Z_FAR + 0.15;
-
-    // Mur du fond
+  // L'ascenseur (elevator.js) construit lui-même le mur du fond avec sa porte.
+  // Mur plein seulement en mode autonome.
+  if (opts.farWall !== false) {
     plane(HALL_W, WALL_H, mWall, 0, WALL_H / 2, Z_FAR, 0, 0);
+  }
 
-    const ew = 2.4;
-    const eh = Math.min(2.9, WALL_H - 0.5);
-
-    // Encadrement
-    box(ew + 0.5, 0.28, 0.16, mMetalDark, 0, eh + 0.14, ez);
-    box(0.28, eh + 0.28, 0.16, mMetalDark, -ew / 2 - 0.14, eh / 2, ez);
-    box(0.28, eh + 0.28, 0.16, mMetalDark, ew / 2 + 0.14, eh / 2, ez);
-
-    // Portes coulissantes (fermées)
-    const leafW = ew / 2 - 0.01;
-    box(leafW, eh, 0.08, mMetal, -leafW / 2 - 0.005, eh / 2, ez + 0.05);
-    box(leafW, eh, 0.08, mMetal, leafW / 2 + 0.005, eh / 2, ez + 0.05);
-    box(0.04, eh, 0.09, mMetalDark, 0, eh / 2, ez + 0.06);
-
-    // Bouton d'appel
-    box(0.16, 0.4, 0.05, mMetalDark, ew / 2 + 0.34, 1.15, ez + 0.06);
-    const btn = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.04, 12), mGold);
-    btn.rotation.x = Math.PI / 2;
-    btn.position.set(ew / 2 + 0.34, 1.24, ez + 0.09);
-    root.add(btn);
-
-    // Lumière de l'ascenseur
-    const el = new THREE.PointLight(0x88aaff, 0.6, 8);
-    el.position.set(0, 2.4, ez + 1.5);
-    root.add(el);
-  })();
+  // ==========================================
+  // COLLISIONS (si le monde fournit physics)
+  // ==========================================
+  if (opts.physics) {
+    const lvl = (opts.level === undefined) ? 6 : opts.level;
+    const zN = opts.nearZ || 0;
+    const zF = zN - HALL_LEN;
+    opts.physics.add({ x0: -HALL_W / 2 - 0.6, x1: -HALL_W / 2, z0: zF - 0.6, z1: zN, level: lvl });
+    opts.physics.add({ x0: HALL_W / 2, x1: HALL_W / 2 + 0.6, z0: zF - 0.6, z1: zN, level: lvl });
+  }
 
   // ==========================================
   // LAMPES DE PLAFOND
