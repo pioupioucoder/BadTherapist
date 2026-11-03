@@ -8,7 +8,12 @@ import * as THREE from 'three';
 // est donc une vraie cabine qui descend dans une vraie gaine.
 //
 // Utilisation (voir bedroom.js) :
-//   const rdc = buildGroundFloor(scene, { y: -18.9, z: -26, physics, level: 0 });
+//   const rdc = buildGroundFloor(scene, { y: -18.9, z: -26, physics, level: 0,
+//                                         scene, renderer, camera, canvas, streetOffsetX: 400 });
+//
+// La porte d'entrée est vitrée et s'ouvre au clic. Derrière la vitre, on voit en temps réel
+// la rue (la copie de immeuble.js placée en x + streetOffsetX), et en franchissant la porte
+// bedroom.js téléporte le joueur devant l'entrée de l'immeuble.
 
 export function buildGroundFloor(parent, opts) {
 
@@ -16,6 +21,7 @@ export function buildGroundFloor(parent, opts) {
   const Z0 = opts.z;                 // mur de l'ascenseur
   const LEVEL = opts.level === undefined ? 0 : opts.level;
   const physics = opts.physics;
+  const STREET_DX = opts.streetOffsetX || 400;
   const W = 6;
   const LEN = 11;
   const H = opts.wallH || 3.2;
@@ -105,7 +111,7 @@ export function buildGroundFloor(parent, opts) {
   box(0.05, 0.12, LEN, mTrim, W / 2 - 0.025, 0.06, zMid);
 
   // ==========================================
-  // PORTE D'ENTRÉE (décor, fermée) — mur de l'entrée
+  // PORTE D'ENTRÉE : double porte vitrée coulissante + vue sur la rue
   // ==========================================
 
   const doorW = 2.0, doorH = 2.4;
@@ -114,42 +120,155 @@ export function buildGroundFloor(parent, opts) {
   plane(sideW, H, mWall, (doorW / 2 + sideW / 2), H / 2, Z1, 0, Math.PI);
   plane(doorW, H - doorH, mWall, 0, doorH + (H - doorH) / 2, Z1, 0, Math.PI);
 
-  // Cadre + vitrage (lumière du jour)
+  // Cadre
   box(0.1, doorH, 0.12, mMetalDark, -doorW / 2 - 0.05, doorH / 2, Z1 - 0.04);
   box(0.1, doorH, 0.12, mMetalDark, doorW / 2 + 0.05, doorH / 2, Z1 - 0.04);
   box(doorW + 0.2, 0.1, 0.12, mMetalDark, 0, doorH + 0.05, Z1 - 0.04);
-  box(0.05, doorH, 0.1, mMetalDark, 0, doorH / 2, Z1 - 0.04);
+  box(doorW, 0.03, 0.12, mMetalDark, 0, 0.015, Z1 - 0.04);
 
-  const glass = new THREE.Mesh(
+  // Deux vantaux vitrés
+  const leafW = doorW / 2;
+  const mGlassLeaf = new THREE.MeshBasicMaterial({
+    color: 0xa8bcc8, transparent: true, opacity: 0.18, depthWrite: false, side: THREE.DoubleSide
+  });
+
+  function makeLeaf(x, handleSide) {
+    const g = new THREE.Group();
+    g.position.set(x, doorH / 2, Z1 - 0.06);
+    function lb(w, h, d, mat, px, py, pz) {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+      m.position.set(px, py, pz);
+      g.add(m);
+    }
+    lb(leafW, 0.07, 0.05, mMetalDark, 0, doorH / 2 - 0.035, 0);
+    lb(leafW, 0.12, 0.05, mMetalDark, 0, -doorH / 2 + 0.06, 0);
+    lb(0.05, doorH, 0.05, mMetalDark, -leafW / 2 + 0.025, 0, 0);
+    lb(0.05, doorH, 0.05, mMetalDark, leafW / 2 - 0.025, 0, 0);
+    const glass = new THREE.Mesh(new THREE.PlaneGeometry(leafW - 0.1, doorH - 0.2), mGlassLeaf);
+    g.add(glass);
+    lb(0.03, 0.6, 0.03, mMetal, handleSide * (leafW / 2 - 0.12), 0, -0.05);
+    root.add(g);
+    return g;
+  }
+  const leafL = makeLeaf(-leafW / 2, 1);
+  const leafR = makeLeaf(leafW / 2, -1);
+
+  // Porte : état et animation (0 = fermée, 1 = ouverte)
+  let doorState = 0;
+  let doorTarget = 0;
+  const DOOR_SLIDE = leafW - 0.05;
+
+  // ------------------------------------------
+  // Vue en temps réel sur la rue (portail)
+  // ------------------------------------------
+  const doorPane = new THREE.Mesh(
     new THREE.PlaneGeometry(doorW, doorH),
     new THREE.MeshBasicMaterial({ color: 0x9aa8b0 })
   );
-  glass.rotation.y = Math.PI;
-  glass.position.set(0, doorH / 2, Z1 + 0.01);
-  root.add(glass);
+  doorPane.rotation.y = Math.PI;
+  doorPane.position.set(0, doorH / 2, Z1 + 0.02);
+  root.add(doorPane);
 
-  // Poignées
-  [-0.12, 0.12].forEach(function(x) {
-    box(0.03, 0.5, 0.03, mMetal, x, 1.05, Z1 - 0.12);
-  });
+  let portal = null;
+  if (opts.renderer && opts.camera) {
 
-  // Panneau "SORTIE"
-  const sortieTex = canvasTex(128, 48, function(g, w, h) {
-    g.fillStyle = '#0b3d1c';
-    g.fillRect(0, 0, w, h);
-    g.fillStyle = '#7dff9d';
-    g.font = 'bold 28px monospace';
-    g.textAlign = 'center';
-    g.textBaseline = 'middle';
-    g.fillText('SORTIE', w / 2, h / 2);
-  });
-  const sortie = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.5, 0.19),
-    new THREE.MeshBasicMaterial({ map: sortieTex })
-  );
-  sortie.rotation.y = Math.PI;
-  sortie.position.set(0, doorH + 0.3, Z1 - 0.01);
-  root.add(sortie);
+    const renderer = opts.renderer;
+    const camera = opts.camera;
+    const mainScene = opts.scene || parent;
+
+    const size = new THREE.Vector2();
+    renderer.getDrawingBufferSize(size);
+    const rtOpts = {
+      minFilter: THREE.LinearFilter,
+      magFilter: THREE.LinearFilter,
+      format: THREE.RGBAFormat,
+      generateMipmaps: false
+    };
+    let rt;
+    try {
+      rt = THREE.WebGLMultisampleRenderTarget
+        ? new THREE.WebGLMultisampleRenderTarget(size.x, size.y, rtOpts)
+        : new THREE.WebGLRenderTarget(size.x, size.y, rtOpts);
+    } catch (e) {
+      rt = new THREE.WebGLRenderTarget(size.x, size.y, rtOpts);
+    }
+    rt.texture.encoding = THREE.sRGBEncoding;
+
+    const uniforms = {
+      tMap: { value: rt.texture },
+      uRes: { value: new THREE.Vector2(size.x, size.y) }
+    };
+    doorPane.material = new THREE.ShaderMaterial({
+      uniforms: uniforms,
+      side: THREE.FrontSide,
+      vertexShader: 'void main(){ gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: 'uniform sampler2D tMap; uniform vec2 uRes; void main(){ gl_FragColor = vec4(texture2D(tMap, gl_FragCoord.xy / uRes).rgb, 1.0); }'
+    });
+
+    const outCam = new THREE.PerspectiveCamera(camera.fov, camera.aspect, camera.near, camera.far);
+    const frustum = new THREE.Frustum();
+    const projMat = new THREE.Matrix4();
+    const sphere = new THREE.Sphere();
+    const wp = new THREE.Vector3();
+
+    portal = {
+      render: function() {
+        camera.updateMatrixWorld();
+        doorPane.updateWorldMatrix(true, false);
+        doorPane.getWorldPosition(wp);
+        sphere.set(wp, 2.2);
+        projMat.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+        frustum.setFromProjectionMatrix(projMat);
+        if (!frustum.intersectsSphere(sphere)) return;
+
+        renderer.getDrawingBufferSize(size);
+        if (size.x !== uniforms.uRes.value.x || size.y !== uniforms.uRes.value.y) {
+          rt.setSize(size.x, size.y);
+          uniforms.uRes.value.copy(size);
+        }
+
+        // Même caméra que le joueur, décalée vers la copie de la rue
+        outCam.fov = camera.fov;
+        outCam.aspect = camera.aspect;
+        outCam.near = camera.near;
+        outCam.far = camera.far;
+        outCam.updateProjectionMatrix();
+        outCam.position.copy(camera.position);
+        outCam.position.x += STREET_DX;
+        outCam.quaternion.copy(camera.quaternion);
+        outCam.updateMatrixWorld(true);
+
+        const prevRT = renderer.getRenderTarget();
+        doorPane.visible = false;
+        renderer.setRenderTarget(rt);
+        renderer.render(mainScene, outCam);
+        renderer.setRenderTarget(prevRT);
+        doorPane.visible = true;
+      }
+    };
+  }
+
+  // ------------------------------------------
+  // Clic sur la porte : ouvrir / fermer
+  // ------------------------------------------
+  if (opts.canvas && opts.camera) {
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+    function pickDoor(event) {
+      const rect = opts.canvas.getBoundingClientRect();
+      mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera(mouse, opts.camera);
+      const hits = raycaster.intersectObjects([leafL, leafR, doorPane], true);
+      return hits.length > 0 && hits[0].distance < 3.5;
+    }
+    opts.canvas.addEventListener('mousemove', function(event) {
+      if (pickDoor(event)) opts.canvas.style.cursor = 'pointer';
+    });
+    opts.canvas.addEventListener('click', function(event) {
+      if (pickDoor(event)) doorTarget = doorTarget > 0.5 ? 0 : 1;
+    });
+  }
 
   // ==========================================
   // BOÎTES AUX LETTRES (mur droit)
@@ -171,7 +290,7 @@ export function buildGroundFloor(parent, opts) {
     g.font = 'bold 40px monospace';
     g.textAlign = 'center';
     g.textBaseline = 'middle';
-    g.fillText('RDC', w / 2, h / 2);
+    g.fillText('G', w / 2, h / 2);
   });
   const rdcSign = new THREE.Mesh(
     new THREE.PlaneGeometry(0.5, 0.25),
@@ -206,13 +325,30 @@ export function buildGroundFloor(parent, opts) {
   if (physics) {
     physics.add({ x0: -W / 2 - 0.6, x1: -W / 2, z0: Z0 - 0.6, z1: Z1 + 0.6, level: LEVEL });
     physics.add({ x0: W / 2, x1: W / 2 + 0.6, z0: Z0 - 0.6, z1: Z1 + 0.6, level: LEVEL });
-    physics.add({ x0: -W / 2 - 0.6, x1: W / 2 + 0.6, z0: Z1, z1: Z1 + 0.6, level: LEVEL });
-  }
+    physics.add({ x0: -W / 2 - 0.6, x1: -doorW / 2, z0: Z1 - 0.1, z1: Z1 + 0.6, level: LEVEL });
+    physics.add({ x0: doorW / 2, x1: W / 2 + 0.6, z0: Z1 - 0.1, z1: Z1 + 0.6, level: LEVEL });
+    physics.add({
+      x0: -doorW / 2, x1: doorW / 2, z0: Z1 - 0.15, z1: Z1 + 0.15, level: LEVEL,
+      active: function() { return !(doorState > 0.85); }
+    });  }
 
   return {
     width: W,
     wallH: H,
     wallMaterial: mWall,
-    update: function(dt, time) {}
+    doorZ: Z1,
+    door: {
+      isOpen: function() { return doorState > 0.85; },
+      setOpen: function(v) { doorTarget = v ? 1 : 0; doorState = v ? 1 : doorState; }
+    },
+    // active = le joueur est dans le hall (sert à économiser le rendu de la rue)
+    update: function(dt, time, active) {
+      if (doorState < doorTarget) doorState = Math.min(doorTarget, doorState + dt / 1.2);
+      else if (doorState > doorTarget) doorState = Math.max(doorTarget, doorState - dt / 1.2);
+      const e = doorState * doorState * (3 - 2 * doorState);
+      leafL.position.x = -leafW / 2 - DOOR_SLIDE * e;
+      leafR.position.x = leafW / 2 + DOOR_SLIDE * e;
+      if (portal && active) portal.render();
+    }
   };
 }

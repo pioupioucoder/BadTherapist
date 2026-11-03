@@ -399,7 +399,25 @@ export function buildWorld(scene, opts) {
     });
     elevator.addLanding({ level: 6, width: 5, wallH: WALL_H, wallMaterial: corridor.wallMaterial });
 
-    const rdc = buildGroundFloor(scene, { y: LEVEL_Y[0], z: ELEV_Z, physics: physics, level: 0 });
+    // ─── LA RUE (copie réelle de immeuble.js, placée à l'écart) ──────
+    // L'entrée de l'immeuble est alignée sur la porte du hall : même z, décalage en x seulement.
+    const STREET_DX = 400;
+    const streetRoot = new THREE.Group();
+    streetRoot.position.set(STREET_DX, LEVEL_Y[0], 8.8);
+    scene.add(streetRoot);
+    buildOutside(streetRoot);
+    const streetLights = [];
+    streetRoot.traverse(function(o) { if (o.isPointLight) streetLights.push(o); });
+    streetLights.forEach(function(l) { l.parent.remove(l); });   // on économise les lumières
+    // On ne traverse pas la façade (sauf par l'entrée)
+    physics.add({ x0: STREET_DX - 12, x1: STREET_DX - 1.4, z0: -24.8, z1: -15.7, level: 0 });
+    physics.add({ x0: STREET_DX + 1.4, x1: STREET_DX + 12, z0: -24.8, z1: -15.7, level: 0 });
+
+    const rdc = buildGroundFloor(scene, {
+        y: LEVEL_Y[0], z: ELEV_Z, physics: physics, level: 0,
+        scene: scene, renderer: renderer, camera: camera, canvas: canvas,
+        streetOffsetX: STREET_DX
+    });
     elevator.addLanding({ level: 0, width: rdc.width, wallH: rdc.wallH, wallMaterial: rdc.wallMaterial });
 
     let playerLevel = FLOOR_NUMBER;
@@ -457,6 +475,16 @@ export function buildWorld(scene, opts) {
             const r = pushOut(px, pz);
             px = r[0]; pz = r[1];
         }
+        // Porte du hall <-> rue (téléportation à travers la porte)
+        if (playerLevel === 0) {
+            if (px < 100 && Math.abs(px) < 1.0 && pz > rdc.doorZ + 0.1 && rdc.door.isOpen()) {
+                px += STREET_DX;                                   // on sort devant l'immeuble
+            } else if (px > 100 && Math.abs(px - STREET_DX) < 1.3 && pz < rdc.doorZ - 0.15) {
+                px -= STREET_DX;                                   // on rentre dans le hall
+                rdc.door.setOpen(true);
+            }
+        }
+
         camera.position.x = px;
         camera.position.z = pz;
         lastX = px; lastZ = pz;
@@ -1375,6 +1403,7 @@ export function buildWorld(scene, opts) {
             elevator.update(dt);
             updatePlayerPhysics();
             corridor.update(dt, time);
+            rdc.update(dt, time, playerLevel === 0 && camera.position.x < 100);
             // La vue de la fenêtre n'est utile qu'à l'étage de la chambre
             if (playerLevel === FLOOR_NUMBER && !(elevator.isInsideCab(camera.position.x, camera.position.z) && elevator.state.moving)) {
                 windowView.update(dt, time);

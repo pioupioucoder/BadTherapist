@@ -55,7 +55,7 @@ export function buildElevator(parent, opts) {
   let pressedFloor = -1;
   let shownKey = '';
 
-  function floorLabel(n) { return n === 0 ? 'RDC' : String(n); }
+  function floorLabel(n) { return n === 0 ? 'G' : String(n); }
   function smooth(u) { return u * u * (3 - 2 * u); }
 
   // ==========================================
@@ -296,8 +296,8 @@ export function buildElevator(parent, opts) {
       g.strokeStyle = lit ? '#ffb347' : '#8a8f94';
       g.stroke();
       g.fillStyle = lit ? '#ffd9a0' : (enabled ? '#f0f0f0' : '#6f7479');
-      g.font = 'bold ' + (f === 0 ? 11 : 15) + 'px monospace';
-      g.fillText(f === 0 ? 'RDC' : String(f), 64, cy + 1);
+      g.font = 'bold 15px monospace';
+      g.fillText(f === 0 ? 'G' : String(f), 64, cy + 1);
     });
 
     // Ouvrir / fermer les portes
