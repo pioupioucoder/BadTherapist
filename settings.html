@@ -305,6 +305,7 @@
         const CH_LS_ENDINGS_SEEN = 'lmtd_endings_seen_v1';
         const SESSION_CODE_KEY = 'lmtd_code_ok';
         const GAME_FLAGS_KEY = 'lmtd_gameFlags';
+        const PLAYER_KEY = 'bt_player_state';   // sauvegarde de position du jeu 3D
 
         const volumeInput = document.getElementById('volume');
         const muteButton = document.getElementById('mute');
@@ -359,7 +360,8 @@
                 muted: localStorage.getItem(LS_MUTE_KEY) || '0',
                 chapters: localStorage.getItem(CH_LS_CHAPTERS) || '[]',
                 endings: localStorage.getItem(CH_LS_ENDINGS_SEEN) || '[]',
-                gameFlags: localStorage.getItem(GAME_FLAGS_KEY) || '{}'
+                gameFlags: localStorage.getItem(GAME_FLAGS_KEY) || '{}',
+                player: localStorage.getItem(PLAYER_KEY) || ''
             };
 
             const blob = new Blob(
@@ -424,6 +426,16 @@
                     localStorage.setItem(GAME_FLAGS_KEY, data.gameFlags);
                 }
 
+                if (typeof data.player === 'string' && data.player) {
+                    // Position du joueur : on vérifie que c'est bien un JSON valide
+                    try {
+                        const parsed = JSON.parse(data.player);
+                        if (parsed && typeof parsed === 'object' && parsed.worlds) {
+                            localStorage.setItem(PLAYER_KEY, data.player);
+                        }
+                    } catch (e) { /* ignoré */ }
+                }
+
                 alert('Save imported successfully.');
                 location.reload();
 
@@ -448,7 +460,8 @@
                 LS_MUTE_KEY,
                 CH_LS_CHAPTERS,
                 CH_LS_ENDINGS_SEEN,
-                GAME_FLAGS_KEY
+                GAME_FLAGS_KEY,
+                PLAYER_KEY
             ].forEach(key => localStorage.removeItem(key));
 
             sessionStorage.removeItem(SESSION_CODE_KEY);

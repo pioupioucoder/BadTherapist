@@ -11,6 +11,10 @@ import * as THREE from 'three';
 //   const rdc = buildGroundFloor(scene, { y: -18.9, z: -26, physics, level: 0,
 //                                         scene, renderer, camera, canvas, streetOffsetX: 400 });
 //
+// CORRECTIF PORTE : à travers la porte, on voit maintenant la rue en temps réel.
+//  - l'entrée de l'immeuble (cadre, vitre orange, poignée) et le corps du bâtiment sont masqués
+//    pendant ce rendu (la caméra est "dans" l'immeuble : ils bouchaient la vue) -> opts.portalHide
+//  - la neige est dessinée autour de la caméra de la rue -> opts.snow / opts.snowBaseY
 // La porte d'entrée est vitrée et s'ouvre au clic. Derrière la vitre, on voit en temps réel
 // la rue (la copie de immeuble.js placée en x + streetOffsetX), et en franchissant la porte
 // bedroom.js téléporte le joueur devant l'entrée de l'immeuble.
@@ -239,11 +243,25 @@ export function buildGroundFloor(parent, opts) {
         outCam.updateMatrixWorld(true);
 
         const prevRT = renderer.getRenderTarget();
+        const hide = (typeof opts.portalHide === 'function' ? opts.portalHide() : opts.portalHide) || [];
+        const hidden = [];
+        hide.forEach(function(o) {
+          if (o && o.visible) { o.visible = false; hidden.push(o); }
+        });
+
         doorPane.visible = false;
         renderer.setRenderTarget(rt);
-        renderer.render(mainScene, outCam);
+
+        const draw = function() { renderer.render(mainScene, outCam); };
+        if (opts.snow && opts.snow.withView) {
+          opts.snow.withView(null, outCam.position, opts.snowBaseY || 0, draw);
+        } else {
+          draw();
+        }
+
         renderer.setRenderTarget(prevRT);
         doorPane.visible = true;
+        hidden.forEach(function(o) { o.visible = true; });
       }
     };
   }

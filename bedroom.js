@@ -13,6 +13,11 @@ export function buildWorld(scene, opts) {
     const camera = opts.camera;
     const renderer = opts.renderer;
     const canvas = renderer.domElement;
+    const snow = opts.snow;
+
+    // La neige tombe dehors (rue, fenêtre, porte vitrée) mais jamais dans les pièces
+    // (zones d'exclusion déclarées plus bas). Elle était simplement jamais activée ici.
+    if (snow) snow.setEnabled(true);
 
     // ─── LUMIÈRES (ambiance morne, sans lampe) ───────────────────────
     const ambient = new THREE.AmbientLight(0x6f747a, 0.10);
@@ -236,6 +241,7 @@ export function buildWorld(scene, opts) {
                 biggestN = ch.children.length;
             }
         });
+        if (outside && outside.main) biggest = outside.main;   // le corps de l'immeuble, de façon sûre
         const toRemove = [];
         if (biggest) toRemove.push(biggest);
         outScene.children.forEach(function(ch) {
@@ -339,7 +345,12 @@ export function buildWorld(scene, opts) {
             renderer.setRenderTarget(rt);
             renderer.setClearColor(0x000000, 0);
             renderer.clear();
-            renderer.render(outScene, outCam);
+            // La neige tombe aussi dans la vue de la fenêtre (dessinée autour de la caméra extérieure)
+            if (snow) {
+                snow.withView(outScene, outCam.position, 0, function() { renderer.render(outScene, outCam); });
+            } else {
+                renderer.render(outScene, outCam);
+            }
 
             renderer.setRenderTarget(prevRT);
             renderer.setClearColor(prevColor, prevAlpha);
@@ -405,23 +416,42 @@ export function buildWorld(scene, opts) {
     const streetRoot = new THREE.Group();
     streetRoot.position.set(STREET_DX, LEVEL_Y[0], 8.8);
     scene.add(streetRoot);
-    buildOutside(streetRoot);
+    const street = buildOutside(streetRoot, { nightBoost: 1 });
     const streetLights = [];
-    streetRoot.traverse(function(o) { if (o.isPointLight) streetLights.push(o); });
-    streetLights.forEach(function(l) { l.parent.remove(l); });   // on économise les lumières
+    streetRoot.traverse(function(o) { if (o.isPointLight && !o.userData.keep) streetLights.push(o); });
+    streetLights.forEach(function(l) { l.parent.remove(l); });   // on économise les lumières (sauf celle de la maison de travail)
+    const STREET_Z = 8.8;
     // On ne traverse pas la façade (sauf par l'entrée)
     physics.add({ x0: STREET_DX - 12, x1: STREET_DX - 1.4, z0: -24.8, z1: -15.7, level: 0 });
     physics.add({ x0: STREET_DX + 1.4, x1: STREET_DX + 12, z0: -24.8, z1: -15.7, level: 0 });
+    // La maison de travail (work.js), sa voiture et sa pile de bois sont solides
+    street.colliders.forEach(function(c) {
+        physics.add({ x0: STREET_DX + c.x0, x1: STREET_DX + c.x1, z0: STREET_Z + c.z0, z1: STREET_Z + c.z1, level: 0 });
+    });
 
     const rdc = buildGroundFloor(scene, {
         y: LEVEL_Y[0], z: ELEV_Z, physics: physics, level: 0,
         scene: scene, renderer: renderer, camera: camera, canvas: canvas,
-        streetOffsetX: STREET_DX
+        streetOffsetX: STREET_DX,
+        // Vue à travers la porte vitrée : on masque l'entrée / le corps de l'immeuble
+        // (la caméra est "dans" l'immeuble, ils bouchaient la porte) et on dessine la neige
+        portalHide: [street.main],
+        snow: snow, snowBaseY: LEVEL_Y[0]
     });
     elevator.addLanding({ level: 0, width: rdc.width, wallH: rdc.wallH, wallMaterial: rdc.wallMaterial });
 
+    // Zones sans neige : la chambre, le couloir, la gaine d'ascenseur et le hall
+    if (snow) {
+        snow.excludeBox(-8.6, -0.6, -0.4, 8.6, WALL_H + 0.3, HALF_D + 0.04);                 // chambre
+        snow.excludeBox(-2.8, -0.6, ELEV_Z - 0.1, 2.8, WALL_H + 0.3, 0.4);                   // couloir
+        snow.excludeBox(-1.7, LEVEL_Y[0] - 0.3, ELEV_Z - 3.2, 1.7, 4.4, ELEV_Z + 0.2);       // gaine + cabine
+        snow.excludeBox(-3.2, LEVEL_Y[0] - 0.3, ELEV_Z - 0.2, 3.2, LEVEL_Y[0] + 3.6, rdc.doorZ - 0.05);   // hall
+    }
+
     let playerLevel = FLOOR_NUMBER;
     let lastX = null, lastZ = null;
+    let smoothY = null;      // hauteur lissée du joueur (collines)
+    let snapY = true;
     const PLAYER_R = 0.3;
 
     function pushOut(px, pz) {
@@ -455,7 +485,7 @@ export function buildWorld(scene, opts) {
     }
 
     // Collisions + hauteur du joueur (appelé à chaque frame)
-    function updatePlayerPhysics() {
+    function updatePlayerPhysics(dt) {
         const x1 = camera.position.x, z1 = camera.position.z;
         if (lastX === null) { lastX = x1; lastZ = z1; }
 
@@ -479,9 +509,11 @@ export function buildWorld(scene, opts) {
         if (playerLevel === 0) {
             if (px < 100 && Math.abs(px) < 1.0 && pz > rdc.doorZ + 0.1 && rdc.door.isOpen()) {
                 px += STREET_DX;                                   // on sort devant l'immeuble
+                snapY = true;
             } else if (px > 100 && Math.abs(px - STREET_DX) < 1.3 && pz < rdc.doorZ - 0.15) {
                 px -= STREET_DX;                                   // on rentre dans le hall
                 rdc.door.setOpen(true);
+                snapY = true;
             }
         }
 
@@ -491,8 +523,28 @@ export function buildWorld(scene, opts) {
 
         // Hauteur : dans la cabine on suit la cabine, sinon on suit l'étage
         const insideNow = elevator.isInsideCab(px, pz);
-        const baseY = insideNow ? elevator.getCabY() : LEVEL_Y[playerLevel];
-        camera.position.y = baseY + 1.7;
+        const inStreet = playerLevel === 0 && px > 100;
+        let baseY;
+        if (insideNow) {
+            baseY = elevator.getCabY();
+            snapY = true;
+        } else if (inStreet) {
+            // Dans la rue : on suit le relief (route, collines) avec un lissage
+            baseY = LEVEL_Y[0] + street.walkHeight(px - STREET_DX, pz - STREET_Z);
+        } else {
+            baseY = LEVEL_Y[playerLevel];
+        }
+        const targetY = baseY + 1.7;
+        if (smoothY === null || snapY || !inStreet) {
+            smoothY = targetY;
+            snapY = false;
+        } else {
+            smoothY += (targetY - smoothY) * Math.min(1, dt * 10);
+        }
+        camera.position.y = smoothY;
+
+        // La neige tombe depuis le sol sous le joueur
+        if (snow) snow.setBaseY(inStreet ? smoothY - 1.7 : LEVEL_Y[playerLevel]);
     }
 
     // ─── MUR DU FOND : FENÊTRE SUR L'IMMEUBLE ─────────────────────
@@ -1398,10 +1450,37 @@ export function buildWorld(scene, opts) {
 
     // ─── RETOUR ──────────────────────────────────────────────────
     return {
+        // On gère nous-mêmes la hauteur (étages, ascenseur, collines de la rue)
+        controlsHeight: true,
+
+        // Sauvegarde de position : étage + "dans la rue ou non".
+        // false = ne pas sauvegarder maintenant (dans la cabine d'ascenseur)
+        getSaveState() {
+            if (elevator.isInsideCab(camera.position.x, camera.position.z)) return false;
+            return { level: playerLevel, street: camera.position.x > 100 };
+        },
+
+        applySaveState(extra, pose) {
+            const x = camera.position.x;
+            if (extra && extra.level !== undefined && extra.level !== null) {
+                playerLevel = extra.level;
+            } else if (pose && x > 100) {
+                playerLevel = 0;                    // ancienne sauvegarde faite dans la rue
+            } else {
+                playerLevel = FLOOR_NUMBER;
+            }
+            if (x > 100) playerLevel = 0;
+            physics.level = playerLevel;
+            lastX = null; lastZ = null;
+            snapY = true;
+            if (playerLevel === 0 && x < 100) rdc.door.setOpen(false);
+        },
+
         update(dt, time) {
             updateMonologue(camera.position);
             elevator.update(dt);
-            updatePlayerPhysics();
+            updatePlayerPhysics(dt);
+            street.update(dt, time);
             corridor.update(dt, time);
             rdc.update(dt, time, playerLevel === 0 && camera.position.x < 100);
             // La vue de la fenêtre n'est utile qu'à l'étage de la chambre

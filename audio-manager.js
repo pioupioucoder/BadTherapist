@@ -13,7 +13,15 @@
     let resumeListenersAdded = false;
 
     function getVolume() {
-        const value = Number(localStorage.getItem(VOLUME_KEY));
+        // BUG CORRIGÉ : Number(null) === 0, donc tant que le joueur n'avait pas
+        // touché au curseur, le volume valait 0 et la musique était muette.
+        const raw = localStorage.getItem(VOLUME_KEY);
+
+        if (raw === null || raw === '') {
+            return DEFAULT_VOLUME;
+        }
+
+        const value = Number(raw);
 
         if (!Number.isFinite(value)) {
             return DEFAULT_VOLUME;
@@ -108,20 +116,22 @@
 
         resumeListenersAdded = true;
 
+        const events = ['click', 'keydown', 'pointerdown', 'touchstart'];
+
         const resume = () => {
             if (sessionStorage.getItem(ACCEPTED_KEY) !== '1') return;
 
             applySettings();
 
-            audio.play().catch(() => {});
-
-            document.removeEventListener('click', resume);
-            document.removeEventListener('keydown', resume);
-            resumeListenersAdded = false;
+            audio.play().then(() => {
+                events.forEach(name => document.removeEventListener(name, resume));
+                resumeListenersAdded = false;
+            }).catch(() => {
+                // Toujours bloqué : on garde les écouteurs pour le prochain geste.
+            });
         };
 
-        document.addEventListener('click', resume);
-        document.addEventListener('keydown', resume);
+        events.forEach(name => document.addEventListener(name, resume));
     }
 
     async function start() {

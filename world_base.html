@@ -366,7 +366,8 @@ renderer.outputEncoding = THREE.sRGBEncoding;
 
 const scene = new THREE.Scene();
 
-scene.fog = new THREE.FogExp2(0x000000, 0.011);
+const FOG_DENSITY = 0.0062;   // réglable : plus petit = on voit plus loin (montagnes)
+scene.fog = new THREE.FogExp2(0x000000, FOG_DENSITY);
 scene.fog.color.setRGB(0.145, 0.157, 0.160); // = couleur de l'horizon du ciel
 renderer.setClearColor(scene.fog.color);
 
@@ -541,11 +542,11 @@ scene.add(daylight);
 const snow = (() => {
 
   const VERT = `
-    uniform float uTime, uSize, uScale, uFall, uMax, uFogD;
+    uniform float uTime, uSize, uScale, uFall, uMax, uFogD, uBaseY;
     uniform vec3 uCam, uBox;
     uniform vec2 uWind;
-    uniform vec3 uExMin[4];
-    uniform vec3 uExMax[4];
+    uniform vec3 uExMin[6];
+    uniform vec3 uExMax[6];
     attribute vec4 aRand;
     varying float vAlpha;
 
@@ -563,7 +564,7 @@ const snow = (() => {
       p.z += uWind.y * (0.7 + 0.6 * aRand.x) + sw2 * amp;
 
       vec3 rel = mod(p - vec3(uCam.x, 0.0, uCam.z), uBox);
-      vec3 world = vec3(uCam.x - uBox.x * 0.5 + rel.x, rel.y, uCam.z - uBox.z * 0.5 + rel.z);
+      vec3 world = vec3(uCam.x - uBox.x * 0.5 + rel.x, uBaseY + rel.y, uCam.z - uBox.z * 0.5 + rel.z);
 
       vec4 mv = modelViewMatrix * vec4(world, 1.0);
       gl_Position = projectionMatrix * mv;
@@ -574,14 +575,14 @@ const snow = (() => {
 
       float edge = max(abs(world.x - uCam.x) / (uBox.x * 0.5), abs(world.z - uCam.z) / (uBox.z * 0.5));
       float a = 1.0 - smoothstep(0.75, 1.0, edge);
-      a *= smoothstep(0.0, 0.5, world.y);
-      a *= 1.0 - smoothstep(uBox.y - 4.0, uBox.y, world.y);
+      a *= smoothstep(0.0, 0.5, rel.y);
+      a *= 1.0 - smoothstep(uBox.y - 4.0, uBox.y, rel.y);
       a *= smoothstep(0.25, 1.2, dist);
       a *= exp(-pow(uFogD * dist, 2.0));
       a *= min(1.0, raw / 1.6 + 0.2);
 
       // Zones sans neige (interieur d'une piece)
-      for (int i = 0; i < 4; i++) {
+      for (int i = 0; i < 6; i++) {
         if (world.x > uExMin[i].x && world.x < uExMax[i].x &&
             world.y > uExMin[i].y && world.y < uExMax[i].y &&
             world.z > uExMin[i].z && world.z < uExMax[i].z) {
@@ -612,7 +613,7 @@ const snow = (() => {
 
   const exMin = [];
   const exMax = [];
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 6; i++) {
     exMin.push(new THREE.Vector3(1e5, 1e5, 1e5));
     exMax.push(new THREE.Vector3(-1e5, -1e5, -1e5));
   }
@@ -640,6 +641,7 @@ const snow = (() => {
         uFall: { value: fall },
         uMax: { value: maxSize },
         uFogD: { value: fogD },
+        uBaseY: { value: 0 },
         uCam: { value: new THREE.Vector3() },
         uBox: { value: box },
         uWind: { value: new THREE.Vector2() },
@@ -669,13 +671,14 @@ const snow = (() => {
   let wx = 0;
   let wz = 0;
   let nEx = 0;
+  let baseY = 0;
   const buf = new THREE.Vector2();
 
   return {
 
     // Pas de neige a l'interieur de cette boite (ex. une chambre)
     excludeBox(minX, minY, minZ, maxX, maxY, maxZ) {
-      if (nEx >= 4) return;
+      if (nEx >= 6) return;
       exMin[nEx].set(minX, minY, minZ);
       exMax[nEx].set(maxX, maxY, maxZ);
       nEx++;
@@ -683,6 +686,47 @@ const snow = (() => {
 
     setEnabled(v) {
       group.visible = !!v;
+    },
+
+    // Altitude du sol sous le joueur : la neige tombe toujours au-dessus du sol
+    // (rue au niveau -18.9, collines, montagnes...)
+    setBaseY(v) {
+      baseY = v;
+    },
+
+    // Dessine la neige autour d'une autre caméra (fenêtre, porte vitrée...).
+    // target = scène dans laquelle on la dessine (null = la scène principale).
+    withView(target, pos, base, fn) {
+
+      if (!group.visible) { fn(); return; }
+
+      const saved = mats.map(m => ({
+        cam: m.uniforms.uCam.value.clone(),
+        base: m.uniforms.uBaseY.value
+      }));
+      const savedMin = exMin.map(v => v.clone());
+      const savedMax = exMax.map(v => v.clone());
+
+      for (const m of mats) {
+        m.uniforms.uCam.value.copy(pos);
+        m.uniforms.uBaseY.value = base;
+      }
+      exMin.forEach(v => v.set(1e5, 1e5, 1e5));
+      exMax.forEach(v => v.set(-1e5, -1e5, -1e5));
+
+      if (target) target.add(group);
+
+      try {
+        fn();
+      } finally {
+        if (target) scene.add(group);
+        mats.forEach((m, i) => {
+          m.uniforms.uCam.value.copy(saved[i].cam);
+          m.uniforms.uBaseY.value = saved[i].base;
+        });
+        exMin.forEach((v, i) => v.copy(savedMin[i]));
+        exMax.forEach((v, i) => v.copy(savedMax[i]));
+      }
     },
 
     update(dt, time) {
@@ -699,6 +743,8 @@ const snow = (() => {
         const u = m.uniforms;
         u.uTime.value = time;
         u.uScale.value = scale;
+        u.uBaseY.value = baseY;
+        u.uFogD.value = scene.fog ? scene.fog.density : fogD;
         u.uWind.value.set(wx, wz);
         u.uCam.value.copy(camera.position);
       }
@@ -717,6 +763,9 @@ const params = new URLSearchParams(
 
 const worldFile = params.get('world') || 'bedroom.js';
 
+let camYaw = 0;
+let camPitch = 0;
+
 let world;
 
 try {
@@ -734,7 +783,13 @@ try {
  world = worldModule.buildWorld(scene, {
   camera,
   renderer,
-  snow
+  snow,
+  setView(yaw, pitch) {
+    camYaw = yaw || 0;
+    camPitch = pitch || 0;
+    camera.rotation.y = camYaw;
+    camera.rotation.x = camPitch;
+  }
 });
 
 } catch (error) {
@@ -879,9 +934,6 @@ function drawJoy(id, dx, dy) {
 // 7. CAMERA
 // ==========================================
 
-let camYaw = 0;
-let camPitch = 0;
-
 let dragging = false;
 let lastX = 0;
 let lastY = 0;
@@ -977,17 +1029,45 @@ function applyPose(p) {
 }
 
 function saveNow() {
+
+  // Le monde peut ajouter son état (étage, rue...) ou refuser de sauvegarder
+  // (ex. pendant le trajet en ascenseur) en renvoyant false.
+  let extra = null;
+
+  if (world && typeof world.getSaveState === 'function') {
+    try {
+      extra = world.getSaveState();
+    } catch (error) {
+      extra = null;
+    }
+    if (extra === false) return;
+  }
+
   const state = readState();
-  state.version = 1;
+  state.version = 2;
   state.last = worldFile;
-  state.worlds[worldFile] = Object.assign(currentPose(), { t: Date.now() });
+  state.worlds[worldFile] = Object.assign(currentPose(), {
+    t: Date.now(),
+    extra: extra
+  });
   writeState(state);
+}
+
+function applyWorldState(saved) {
+  if (world && typeof world.applySaveState === 'function') {
+    try {
+      world.applySaveState(saved ? (saved.extra || null) : null, saved || null);
+    } catch (error) {
+      console.warn('Etat du monde non restauré :', error);
+    }
+  }
 }
 
 // Restauration au chargement (?spawn=start pour forcer le point de depart)
 
 if (params.get('spawn') !== 'start') {
-  applyPose(readState().worlds[worldFile]);
+  const saved = readState().worlds[worldFile];
+  if (applyPose(saved)) applyWorldState(saved);
 }
 
 // Sauvegarde automatique : toutes les secondes si on a bouge, et en quittant la page
@@ -1029,7 +1109,8 @@ Object.assign(window.BadTherapist, {
   setPlayerState(state) {
     if (!state || !state.worlds) return;
     writeState(state);
-    applyPose(state.worlds[worldFile]);
+    const saved = state.worlds[worldFile];
+    if (applyPose(saved)) applyWorldState(saved);
   },
 
   resetPosition() {
@@ -1037,6 +1118,7 @@ Object.assign(window.BadTherapist, {
     delete state.worlds[worldFile];
     writeState(state);
     applyPose(SPAWN);
+    applyWorldState(null);
     lastSaved = '';
   }
 });
@@ -1214,9 +1296,11 @@ function animate() {
     right, jLx * 6.5 * dt
   );
 
-  // CONSTANT HEIGHT
+  // CONSTANT HEIGHT (sauf si le monde gère lui-même la hauteur : étages, collines...)
 
-  camera.position.y = 1.7;
+  if (!(world && world.controlsHeight)) {
+    camera.position.y = 1.7;
+  }
 
   // RIGHT JOYSTICK CAMERA ROTATION
 
@@ -1244,10 +1328,6 @@ function animate() {
       camera.position.z.toFixed(2);
   }
 
-  // SAVE POSITION
-
-  savePosition(dt);
-
   // SHARED SNOW
 
   snow.update(dt, clock.elapsedTime);
@@ -1257,6 +1337,10 @@ function animate() {
   if (world && typeof world.update === 'function') {
     world.update(dt, clock.elapsedTime);
   }
+
+  // SAVE POSITION (après le monde, pour enregistrer la vraie hauteur)
+
+  savePosition(dt);
 
   renderer.render(scene, camera);
 
