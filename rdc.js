@@ -269,24 +269,8 @@ export function buildGroundFloor(parent, opts) {
   // ------------------------------------------
   // Clic sur la porte : ouvrir / fermer
   // ------------------------------------------
-  if (opts.canvas && opts.camera) {
-    const raycaster = new THREE.Raycaster();
-    const mouse = new THREE.Vector2();
-    function pickDoor(event) {
-      const rect = opts.canvas.getBoundingClientRect();
-      mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-      mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-      raycaster.setFromCamera(mouse, opts.camera);
-      const hits = raycaster.intersectObjects([leafL, leafR, doorPane], true);
-      return hits.length > 0 && hits[0].distance < 3.5;
-    }
-    opts.canvas.addEventListener('mousemove', function(event) {
-      if (pickDoor(event)) opts.canvas.style.cursor = 'pointer';
-    });
-    opts.canvas.addEventListener('click', function(event) {
-      if (pickDoor(event)) doorTarget = doorTarget > 0.5 ? 0 : 1;
-    });
-  }
+  // La porte est automatique (voir update) : elle s'ouvre quand quelqu'un s'approche,
+  // du hall comme de la rue, et se referme quand il n'y a plus personne.
 
   // ==========================================
   // BOÎTES AUX LETTRES (mur droit)
@@ -357,12 +341,15 @@ export function buildGroundFloor(parent, opts) {
     doorZ: Z1,
     door: {
       isOpen: function() { return doorState > 0.85; },
+      amount: function() { return doorState; },
       setOpen: function(v) { doorTarget = v ? 1 : 0; doorState = v ? 1 : doorState; }
     },
     // active = le joueur est dans le hall (sert à économiser le rendu de la rue)
     update: function(dt, time, active) {
-      if (doorState < doorTarget) doorState = Math.min(doorTarget, doorState + dt / 1.2);
-      else if (doorState > doorTarget) doorState = Math.max(doorTarget, doorState - dt / 1.2);
+      // Capteur : quelqu'un près de la porte (côté hall ou côté rue) -> ouverte, sinon fermée
+      if (typeof opts.isNear === 'function') doorTarget = opts.isNear() ? 1 : 0;
+      if (doorState < doorTarget) doorState = Math.min(doorTarget, doorState + dt / 0.7);
+      else if (doorState > doorTarget) doorState = Math.max(doorTarget, doorState - dt / 0.9);
       const e = doorState * doorState * (3 - 2 * doorState);
       leafL.position.x = -leafW / 2 - DOOR_SLIDE * e;
       leafR.position.x = leafW / 2 + DOOR_SLIDE * e;

@@ -156,14 +156,81 @@ html, body {
   border-radius: 5px;
 }
 
-#mapPlaceholder {
-  height: 150px;
+#mapCanvas {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  background: #0d1013;
+  border: 1px solid #3a3338;
+  border-radius: 6px;
+  touch-action: none;
+  cursor: grab;
+}
+
+.map-btns {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.map-btns button {
+  flex: 1;
+  padding: 7px 4px;
+  background: #302733;
+  color: #ddd0c3;
+  border: 1px solid #625047;
+  border-radius: 5px;
+  cursor: pointer;
+  font: 11px monospace;
+}
+
+.map-btns button:active {
+  background: #4a3d4d;
+}
+
+.panel-actions {
   display: flex;
   align-items: center;
-  justify-content: center;
-  border: 1px dashed #625047;
-  color: #777;
-  letter-spacing: 2px;
+  gap: 4px;
+}
+
+/* Carte agrandie : presque tout l'écran */
+#mapPanel.expanded[style*="block"] {
+  display: flex !important;
+  flex-direction: column;
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  bottom: 78px;
+  width: auto;
+}
+
+#mapPanel.expanded #mapCanvas {
+  flex: 1;
+  min-height: 0;
+  aspect-ratio: auto;
+}
+
+/* Bouton d'action (monter / descendre du camion) */
+#actionBtn {
+  display: none;
+  position: fixed;
+  left: 50%;
+  bottom: 88px;
+  transform: translateX(-50%);
+  z-index: 35;
+  padding: 13px 30px;
+  background: rgba(23, 23, 32, 0.93);
+  border: 1px solid #c9a46a;
+  border-radius: 12px;
+  color: #f0e0c8;
+  font: bold 14px monospace;
+  letter-spacing: 3px;
+  cursor: pointer;
+}
+
+#actionBtn:active {
+  background: #4a3d33;
 }
 
 /* JOYSTICKS */
@@ -329,11 +396,23 @@ html, body {
 <div class="hud-panel" id="mapPanel">
   <div class="panel-title">
     <span>MAP</span>
-    <button class="panel-close" data-close="mapPanel">×</button>
+    <span class="panel-actions">
+      <button class="panel-close" id="mapExpand" title="Agrandir">⤢</button>
+      <button class="panel-close" data-close="mapPanel">×</button>
+    </span>
   </div>
 
-  <div id="mapPlaceholder">MAP UNAVAILABLE</div>
+  <canvas id="mapCanvas"></canvas>
+
+  <div class="map-btns">
+    <button id="mapZoomOut" type="button">−</button>
+    <button id="mapZoomIn" type="button">+</button>
+    <button id="mapFit" type="button">ALL</button>
+    <button id="mapMe" type="button">ME</button>
+  </div>
 </div>
+
+<button id="actionBtn" type="button"></button>
 
 <div id="hud">
   <canvas id="jL" width="120" height="60"></canvas>
@@ -366,7 +445,7 @@ renderer.outputEncoding = THREE.sRGBEncoding;
 
 const scene = new THREE.Scene();
 
-const FOG_DENSITY = 0.0062;   // réglable : plus petit = on voit plus loin (montagnes)
+const FOG_DENSITY = 0.0075;   // réglable : plus petit = on voit plus loin (montagnes)
 scene.fog = new THREE.FogExp2(0x000000, FOG_DENSITY);
 scene.fog.color.setRGB(0.145, 0.157, 0.160); // = couleur de l'horizon du ciel
 renderer.setClearColor(scene.fog.color);
@@ -374,7 +453,7 @@ renderer.setClearColor(scene.fog.color);
 const camera = new THREE.PerspectiveCamera(
   65,
   1,
-  0.1,
+  0.15,
   5000
 );
 
@@ -754,6 +833,55 @@ const snow = (() => {
 })();
 
 // ==========================================
+// 3c. ENTRÉES PARTAGÉES (joysticks + clavier) ET BOUTON D'ACTION
+// ==========================================
+
+const input = { lx: 0, ly: 0, brake: false };   // lx : droite +, ly : avant -
+const keys = { up: false, down: false, left: false, right: false };
+
+const actionBtn = document.getElementById('actionBtn');
+let actionHandler = null;
+
+const action = {
+  show(label, fn) {
+    actionBtn.textContent = label;
+    actionBtn.style.display = 'block';
+    actionHandler = fn;
+  },
+  hide() {
+    actionBtn.style.display = 'none';
+    actionHandler = null;
+  }
+};
+
+actionBtn.addEventListener('click', () => {
+  if (actionHandler) actionHandler();
+});
+
+const KEYMAP = {
+  KeyW: 'up', KeyZ: 'up', ArrowUp: 'up',
+  KeyS: 'down', ArrowDown: 'down',
+  KeyA: 'left', KeyQ: 'left', ArrowLeft: 'left',
+  KeyD: 'right', ArrowRight: 'right'
+};
+
+window.addEventListener('keydown', e => {
+  if (KEYMAP[e.code]) { keys[KEYMAP[e.code]] = true; e.preventDefault(); }
+  else if (e.code === 'Space') { input.brake = true; e.preventDefault(); }
+  else if ((e.code === 'KeyE' || e.code === 'Enter') && !e.repeat && actionHandler) actionHandler();
+});
+
+window.addEventListener('keyup', e => {
+  if (KEYMAP[e.code]) keys[KEYMAP[e.code]] = false;
+  else if (e.code === 'Space') input.brake = false;
+});
+
+window.addEventListener('blur', () => {
+  keys.up = keys.down = keys.left = keys.right = false;
+  input.brake = false;
+});
+
+// ==========================================
 // 4. WORLD LOADING
 // ==========================================
 
@@ -780,16 +908,25 @@ try {
     );
   }
 
+ const setView = (yaw, pitch) => {
+  camYaw = yaw || 0;
+  camPitch = pitch || 0;
+  camera.rotation.y = camYaw;
+  camera.rotation.x = camPitch;
+};
+
  world = worldModule.buildWorld(scene, {
   camera,
   renderer,
   snow,
-  setView(yaw, pitch) {
-    camYaw = yaw || 0;
-    camPitch = pitch || 0;
-    camera.rotation.y = camYaw;
-    camera.rotation.x = camPitch;
-  }
+  setView,
+  // Vue du joueur (lecture / écriture) : sert à la conduite
+  view: {
+    get: () => ({ yaw: camYaw, pitch: camPitch }),
+    set: setView
+  },
+  input,
+  action
 });
 
 } catch (error) {
@@ -1173,6 +1310,13 @@ function togglePanel(panelId) {
 
   selectedPanel.style.display =
     isAlreadyOpen ? 'none' : 'block';
+
+  if (panelId === 'mapPanel') {
+    if (isAlreadyOpen) mapPanel.classList.remove('expanded');
+    else mapView.fitted = false;
+  } else {
+    mapPanel.classList.remove('expanded');
+  }
 }
 
 document.getElementById('positionButton')
@@ -1192,7 +1336,7 @@ document.getElementById('mapButton')
 
 // CLOSE PANELS
 
-document.querySelectorAll('.panel-close').forEach(button => {
+document.querySelectorAll('.panel-close[data-close]').forEach(button => {
 
   button.addEventListener('click', () => {
 
@@ -1200,8 +1344,315 @@ document.querySelectorAll('.panel-close').forEach(button => {
       button.dataset.close
     ).style.display = 'none';
 
+    mapPanel.classList.remove('expanded');
+
   });
 
+});
+
+// ==========================================
+// 8b. CARTE (routes, lieux, camion, joueur)
+// ==========================================
+// Le monde fournit world.getMapData() :
+//   { bounds, roads:[{w, pts:[[x,z],...]}], lakes:[{x,z,r}],
+//     pois:[{type:'work'|'home', x, z, label}], truck:{x,z,heading}|null,
+//     player:{x,z,inside?} }
+// Nord = haut. On peut déplacer la carte (glisser), zoomer (molette / pincement / + -),
+// et l'agrandir avec le bouton ⤢.
+
+const mapPanel = document.getElementById('mapPanel');
+const mapCanvas = document.getElementById('mapCanvas');
+const mapCtx = mapCanvas.getContext('2d');
+
+const mapView = { cx: 0, cz: 0, scale: 0.3, fitted: false, fitScale: 0.3 };
+let mapDpr = 1;
+
+function resizeMapCanvas() {
+  mapDpr = Math.min(window.devicePixelRatio || 1, 2);
+  const r = mapCanvas.getBoundingClientRect();
+  const w = Math.max(16, Math.round(r.width * mapDpr));
+  const h = Math.max(16, Math.round(r.height * mapDpr));
+  if (mapCanvas.width !== w || mapCanvas.height !== h) {
+    mapCanvas.width = w;
+    mapCanvas.height = h;
+  }
+}
+
+function fitMap(d) {
+  let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
+  const add = (x, z) => { x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z); };
+  (d.roads || []).forEach(r => r.pts.forEach(p => add(p[0], p[1])));
+  (d.pois || []).forEach(p => add(p.x, p.z));
+  (d.lakes || []).forEach(l => { add(l.x - l.r, l.z - l.r); add(l.x + l.r, l.z + l.r); });
+  if (x0 > x1) { x0 = -100; x1 = 100; z0 = -100; z1 = 100; }
+  const bw = Math.max(50, x1 - x0), bh = Math.max(50, z1 - z0);
+  mapView.cx = (x0 + x1) / 2;
+  mapView.cz = (z0 + z1) / 2;
+  mapView.fitScale = Math.min(mapCanvas.width / (bw * 1.18), mapCanvas.height / (bh * 1.18));
+  mapView.scale = mapView.fitScale;
+  mapView.fitted = true;
+}
+
+function clampScale(v) {
+  return Math.max(mapView.fitScale * 0.5, Math.min(8 * mapDpr, v));
+}
+
+function zoomMapAt(factor, sx, sy) {
+  const w = mapCanvas.width, h = mapCanvas.height;
+  const wx = mapView.cx + (sx - w / 2) / mapView.scale;
+  const wz = mapView.cz + (sy - h / 2) / mapView.scale;
+  mapView.scale = clampScale(mapView.scale * factor);
+  mapView.cx = wx - (sx - w / 2) / mapView.scale;
+  mapView.cz = wz - (sy - h / 2) / mapView.scale;
+}
+
+function drawMap() {
+
+  resizeMapCanvas();
+
+  const W = mapCanvas.width, H = mapCanvas.height;
+  const c = mapCtx;
+
+  c.fillStyle = '#0d1013';
+  c.fillRect(0, 0, W, H);
+
+  if (!world || typeof world.getMapData !== 'function') {
+    c.fillStyle = '#777';
+    c.font = (12 * mapDpr) + 'px monospace';
+    c.textAlign = 'center';
+    c.fillText('MAP UNAVAILABLE', W / 2, H / 2);
+    return;
+  }
+
+  const d = world.getMapData();
+  if (!mapView.fitted) fitMap(d);
+
+  const S = mapView.scale;
+  const X = x => W / 2 + (x - mapView.cx) * S;
+  const Y = z => H / 2 + (z - mapView.cz) * S;
+
+  // Zone du monde
+  if (d.bounds) {
+    c.fillStyle = '#141a1d';
+    c.fillRect(X(d.bounds.x0), Y(d.bounds.z0), (d.bounds.x1 - d.bounds.x0) * S, (d.bounds.z1 - d.bounds.z0) * S);
+  }
+
+  // Quadrillage de 100 m
+  if (S * 100 > 22 * mapDpr) {
+    c.strokeStyle = 'rgba(255,255,255,0.05)';
+    c.lineWidth = 1;
+    const gx0 = Math.floor((mapView.cx - W / 2 / S) / 100) * 100;
+    const gx1 = mapView.cx + W / 2 / S;
+    const gz0 = Math.floor((mapView.cz - H / 2 / S) / 100) * 100;
+    const gz1 = mapView.cz + H / 2 / S;
+    c.beginPath();
+    for (let gx = gx0; gx <= gx1; gx += 100) { c.moveTo(X(gx), 0); c.lineTo(X(gx), H); }
+    for (let gz = gz0; gz <= gz1; gz += 100) { c.moveTo(0, Y(gz)); c.lineTo(W, Y(gz)); }
+    c.stroke();
+  }
+
+  // Lacs gelés
+  (d.lakes || []).forEach(l => {
+    c.beginPath();
+    c.arc(X(l.x), Y(l.z), l.r * S, 0, Math.PI * 2);
+    c.fillStyle = '#25414f';
+    c.fill();
+    c.strokeStyle = '#3d6678';
+    c.lineWidth = 1.5 * mapDpr;
+    c.stroke();
+  });
+
+  // Routes : liseré sombre puis chaussée claire
+  c.lineCap = 'round';
+  c.lineJoin = 'round';
+  const drawRoads = (extra, color) => {
+    (d.roads || []).forEach(r => {
+      c.beginPath();
+      r.pts.forEach((p, i) => { if (i === 0) c.moveTo(X(p[0]), Y(p[1])); else c.lineTo(X(p[0]), Y(p[1])); });
+      c.lineWidth = Math.max(2 * mapDpr, r.w * S) + extra;
+      c.strokeStyle = color;
+      c.stroke();
+    });
+  };
+  drawRoads(3 * mapDpr, '#2a2f33');
+  drawRoads(0, '#c7ccd0');
+
+  // Lieux
+  const u = mapDpr;
+  (d.pois || []).forEach(p => {
+    const x = X(p.x), y = Y(p.z);
+    if (p.type === 'work') {
+      c.fillStyle = '#ffcf6b';
+      c.strokeStyle = '#2a2f33';
+      c.lineWidth = 2 * u;
+      c.beginPath();
+      c.moveTo(x, y - 12 * u);
+      c.lineTo(x + 11 * u, y - 2 * u);
+      c.lineTo(x + 8 * u, y - 2 * u);
+      c.lineTo(x + 8 * u, y + 8 * u);
+      c.lineTo(x - 8 * u, y + 8 * u);
+      c.lineTo(x - 8 * u, y - 2 * u);
+      c.lineTo(x - 11 * u, y - 2 * u);
+      c.closePath();
+      c.stroke();
+      c.fill();
+    } else {
+      c.fillStyle = '#8fb7d9';
+      c.strokeStyle = '#2a2f33';
+      c.lineWidth = 2 * u;
+      c.strokeRect(x - 6 * u, y - 10 * u, 12 * u, 18 * u);
+      c.fillRect(x - 6 * u, y - 10 * u, 12 * u, 18 * u);
+      c.fillStyle = '#2a2f33';
+      for (let i = 0; i < 3; i++) {
+        c.fillRect(x - 3.5 * u, y - 7 * u + i * 5 * u, 2.5 * u, 2.5 * u);
+        c.fillRect(x + 1 * u, y - 7 * u + i * 5 * u, 2.5 * u, 2.5 * u);
+      }
+    }
+    if (p.label) {
+      c.font = 'bold ' + (11 * u) + 'px monospace';
+      c.textAlign = 'center';
+      c.lineWidth = 3 * u;
+      c.strokeStyle = '#0d1013';
+      c.strokeText(p.label, x, y + 22 * u);
+      c.fillStyle = p.type === 'work' ? '#ffd98a' : '#a9cbe8';
+      c.fillText(p.label, x, y + 22 * u);
+    }
+  });
+
+  // Camion
+  if (d.truck) {
+    const x = X(d.truck.x), y = Y(d.truck.z);
+    const a = Math.atan2(-Math.cos(d.truck.heading), -Math.sin(d.truck.heading));
+    c.save();
+    c.translate(x, y);
+    c.rotate(a);
+    c.fillStyle = '#c4452f';
+    c.strokeStyle = '#0d1013';
+    c.lineWidth = 2 * u;
+    c.beginPath();
+    c.rect(-7 * u, -4 * u, 14 * u, 8 * u);
+    c.stroke();
+    c.fill();
+    c.fillStyle = '#f0d9b5';
+    c.fillRect(2 * u, -3 * u, 4 * u, 6 * u);
+    c.restore();
+  }
+
+  // Joueur (flèche rouge qui pulse)
+  if (d.player) {
+    const px = X(d.player.x), py = Y(d.player.z);
+    const yaw = camYaw;
+    const a = Math.atan2(-Math.cos(yaw), -Math.sin(yaw));
+    const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 280);
+
+    c.beginPath();
+    c.arc(px, py, (9 + pulse * 6) * u, 0, Math.PI * 2);
+    c.fillStyle = 'rgba(255,80,80,' + (0.22 - pulse * 0.12) + ')';
+    c.fill();
+
+    if (!d.player.inside) {
+      c.save();
+      c.translate(px, py);
+      c.rotate(a);
+      c.beginPath();
+      c.moveTo(9 * u, 0);
+      c.lineTo(-6 * u, -6 * u);
+      c.lineTo(-3 * u, 0);
+      c.lineTo(-6 * u, 6 * u);
+      c.closePath();
+      c.fillStyle = '#ff5a4d';
+      c.strokeStyle = '#fff';
+      c.lineWidth = 1.6 * u;
+      c.stroke();
+      c.fill();
+      c.restore();
+    } else {
+      c.beginPath();
+      c.arc(px, py, 4 * u, 0, Math.PI * 2);
+      c.fillStyle = '#ff5a4d';
+      c.fill();
+    }
+  }
+
+  // Échelle
+  const nice = [10, 20, 50, 100, 200, 500, 1000];
+  let len = nice[0];
+  for (const n of nice) { if (n * S <= W * 0.28) len = n; }
+  c.strokeStyle = '#ddd0c3';
+  c.fillStyle = '#ddd0c3';
+  c.lineWidth = 2 * u;
+  c.beginPath();
+  c.moveTo(10 * u, H - 12 * u);
+  c.lineTo(10 * u + len * S, H - 12 * u);
+  c.stroke();
+  c.font = (10 * u) + 'px monospace';
+  c.textAlign = 'left';
+  c.fillText(len + ' m', 10 * u, H - 17 * u);
+}
+
+// Interactions : glisser, molette, pincement, boutons
+const mapPointers = new Map();
+let mapPinch = 0;
+
+mapCanvas.addEventListener('pointerdown', e => {
+  mapCanvas.setPointerCapture(e.pointerId);
+  mapPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  mapPinch = 0;
+  mapCanvas.style.cursor = 'grabbing';
+});
+
+mapCanvas.addEventListener('pointermove', e => {
+  const prev = mapPointers.get(e.pointerId);
+  if (!prev) return;
+  const cur = { x: e.clientX, y: e.clientY };
+
+  if (mapPointers.size === 1) {
+    mapView.cx -= (cur.x - prev.x) * mapDpr / mapView.scale;
+    mapView.cz -= (cur.y - prev.y) * mapDpr / mapView.scale;
+  } else if (mapPointers.size === 2) {
+    mapPointers.set(e.pointerId, cur);
+    const pts = [...mapPointers.values()];
+    const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+    if (mapPinch > 0 && dist > 0) {
+      const r = mapCanvas.getBoundingClientRect();
+      const mx = ((pts[0].x + pts[1].x) / 2 - r.left) * mapDpr;
+      const my = ((pts[0].y + pts[1].y) / 2 - r.top) * mapDpr;
+      zoomMapAt(dist / mapPinch, mx, my);
+    }
+    mapPinch = dist;
+  }
+  mapPointers.set(e.pointerId, cur);
+});
+
+function endMapPointer(e) {
+  mapPointers.delete(e.pointerId);
+  mapPinch = 0;
+  if (mapPointers.size === 0) mapCanvas.style.cursor = 'grab';
+}
+mapCanvas.addEventListener('pointerup', endMapPointer);
+mapCanvas.addEventListener('pointercancel', endMapPointer);
+
+mapCanvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const r = mapCanvas.getBoundingClientRect();
+  zoomMapAt(e.deltaY < 0 ? 1.2 : 1 / 1.2, (e.clientX - r.left) * mapDpr, (e.clientY - r.top) * mapDpr);
+}, { passive: false });
+
+document.getElementById('mapZoomIn').addEventListener('click', () => zoomMapAt(1.4, mapCanvas.width / 2, mapCanvas.height / 2));
+document.getElementById('mapZoomOut').addEventListener('click', () => zoomMapAt(1 / 1.4, mapCanvas.width / 2, mapCanvas.height / 2));
+document.getElementById('mapFit').addEventListener('click', () => { mapView.fitted = false; });
+document.getElementById('mapMe').addEventListener('click', () => {
+  if (!world || typeof world.getMapData !== 'function') return;
+  const d = world.getMapData();
+  if (!d.player) return;
+  mapView.cx = d.player.x;
+  mapView.cz = d.player.z;
+  mapView.scale = clampScale(Math.max(mapView.scale, 1.4 * mapDpr));
+});
+
+document.getElementById('mapExpand').addEventListener('click', () => {
+  mapPanel.classList.toggle('expanded');
+  mapView.fitted = false;   // on recadre toute la carte à la nouvelle taille
 });
 
 // COPY COORDINATES
@@ -1288,13 +1739,22 @@ function animate() {
     -Math.sin(camYaw)
   );
 
-  camera.position.addScaledVector(
-    forward, -jLy * 6.5 * dt
-  );
+  // Joystick gauche + clavier (ZQSD / WASD / flèches)
+  input.lx = THREE.MathUtils.clamp(jLx + (keys.right ? 1 : 0) - (keys.left ? 1 : 0), -1, 1);
+  input.ly = THREE.MathUtils.clamp(jLy + (keys.down ? 1 : 0) - (keys.up ? 1 : 0), -1, 1);
 
-  camera.position.addScaledVector(
-    right, jLx * 6.5 * dt
-  );
+  // Au volant, c'est le monde (le camion) qui déplace la caméra
+  const driving = !!(world && typeof world.isDriving === 'function' && world.isDriving());
+
+  if (!driving) {
+    camera.position.addScaledVector(
+      forward, -input.ly * 6.5 * dt
+    );
+
+    camera.position.addScaledVector(
+      right, input.lx * 6.5 * dt
+    );
+  }
 
   // CONSTANT HEIGHT (sauf si le monde gère lui-même la hauteur : étages, collines...)
 
@@ -1331,6 +1791,10 @@ function animate() {
   // SHARED SNOW
 
   snow.update(dt, clock.elapsedTime);
+
+  // MAP (seulement si le panneau est ouvert)
+
+  if (mapPanel.style.display === 'block') drawMap();
 
   // WORLD UPDATE
 

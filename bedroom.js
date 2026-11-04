@@ -416,7 +416,20 @@ export function buildWorld(scene, opts) {
     const streetRoot = new THREE.Group();
     streetRoot.position.set(STREET_DX, LEVEL_Y[0], 8.8);
     scene.add(streetRoot);
-    const street = buildOutside(streetRoot, { nightBoost: 1 });
+    const street = buildOutside(streetRoot, {
+        nightBoost: 1,
+        // Camion : caméra de conduite, commandes, bouton ENTER/EXIT, neige
+        driveCamera: camera,
+        input: opts.input,
+        view: opts.view,
+        action: opts.action,
+        snow: snow,
+        // La forêt n'est dessinée qu'autour du joueur
+        getFocus: function() {
+            if (camera.position.x > 100) return { x: camera.position.x - STREET_DX, z: camera.position.z - 8.8 };
+            return { x: 0, z: -24 };
+        }
+    });
     const streetLights = [];
     streetRoot.traverse(function(o) { if (o.isPointLight && !o.userData.keep) streetLights.push(o); });
     streetLights.forEach(function(l) { l.parent.remove(l); });   // on économise les lumières (sauf celle de la maison de travail)
@@ -429,7 +442,16 @@ export function buildWorld(scene, opts) {
         physics.add({ x0: STREET_DX + c.x0, x1: STREET_DX + c.x1, z0: STREET_Z + c.z0, z1: STREET_Z + c.z1, level: 0 });
     });
 
+    // Capteur de la porte d'entrée : quelqu'un dans le hall OU devant l'immeuble, près de la porte
+    function nearEntrance() {
+        if (playerLevel !== 0) return false;
+        const px = camera.position.x, pz = camera.position.z;
+        const lx = px > 100 ? px - STREET_DX : px;
+        return Math.abs(lx) < 3.2 && Math.abs(pz - rdc.doorZ) < 4.5;
+    }
+
     const rdc = buildGroundFloor(scene, {
+        isNear: nearEntrance,
         y: LEVEL_Y[0], z: ELEV_Z, physics: physics, level: 0,
         scene: scene, renderer: renderer, camera: camera, canvas: canvas,
         streetOffsetX: STREET_DX,
@@ -439,6 +461,9 @@ export function buildWorld(scene, opts) {
         snow: snow, snowBaseY: LEVEL_Y[0]
     });
     elevator.addLanding({ level: 0, width: rdc.width, wallH: rdc.wallH, wallMaterial: rdc.wallMaterial });
+    // Côté rue : la porte de l'immeuble est fermée tant que la porte automatique n'est pas ouverte
+    physics.add({ x0: STREET_DX - 1.4, x1: STREET_DX + 1.4, z0: -16.4, z1: -15.5, level: 0,
+        active: function() { return !rdc.door.isOpen(); } });
 
     // Zones sans neige : la chambre, le couloir, la gaine d'ascenseur et le hall
     if (snow) {
@@ -449,6 +474,7 @@ export function buildWorld(scene, opts) {
     }
 
     let playerLevel = FLOOR_NUMBER;
+    let wasDriving = false;
     let lastX = null, lastZ = null;
     let smoothY = null;      // hauteur lissée du joueur (collines)
     let snapY = true;
@@ -505,12 +531,18 @@ export function buildWorld(scene, opts) {
             const r = pushOut(px, pz);
             px = r[0]; pz = r[1];
         }
+        // Dans la rue : on contourne les troncs et les rochers
+        if (playerLevel === 0 && px > 100) {
+            const tc = street.collideTrees(px - STREET_DX, pz - STREET_Z, PLAYER_R);
+            px = tc[0] + STREET_DX;
+            pz = tc[1] + STREET_Z;
+        }
         // Porte du hall <-> rue (téléportation à travers la porte)
         if (playerLevel === 0) {
             if (px < 100 && Math.abs(px) < 1.0 && pz > rdc.doorZ + 0.1 && rdc.door.isOpen()) {
                 px += STREET_DX;                                   // on sort devant l'immeuble
                 snapY = true;
-            } else if (px > 100 && Math.abs(px - STREET_DX) < 1.3 && pz < rdc.doorZ - 0.15) {
+            } else if (px > 100 && Math.abs(px - STREET_DX) < 1.3 && pz < rdc.doorZ - 0.15 && rdc.door.isOpen()) {
                 px -= STREET_DX;                                   // on rentre dans le hall
                 rdc.door.setOpen(true);
                 snapY = true;
@@ -1453,10 +1485,26 @@ export function buildWorld(scene, opts) {
         // On gère nous-mêmes la hauteur (étages, ascenseur, collines de la rue)
         controlsHeight: true,
 
+        // En conduisant, world_base ne déplace plus le joueur à pied
+        isDriving() {
+            return !!(street.truck && street.truck.isDriving());
+        },
+
+        // Données de la carte (routes, lac, lieux, camion, position du joueur)
+        getMapData() {
+            const d = street.getMapData();
+            const px = camera.position.x, pz = camera.position.z;
+            d.player = (px > 100)
+                ? { x: px - STREET_DX, z: pz - STREET_Z }
+                : { x: 0, z: -24, inside: true };
+            return d;
+        },
+
         // Sauvegarde de position : étage + "dans la rue ou non".
         // false = ne pas sauvegarder maintenant (dans la cabine d'ascenseur)
         getSaveState() {
             if (elevator.isInsideCab(camera.position.x, camera.position.z)) return false;
+            if (street.truck && street.truck.isDriving()) return false;
             return { level: playerLevel, street: camera.position.x > 100 };
         },
 
@@ -1479,8 +1527,22 @@ export function buildWorld(scene, opts) {
         update(dt, time) {
             updateMonologue(camera.position);
             elevator.update(dt);
-            updatePlayerPhysics(dt);
+            const truck = street.truck;
+            if (truck && truck.isDriving()) {
+                // Au volant : le camion déplace la caméra, pas de marche à pied
+                truck.update(dt, true);
+                wasDriving = true;
+            } else {
+                if (wasDriving) {                       // on vient de descendre du camion
+                    wasDriving = false;
+                    lastX = null; lastZ = null;
+                    snapY = true;
+                }
+                updatePlayerPhysics(dt);
+                if (truck) truck.update(dt, playerLevel === 0 && camera.position.x > 100);
+            }
             street.update(dt, time);
+            street.setEntrance(rdc.door.amount());
             corridor.update(dt, time);
             rdc.update(dt, time, playerLevel === 0 && camera.position.x < 100);
             // La vue de la fenêtre n'est utile qu'à l'étage de la chambre

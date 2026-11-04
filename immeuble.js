@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { buildWork } from './work.js';
+import { scatterPoints, pickSpecies, buildForest } from './forest.js';
+import { createTruck } from './vehicle.js';
 
 // ==========================================
 // TERRAIN, ROUTES ET MONTAGNES (calculés une seule fois, partagés entre toutes les copies)
@@ -13,7 +15,8 @@ export const WORK_SPOT = { x: 245.87, z: 498.38 };
 const HOUSE_POS = { x: WORK_SPOT.x, z: WORK_SPOT.z + 10 };   // la maison est juste après la fin de la route
 // x0 = -330 : dans le monde de la chambre la rue est décalée de +400 en x, le terrain ne doit pas
 // atteindre la chambre, le couloir et le hall (qui sont à x ≈ 0).
-const TER = { x0: -330, x1: 760, z0: -300, z1: 900, step: 6 };
+const TER = { x0: -290, x1: 900, z0: -320, z1: 1000, step: 7 };
+const LAKE = { x: 300, z: 200, r: 55, y: -1.6, bed: -4.5 };   // lac gelé (loin de toutes les routes)
 const FLAT_C = { x: 0, z: -10 };                            // zone plate autour de l'immeuble
 const FAR_Y = -4;                                           // sol lointain (sous le terrain)
 
@@ -60,7 +63,9 @@ function padFree(x, z) { return smooth01(26, 95, Math.hypot(x - HOUSE_POS.x, z -
 
 // Collines (jamais plus profondes que le sol lointain)
 function hillsAt(x, z) {
-  let h = (fbm2(x / 150 + 11.3, z / 150 + 4.7, 4) - 0.47) * 48;
+  // "rug" : grandes régions plus ou moins accidentées (plaines calmes <-> vallées et crêtes)
+  const rug = 0.45 + 0.95 * smooth01(0.38, 0.66, fbm2(x / 380 + 7.7, z / 380 + 3.1, 2));
+  let h = (fbm2(x / 150 + 11.3, z / 150 + 4.7, 4) - 0.47) * 58 * rug;
   if (h < 0) h *= 0.2;
   return h * flatMask(x, z);
 }
@@ -164,7 +169,7 @@ function buildShared() {
     limitSlope(main.samples, y, 0.07);
     main.samples.forEach((p, i) => {
       p.y = y[i];
-      p.gap = 0.03 + 0.47 * Math.min(smooth01(0, 120, p.s), smooth01(0, 80, main.len - p.s));
+      p.gap = 0.11 + 0.39 * Math.min(smooth01(0, 120, p.s), smooth01(0, 80, main.len - p.s));
     });
   })();
 
@@ -202,7 +207,11 @@ function buildShared() {
   secondaryProfile(cross, Math.round(cross.samples.length / 2), C.y, 70);
   secondaryProfile(lane, 0, L.y, 60);
 
-  const roads = [main, cross, lane];
+  // Allée devant l'immeuble (avant : un simple plan collé au sol, qui "clignotait" en blanc de loin)
+  const drive = sampleRoad([[0, -24], [0, 40]], 6, 'drive', 0);
+  drive.samples.forEach(p => { p.y = 0; p.gap = 0.11; });
+
+  const roads = [main, cross, lane, drive];
 
   // ---------- 2. Recherche de la route la plus proche ----------
 
@@ -269,7 +278,11 @@ function buildShared() {
       const ridge = Math.max(0, m - 0.40) / 0.57;
       const mount = Math.pow(ridge, 1.5) * 230 * smooth01(55, 230, dR) * fm;
 
-      const nat = -0.06 + (hillsAt(x, z) + mount) * pf;
+      let nat = -0.06 + (hillsAt(x, z) + mount) * pf;
+      // Lac gelé : une plaine douce autour, puis une cuvette
+      const ld = Math.hypot(x - LAKE.x, z - LAKE.z);
+      nat = nat * smooth01(LAKE.r, LAKE.r * 3.2, ld);
+      nat = nat + (LAKE.bed - nat) * (1 - smooth01(LAKE.r * 0.55, LAKE.r * 1.05, ld));
       let h = nat;
 
       // La route aplanit le terrain autour d'elle (talus progressifs)
@@ -299,7 +312,9 @@ function buildShared() {
 
   // Hauteur sous les pieds du joueur : chaussée sur la route, terrain ailleurs
   function walkHeight(x, z) {
-    const t = terrainH(x, z);
+    let t = terrainH(x, z);
+    // Sur le lac, on marche sur la glace
+    if (Math.hypot(x - LAKE.x, z - LAKE.z) < LAKE.r * 0.9) t = Math.max(t, LAKE.y + 0.02);
     const nr = nearestRoad(x, z, 12);
     if (!nr) return t;
     const surf = nr.p.y - 0.03 + nr.p.yoffR;
@@ -340,7 +355,10 @@ function buildShared() {
   const colArr = new Float32Array(nx * nz * 3);
   for (let k = 0; k < nx * nz; k++) {
     const steep = 1 - smooth01(0.55, 0.92, nor[k * 3 + 1]);
-    const shade = 1 - 0.58 * steep;
+    const gi = k % nx, gj = Math.floor(k / nx);
+    const gx = TER.x0 + gi * TER.step, gz = TER.z0 + gj * TER.step;
+    const patch = 0.88 + 0.24 * fbm2(gx / 38 + 3.3, gz / 38 + 8.1, 2);
+    const shade = (1 - 0.58 * steep) * patch;
     colArr[k * 3] = shade; colArr[k * 3 + 1] = shade * 1.01; colArr[k * 3 + 2] = shade * 1.03;
   }
   terrainGeo.setAttribute('color', new THREE.BufferAttribute(colArr, 3));
@@ -412,7 +430,7 @@ function buildShared() {
   // Lampadaires sans lumière réelle (juste un halo) : carrefours + arrivée
   const lamps = [];
   function lampBeside(p, side, off) {
-    lamps.push({ x: p.x + -p.tz * side * off, y: p.y - 0.1, z: p.z + p.tx * side * off, side: side });
+    lamps.push({ x: p.x + -p.tz * side * off, y: p.y - 0.1, z: p.z + p.tx * side * off, side: side, tx: p.tx, tz: p.tz });
   }
   lampBeside(C, 1, 10); lampBeside(C, -1, 10);
   lampBeside(L, 1, 10);
@@ -422,39 +440,82 @@ function buildShared() {
   lampBeside(main.samples[Math.round(main.samples.length * 0.62)], 1, 8);
   lampBeside(main.samples[Math.round(main.samples.length * 0.3)], -1, 8);
 
-  // ---------- 6. Sapins enneigés (instances) ----------
+  // ---------- 6. Forêt, buissons, rochers (placés une seule fois) ----------
 
-  const pines = [];
-  let tries = 0;
-  while (pines.length < 650 && tries < 14000) {
-    tries++;
-    const x = TER.x0 + 60 + R() * (TER.x1 - TER.x0 - 120);
-    const z = TER.z0 + 60 + R() * (TER.z1 - TER.z0 - 120);
-    if (Math.hypot(x - FLAT_C.x, z - FLAT_C.z) < 58) continue;          // cour de l'immeuble dégagée
-    if (Math.hypot(x - HOUSE_POS.x, z - HOUSE_POS.z) < 32) continue;    // jardin de la maison
-    const dR = distRoad(x, z);
-    if (dR < 11) continue;
-    const dens = smooth01(0.42, 0.66, fbm2(x / 95 + 5.1, z / 95 + 2.3, 3));
-    if (R() > dens) continue;
-    const y = terrainH(x, z);
-    if (y > 120 || y < -2) continue;
-    pines.push({ x: x, y: y - 0.1, z: z, s: 0.85 + R() * 1.1, r: R() * Math.PI * 2 });
+  const nearHouse = (x, z) => Math.hypot(x - HOUSE_POS.x, z - HOUSE_POS.z);
+  const lakeD = (x, z) => Math.hypot(x - LAKE.x, z - LAKE.z);
+
+  // Forêts denses par taches, grandes plaines presque vides, quelques arbres isolés
+  function forestDensity(x, z) {
+    const f = smooth01(0.40, 0.62, fbm2(x / 120 + 5.1, z / 120 + 2.3, 3));
+    const plain = 1 - 0.88 * smooth01(0.60, 0.74, fbm2(x / 300 + 60.3, z / 300 + 14.7, 2));
+    const court = smooth01(34, 95, Math.hypot(x - FLAT_C.x, z - FLAT_C.z));
+    return Math.max(0.035, f * plain) * court;
   }
 
-  const pineGeo = (function () {
-    const parts = [];
-    const add = (geo, yy, col) => { geo.translate(0, yy, 0); parts.push({ geo: geo, col: col }); };
-    add(new THREE.CylinderGeometry(0.16, 0.24, 1.5, 5), 0.75, [0.05, 0.035, 0.025]);
-    add(new THREE.ConeGeometry(1.7, 2.8, 7, 1, true), 2.5, [0.02, 0.035, 0.03]);
-    add(new THREE.ConeGeometry(1.3, 2.4, 7, 1, true), 4.0, [0.035, 0.06, 0.05]);
-    add(new THREE.ConeGeometry(0.85, 2.0, 7, 1, true), 5.4, [0.30, 0.34, 0.36]);   // sommet enneigé
-    return mergeColored(parts);
-  })();
+  const trees = scatterPoints(R, {
+    x0: TER.x0 + 40, x1: TER.x1 - 40, z0: TER.z0 + 40, z1: TER.z1 - 40,
+    count: 1500, tries: 36000, spacing: 7.5,
+    scaleMin: 0.85, scaleMax: 1.3,
+    height: (x, z) => terrainH(x, z) - 0.15,
+    pick: pickSpecies,
+    density: (x, z) => {
+      if (nearHouse(x, z) < 30 || lakeD(x, z) < LAKE.r * 1.15) return 0;
+      const y = terrainH(x, z);
+      if (y > 125 || y < -3) return 0;
+      if (distRoad(x, z) < 9) return 0;
+      return forestDensity(x, z);
+    }
+  });
+
+  // Grands arbres près de l'immeuble (à la place des anciens arbres nus)
+  [[-9.5, 2, 'oak', 1.15], [10.5, -1, 'oak', 1.2], [-17, -23, 'pop', 1.1],
+   [17, -34, 'oak', 1.15], [-31, -12, 'birch', 1.2], [33, -20, 'oak', 1.1]].forEach(m => {
+    trees.push({ x: m[0], y: terrainH(m[0], m[1]) - 0.15, z: m[1], s: m[3], r: R() * Math.PI * 2, v: m[2] });
+  });
+
+  const bushes = scatterPoints(R, {
+    x0: TER.x0 + 40, x1: TER.x1 - 40, z0: TER.z0 + 40, z1: TER.z1 - 40,
+    count: 900, tries: 12000, spacing: 3.2, scaleMin: 0.8, scaleMax: 1.5,
+    height: (x, z) => terrainH(x, z) - 0.05,
+    pick: () => 'bush',
+    density: (x, z) => {
+      if (nearHouse(x, z) < 24 || lakeD(x, z) < LAKE.r * 1.1) return 0;
+      if (Math.hypot(x - FLAT_C.x, z - FLAT_C.z) < 28) return 0;
+      const y = terrainH(x, z);
+      if (y > 110 || y < -3) return 0;
+      if (distRoad(x, z) < 5) return 0;
+      return 0.12 + 0.88 * smooth01(0.38, 0.6, fbm2(x / 120 + 5.1, z / 120 + 2.3, 3));
+    }
+  });
+
+  const rocks = scatterPoints(R, {
+    x0: TER.x0 + 40, x1: TER.x1 - 40, z0: TER.z0 + 40, z1: TER.z1 - 40,
+    count: 260, tries: 12000, spacing: 12, scaleMin: 0.8, scaleMax: 3.4,
+    height: (x, z) => terrainH(x, z) - 0.25,
+    pick: (x, z, rr) => (rr() < 0.5 ? 'rock1' : 'rock2'),
+    density: (x, z) => {
+      if (nearHouse(x, z) < 26 || lakeD(x, z) < LAKE.r * 1.1) return 0;
+      if (Math.hypot(x - FLAT_C.x, z - FLAT_C.z) < 40) return 0;
+      if (distRoad(x, z) < 8) return 0;
+      const sl = Math.abs(terrainH(x + 3, z) - terrainH(x, z)) + Math.abs(terrainH(x, z + 3) - terrainH(x, z));
+      return 0.05 + 0.9 * smooth01(0.3, 1.4, sl);
+    }
+  });
+  rocks.forEach(r => { r.sy = r.s * (0.5 + R() * 0.5); });
+
+  // Tracés simplifiés pour la carte
+  const mapRoads = roads.map(r => ({
+    w: r.hw * 2,
+    pts: r.samples.filter((p, i) => i % 4 === 0 || i === r.samples.length - 1)
+      .map(p => [Math.round(p.x * 10) / 10, Math.round(p.z * 10) / 10])
+  }));
 
   return {
     roads: roads, main: main, cross: cross, lane: lane, patches: patches,
     terrainGeo: terrainGeo, terrainH: terrainH, walkHeight: walkHeight,
-    lumps: lumps, poles: poles, lamps: lamps, pines: pines, pineGeo: pineGeo
+    lumps: lumps, poles: poles, lamps: lamps,
+    forestData: { trees: trees, bushes: bushes, rocks: rocks }, mapRoads: mapRoads, lake: LAKE
   };
 }
 
@@ -741,16 +802,8 @@ function roadCanvas() {
   return c;
 }
 
-const ROAD_Z0 = 40, ROAD_Z1 = -23.8;
 const roadCv = roadCanvas();
 const roadEmissive = new THREE.Color(0x14181b).multiplyScalar(0.6 + BOOST);
-const road = new THREE.Mesh(
-  new THREE.PlaneGeometry(12, ROAD_Z0 - ROAD_Z1),
-  new THREE.MeshStandardMaterial({ map: makeTex(roadCv, 1, (ROAD_Z0 - ROAD_Z1) / 12), color: 0xb0b0b0, roughness: 0.85, emissive: roadEmissive })
-);
-road.rotation.x = -Math.PI / 2;
-road.position.set(0, -0.03, (ROAD_Z0 + ROAD_Z1) / 2);
-scene.add(road);
 
 // ==========================================
 // 6. IMMEUBLE PRINCIPAL
@@ -988,7 +1041,29 @@ if (figureAt) {
 
 const entranceTrim = box(main, 3.2, 2.55, 0.22, mats.trim, 0, 1.28, -24.22);
 const entranceGlow = box(main, 2.7, 2.25, 0.10, mats.doorGlow, 0, 1.18, -24.06);
-const entranceHandle = box(main, 0.08, 2.25, 0.08, mats.metal, 0, 1.18, -23.98);
+const entranceHandle = new THREE.Object3D();
+main.add(entranceHandle);
+
+// Porte automatique transparente : deux vantaux vitrés qui coulissent (pilotés par setEntrance)
+const entGlass = new THREE.MeshStandardMaterial({
+  color: 0xa8bcc8, transparent: true, opacity: 0.2, roughness: 0.1, metalness: 0.2, depthWrite: false
+});
+const entLeaves = [];
+[-1, 1].forEach(function (sd) {
+  const lf = new THREE.Group();
+  lf.position.set(sd * 0.675, 1.18, -23.93);
+  main.add(lf);
+  box(lf, 1.3, 2.2, 0.03, entGlass, 0, 0, 0);
+  box(lf, 1.3, 0.07, 0.06, mats.metal, 0, 1.065, 0);
+  box(lf, 1.3, 0.1, 0.06, mats.metal, 0, -1.05, 0);
+  box(lf, 0.06, 2.2, 0.06, mats.metal, -0.62, 0, 0);
+  box(lf, 0.06, 2.2, 0.06, mats.metal, 0.62, 0, 0);
+  entLeaves.push({ g: lf, base: sd * 0.675, dir: sd });
+});
+function setEntrance(a) {
+  const e = a * a * (3 - 2 * a);
+  entLeaves.forEach(function (l) { l.g.position.x = l.base + l.dir * 1.25 * e; });
+}
 box(main, 3.8, 0.18, 1.5, mats.concreteDark, 0, 2.55, -23.5);
 box(main, 3.7, 0.07, 1.4, mats.snow, 0, 2.68, -23.5);
 box(main, 3.6, 0.18, 1.5, mats.concreteDark, 0, 0.09, -23.35);
@@ -1044,14 +1119,6 @@ const beaconGlow = glowSprite(main, -5.5, roofY + 8.1, -29.5, 0xff2a1a, 3.2, 0.9
 const lumpGeo = new THREE.SphereGeometry(1, 10, 6);
 const lumpItems = [];
 
-// Neige repoussée le long de la route
-for (let z = ROAD_Z0; z > ROAD_Z1; z -= 1.0 + rnd() * 0.6) {
-  for (const side of [-1, 1]) {
-    const h = 0.28 + rnd() * 0.28;
-    lumpItems.push(item(side * (6.25 + (rnd() - 0.5) * 0.5), -0.06 + h * 0.4, z, 0.55 + rnd() * 0.35, h, 0.9 + rnd() * 0.7));
-  }
-}
-
 // Neige contre la façade
 for (let x = -11.2; x <= 11.2; x += 1.5) {
   if (Math.abs(x) < 2.6) continue;
@@ -1067,68 +1134,6 @@ for (let i = 0; i < 70; i++) {
   lumpItems.push(item(x, -0.06 + h * 0.3, z, 1.5 + rnd() * 3, h, 1.5 + rnd() * 3));
 }
 makeInstanced(lumpGeo, mats.snow, lumpItems, scene);
-
-// ==========================================
-// 8. ARBRES NUS (une seule géométrie par arbre)
-// ==========================================
-
-function makeTree(x, z, height = 10) {
-
-  const geos = [];
-  const up = new THREE.Vector3(0, 1, 0);
-  const qq = new THREE.Quaternion();
-  const mm = new THREE.Matrix4();
-  const mid = new THREE.Vector3();
-  const one = new THREE.Vector3(1, 1, 1);
-
-  function seg(a, b, r0, r1, sides) {
-    const len = a.distanceTo(b);
-    if (len < 0.01) return;
-    const g = new THREE.CylinderGeometry(r1, r0, len, sides, 1, true);
-    const dir = b.clone().sub(a).normalize();
-    qq.setFromUnitVectors(up, dir);
-    mid.copy(a).add(b).multiplyScalar(0.5);
-    mm.compose(mid, qq, one);
-    g.applyMatrix4(mm);
-    geos.push(g);
-  }
-
-  function grow(start, dir, len, radius, depthLeft) {
-    const end = start.clone().addScaledVector(dir, len);
-    seg(start, end, radius, radius * 0.62, 4);
-    if (depthLeft <= 0 || len < 0.4) return;
-    const kids = depthLeft >= 3 ? 2 : (rnd() < 0.4 ? 3 : 2);
-    for (let i = 0; i < kids; i++) {
-      const rv = new THREE.Vector3(rnd() - 0.5, rnd() * 0.6 - 0.1, rnd() - 0.5).normalize();
-      const nd = dir.clone().multiplyScalar(0.62).addScaledVector(rv, 0.75).add(new THREE.Vector3(0, 0.22, 0)).normalize();
-      const base = i === 0 ? end.clone() : start.clone().lerp(end, 0.55 + rnd() * 0.4);
-      grow(base, nd, len * (0.62 + rnd() * 0.14), radius * 0.62, depthLeft - 1);
-    }
-  }
-
-  const trunkH = height * 0.48;
-  const lean = new THREE.Vector3((rnd() - 0.5) * 0.4, trunkH, (rnd() - 0.5) * 0.4);
-  seg(new THREE.Vector3(0, 0, 0), lean, 0.27, 0.12, 7);
-
-  for (let k = 0; k < 5; k++) {
-    const a = k * Math.PI * 2 / 5 + rnd() * 0.5;
-    const start = lean.clone().multiplyScalar(0.55 + k * 0.08);
-    const dir = new THREE.Vector3(Math.cos(a) * 0.7, 0.55 + rnd() * 0.35, Math.sin(a) * 0.7).normalize();
-    grow(start, dir, height * (0.28 + rnd() * 0.12), 0.10, 5);
-  }
-  grow(lean.clone().multiplyScalar(0.92), new THREE.Vector3(0.08, 1, 0.02).normalize(), height * 0.34, 0.09, 5);
-
-  const mesh = new THREE.Mesh(mergeGeos(geos), mats.trunk);
-  mesh.position.set(x, 0, z);
-  scene.add(mesh);
-}
-
-makeTree(-9, 2, 12);
-makeTree(10, -1, 13);
-makeTree(-16, -23, 15);
-makeTree(16, -34, 14);
-makeTree(-31, -12, 12);
-makeTree(33, -20, 13);
 
 // ==========================================
 // 9. LAMPADAIRES
@@ -1203,33 +1208,6 @@ fenceRun(9.2, 36, -20.5);
 makeInstanced(unitBox, mats.metal, posts.concat(rails), scene);
 makeInstanced(unitBox, mats.snow, fenceSnow, scene);
 
-function car(x, z, yaw, bodyColor) {
-  const g = new THREE.Group();
-  g.position.set(x, 0, z);
-  g.rotation.y = yaw;
-  scene.add(g);
-
-  const bodyMat = new THREE.MeshStandardMaterial({ color: bodyColor, roughness: 0.55, metalness: 0.35 });
-  box(g, 1.78, 0.62, 4.3, bodyMat, 0, 0.62, 0);
-  box(g, 1.6, 0.52, 2.3, bodyMat, 0, 1.17, -0.15);
-  box(g, 1.63, 0.34, 2.2, mats.carGlass, 0, 1.2, -0.15);
-
-  for (const sx of [-0.88, 0.88]) {
-    for (const sz of [-1.4, 1.4]) {
-      const w = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.24, 12), mats.tire);
-      w.rotation.z = Math.PI / 2;
-      w.position.set(sx, 0.3, sz);
-      g.add(w);
-    }
-  }
-
-  box(g, 1.55, 0.14, 2.15, mats.snow, 0, 1.5, -0.15);
-  box(g, 1.72, 0.10, 1.2, mats.snow, 0, 0.98, 1.45);
-  box(g, 1.72, 0.10, 1.0, mats.snow, 0, 0.98, -1.6);
-}
-car(-4.3, -10.5, 0.03, 0x1b2026);
-car(4.4, -19.0, -0.05, 0x2a1d1a);
-
 // ==========================================
 // 11. FENÊTRES VIVANTES (téléviseur, lumières qui s'éteignent)
 // ==========================================
@@ -1255,7 +1233,8 @@ const offColor = disp(0.03, 0.03, 0.035);
 
 // Matériaux de la route prolongée (même texture que l'allée devant l'immeuble)
 const roadMat2 = new THREE.MeshStandardMaterial({
-  map: makeTex(roadCv, 1, 1, true), color: 0xb0b0b0, roughness: 0.85, emissive: roadEmissive
+  map: makeTex(roadCv, 1, 1, true), color: 0xb0b0b0, roughness: 0.85, emissive: roadEmissive,
+  polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -6
 });
 SH.roads.forEach(r => {
   const m = new THREE.Mesh(r.geo, roadMat2);
@@ -1266,7 +1245,7 @@ SH.roads.forEach(r => {
 // Carrefours : une plaque d'asphalte unie par-dessus les deux routes
 const patchMat = new THREE.MeshStandardMaterial({
   color: 0x39393c, roughness: 0.9, emissive: roadEmissive,
-  polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2
+  polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -10
 });
 SH.patches.forEach(p => {
   const m = new THREE.Mesh(new THREE.CircleGeometry(p.r, 28), patchMat);
@@ -1292,7 +1271,10 @@ SH.lamps.forEach(l => {
   const g = new THREE.Group();
   g.position.set(l.x, l.y, l.z);
   scene.add(g);
-  const dir = l.side > 0 ? -1 : 1;   // le bras se penche au-dessus de la route
+  // Le bras se penche toujours au-dessus de la route, quelle que soit sa direction
+  const toX = l.side * l.tz, toZ = -l.side * l.tx;
+  g.rotation.y = Math.atan2(-toZ, toX);
+  const dir = 1;
   const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.11, 5.6, 7), mats.metal);
   pole.position.y = 2.8;
   g.add(pole);
@@ -1307,23 +1289,24 @@ SH.lamps.forEach(l => {
   glowSprite(g, dir * 1.0, 5.2, 0, 0xffa860, 4.6, 0.5);
 });
 
-// Sapins enneigés (une seule géométrie, des centaines d'instances)
-(function () {
-  const mesh = new THREE.InstancedMesh(
-    SH.pineGeo,
-    new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, emissive: 0x0b100f }),
-    SH.pines.length
-  );
-  const q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0);
-  SH.pines.forEach((t, i) => {
-    q.setFromAxisAngle(up, t.r);
-    _m.compose(_p.set(t.x, t.y, t.z), q, _s.set(t.s, t.s * (0.9 + (t.r % 1) * 0.4), t.s));
-    mesh.setMatrixAt(i, _m);
-  });
-  mesh.instanceMatrix.needsUpdate = true;
-  mesh.frustumCulled = false;
-  scene.add(mesh);
-})();
+// Forêt : grands arbres feuillus, buissons et rochers qui bougent avec le vent (forest.js)
+const forest = buildForest(scene, SH.forestData, { boost: BOOST });
+
+// Lac gelé
+const ice = new THREE.Mesh(
+  new THREE.CircleGeometry(SH.lake.r * 0.97, 56),
+  new THREE.MeshStandardMaterial({
+    color: 0x9fb6c4, roughness: 0.28, metalness: 0.15,
+    emissive: new THREE.Color(0x10171c).multiplyScalar(1 + BOOST)
+  })
+);
+ice.rotation.x = -Math.PI / 2;
+ice.position.set(SH.lake.x, SH.lake.y, SH.lake.z);
+scene.add(ice);
+
+const getFocus = ctx.getFocus || (camera
+  ? function () { return { x: camera.position.x, z: camera.position.z }; }
+  : function () { return { x: 0, z: -24 }; });
 
 // Maison de travail (work.js), au bout de la route
 const workY = SH.terrainH(HOUSE_POS.x, HOUSE_POS.z) + 0.02;
@@ -1331,6 +1314,24 @@ const work = buildWork(scene, { x: HOUSE_POS.x, z: HOUSE_POS.z, y: workY, light:
 
 // Hauteur du joueur sur les collines (seulement si le monde nous donne la caméra)
 let walkY = null;
+
+// Le camion (un seul véhicule). Créé seulement si le monde nous donne la caméra de conduite.
+let truck = null;
+if (ctx.driveCamera) {
+  const org = { x: scene.position.x, y: scene.position.y, z: scene.position.z };
+  const truckRects = [{ x0: -12.2, x1: 12.2, z0: -34.4, z1: -24.2 }].concat(work.colliders);
+  truck = createTruck(scene, {
+    x: 3.8, z: -9.5, heading: Math.PI,
+    origin: org,
+    camera: ctx.driveCamera, input: ctx.input, view: ctx.view, action: ctx.action,
+    groundH: SH.walkHeight,
+    collide: forest.collide,
+    rects: truckRects,
+    bounds: { x0: TER.x0 + 30, x1: TER.x1 - 30, z0: TER.z0 + 30, z1: TER.z1 - 30 },
+    snow: ctx.snow,
+    onExit: function () { walkY = null; if (ctx.onTruckExit) ctx.onTruckExit(); }
+  });
+}
 
 // ==========================================
 // 12. UPDATE
@@ -1347,18 +1348,43 @@ return {
   colliders: work.colliders,
   workSpot: WORK_SPOT,
   controlsHeight: !!camera,
+  collideTrees: forest.collide,
+  setEntrance: setEntrance,
+  truck: truck,
+  isDriving: function () { return !!(truck && truck.isDriving()); },
+  getMapData: function () {
+    return {
+      bounds: { x0: TER.x0, x1: TER.x1, z0: TER.z0, z1: TER.z1 },
+      roads: SH.mapRoads,
+      lakes: [{ x: SH.lake.x, z: SH.lake.z, r: SH.lake.r }],
+      pois: [
+        { type: 'work', x: WORK_SPOT.x, z: WORK_SPOT.z, label: 'WORK' },
+        { type: 'home', x: 0, z: -29, label: 'HOME' }
+      ],
+      truck: truck ? truck.getPose() : null
+    };
+  },
 
   update(dt, time) {
 
     // Maison de travail (fumée, fenêtre qui vacille)
     work.update(dt, time);
 
-    // Autonome (immeuble.js / work.js) : on suit le relief
+    // Forêt (vent) : seuls les blocs proches du joueur sont dessinés
+    forest.update(time, getFocus());
+
+    // Autonome (immeuble.js / work.js) : on suit le relief, on contourne les arbres, on conduit
     if (camera) {
-      const target = 1.7 + SH.walkHeight(camera.position.x, camera.position.z);
-      walkY = walkY === null ? target : walkY + (target - walkY) * Math.min(1, dt * 9);
-      camera.position.y = walkY;
-      if (ctx.snow) ctx.snow.setBaseY(walkY - 1.7);
+      if (truck) truck.update(dt, true);
+      if (!(truck && truck.isDriving())) {
+        const tc = forest.collide(camera.position.x, camera.position.z, 0.3);
+        camera.position.x = tc[0];
+        camera.position.z = tc[1];
+        const target = 1.7 + SH.walkHeight(camera.position.x, camera.position.z);
+        walkY = walkY === null ? target : walkY + (target - walkY) * Math.min(1, dt * 9);
+        camera.position.y = walkY;
+        if (ctx.snow) ctx.snow.setBaseY(walkY - 1.7);
+      }
     }
 
     // Fenêtres vivantes

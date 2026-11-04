@@ -410,33 +410,6 @@ export function buildWork(parent, opts) {
   }
 
   // ==========================================
-  // VOITURE ENNEIGÉE (garée sur l'aire de parking)
-  // ==========================================
-
-  const CAR = { x: -5.4, z: FZ + 6.2, yaw: 0.22 };
-  (function() {
-    const car = new THREE.Group();
-    car.position.set(CAR.x, 0, CAR.z);
-    car.rotation.y = CAR.yaw;
-    g.add(car);
-    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x24282c, roughness: 0.55, metalness: 0.35 });
-    box(1.78, 0.62, 4.3, bodyMat, 0, 0.62, 0, car);
-    box(1.6, 0.52, 2.3, bodyMat, 0, 1.17, -0.15, car);
-    box(1.63, 0.34, 2.2, mCarGlass, 0, 1.2, -0.15, car);
-    [-0.88, 0.88].forEach(function(sx) {
-      [-1.4, 1.4].forEach(function(sz) {
-        const w = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.24, 12), mTire);
-        w.rotation.z = Math.PI / 2;
-        w.position.set(sx, 0.3, sz);
-        car.add(w);
-      });
-    });
-    box(1.55, 0.14, 2.15, mSnow, 0, 1.5, -0.15, car);
-    box(1.72, 0.1, 1.2, mSnow, 0, 0.98, 1.45, car);
-    box(1.72, 0.1, 1.0, mSnow, 0, 0.98, -1.6, car);
-  })();
-
-  // ==========================================
   // FUMÉE DE CHEMINÉE
   // ==========================================
 
@@ -460,7 +433,6 @@ export function buildWork(parent, opts) {
 
   const colliders = [
     worldRect(-W / 2 - 0.25, W / 2 + 0.25, -D / 2 - 0.25, D / 2 + 0.25),                 // la maison
-    worldRect(CAR.x - 1.1, CAR.x + 1.1, CAR.z - 2.3, CAR.z + 2.3),                       // la voiture
     worldRect(W / 2 + 0.1, W / 2 + 0.9, -3.5, -1.8)                                      // pile de bois
   ];
 
