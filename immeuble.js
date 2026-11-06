@@ -313,6 +313,8 @@ function buildShared() {
   // Hauteur sous les pieds du joueur : chaussée sur la route, terrain ailleurs
   function walkHeight(x, z) {
     let t = terrainH(x, z);
+    // L'intérieur de la maison (x > 1100) est un sol plat à y = 0
+    if (x > 1100) return 0;
     // Sur le lac, on marche sur la glace
     if (Math.hypot(x - LAKE.x, z - LAKE.z) < LAKE.r * 0.9) t = Math.max(t, LAKE.y + 0.02);
     const nr = nearestRoad(x, z, 12);
@@ -1310,7 +1312,17 @@ const getFocus = ctx.getFocus || (camera
 
 // Maison de travail (work.js), au bout de la route
 const workY = SH.terrainH(HOUSE_POS.x, HOUSE_POS.z) + 0.02;
-const work = buildWork(scene, { x: HOUSE_POS.x, z: HOUSE_POS.z, y: workY, light: ctx.workLight !== false });
+const playerCam = ctx.driveCamera || ctx.camera;
+const work = buildWork(scene, {
+  x: HOUSE_POS.x, z: HOUSE_POS.z, y: workY, light: ctx.workLight !== false,
+  // Intérieur (seulement dans le vrai monde, pas dans la copie de la fenêtre)
+  interior: !!playerCam,
+  camera: playerCam,
+  origin: { x: scene.position.x, y: scene.position.y, z: scene.position.z },
+  action: ctx.action, view: ctx.view, snow: ctx.snow,
+  onTeleport: function () { walkY = null; if (ctx.onTeleport) ctx.onTeleport(); },
+  isBusy: function () { return !!(truck && truck.isDriving()); }
+});
 
 // Hauteur du joueur sur les collines (seulement si le monde nous donne la caméra)
 let walkY = null;
@@ -1347,6 +1359,7 @@ return {
   terrainHeight: SH.terrainH,
   colliders: work.colliders,
   workSpot: WORK_SPOT,
+  work: work,
   controlsHeight: !!camera,
   collideTrees: forest.collide,
   setEntrance: setEntrance,

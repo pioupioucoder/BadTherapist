@@ -424,6 +424,7 @@ export function buildWorld(scene, opts) {
         view: opts.view,
         action: opts.action,
         snow: snow,
+        onTeleport: function() { lastX = null; lastZ = null; snapY = true; },
         // La forêt n'est dessinée qu'autour du joueur
         getFocus: function() {
             if (camera.position.x > 100) return { x: camera.position.x - STREET_DX, z: camera.position.z - 8.8 };
@@ -1505,6 +1506,7 @@ export function buildWorld(scene, opts) {
         getSaveState() {
             if (elevator.isInsideCab(camera.position.x, camera.position.z)) return false;
             if (street.truck && street.truck.isDriving()) return false;
+            if (street.work && street.work.interior && street.work.interior.isInside()) return false;
             return { level: playerLevel, street: camera.position.x > 100 };
         },
 

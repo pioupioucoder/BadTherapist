@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { buildWorld as buildOutside, WORK_SPOT } from './immeuble.js';
 
 // ==========================================
@@ -14,6 +15,304 @@ import { buildWorld as buildOutside, WORK_SPOT } from './immeuble.js';
 //   1) dans immeuble.js : buildWork(scene, { x, z, y }) place la maison au bout de la route
 //      (donc elle apparaît dans la rue de bedroom.js et dans la vue de la fenêtre) ;
 //   2) autonome : world_base.html?world=work.js -> on démarre devant la maison.
+
+
+// ==========================================
+// INTÉRIEUR : cabinet du thérapeute + avatar assis (chargé au clic sur la porte)
+// ==========================================
+// Les fichiers GLB sont dans le dossier models/ (à côté de world_base.html).
+// Le premier de la liste est essayé en premier ; s'il échoue, on essaie le suivant.
+// -> pour tester la version "shaded", mets 'models/avatar_shaded.glb' en premier.
+const AVATAR_FILES = ['models/avatar_pbr.glb', 'models/avatar_shaded.glb'];
+
+// Réglages de l'avatar (à ajuster si elle n'est pas bien assise sur la chaise)
+const AVATAR_HEIGHT = 1.7;                       // taille debout, en mètres
+const AVATAR_OFFSET = { x: 0, y: 0, z: 0 };      // décalage par rapport au centre de la chaise
+const AVATAR_YAW = 0;                            // 0 = elle regarde vers la porte (vers le joueur)
+
+// La pièce est construite très loin de la rue (x = 1200 dans le repère de la rue)
+// et on s'y téléporte : aucun risque de voir l'intérieur depuis l'extérieur.
+export const INTERIOR_X = 1200;
+
+function createInterior(parent, o) {
+
+  const camera = o.camera;
+  const origin = o.origin || { x: 0, y: 0, z: 0 };
+  const RX = INTERIOR_X, RW = 7, RD = 6, RH = 3.1;
+  const CHAIR = { x: RX, z: -1.8 };
+
+  const room = new THREE.Group();
+  parent.add(room);
+
+  function mat(c, r, e) {
+    return new THREE.MeshStandardMaterial({ color: c, roughness: r === undefined ? 0.95 : r, emissive: e === undefined ? 0x0e0a07 : e });
+  }
+  function box(w, h, d, m, x, y, z, par) {
+    const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
+    b.position.set(x, y, z);
+    (par || room).add(b);
+    return b;
+  }
+
+  // Murs / sol / plafond
+  const shell = new THREE.Mesh(new THREE.BoxGeometry(RW, RH, RD), new THREE.MeshStandardMaterial({ color: 0x7d6a58, roughness: 1, emissive: 0x16100b, side: THREE.BackSide }));
+  shell.position.set(RX, RH / 2, 0);
+  room.add(shell);
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(RW - 0.02, RD - 0.02), mat(0x5a4230, 0.85, 0x120c08));
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.set(RX, 0.01, 0);
+  room.add(floor);
+  box(RW, 0.12, 0.05, mat(0x2e231b), RX, 0.06, -RD / 2 + 0.03);
+  box(RW, 0.12, 0.05, mat(0x2e231b), RX, 0.06, RD / 2 - 0.03);
+  box(0.05, 0.12, RD, mat(0x2e231b), RX - RW / 2 + 0.03, 0.06, 0);
+  box(0.05, 0.12, RD, mat(0x2e231b), RX + RW / 2 - 0.03, 0.06, 0);
+
+  // Tapis
+  const rug = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 2.4), mat(0x5b2a2a, 1, 0x140808));
+  rug.rotation.x = -Math.PI / 2;
+  rug.position.set(RX, 0.025, -0.5);
+  room.add(rug);
+
+  // Fenêtre (nuit, neige)
+  const winMat = new THREE.MeshBasicMaterial({ color: 0x1d2a38 });
+  const win = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 1.1), winMat);
+  win.position.set(RX + 1.9, 1.7, -RD / 2 + 0.03);
+  room.add(win);
+  const fm = mat(0x2a1f18);
+  box(1.56, 0.08, 0.08, fm, RX + 1.9, 2.29, -RD / 2 + 0.05);
+  box(1.56, 0.08, 0.08, fm, RX + 1.9, 1.11, -RD / 2 + 0.05);
+  box(0.08, 1.2, 0.08, fm, RX + 1.12, 1.7, -RD / 2 + 0.05);
+  box(0.08, 1.2, 0.08, fm, RX + 2.68, 1.7, -RD / 2 + 0.05);
+  box(0.05, 1.1, 0.05, fm, RX + 1.9, 1.7, -RD / 2 + 0.05);
+
+  // Fauteuil du thérapeute (dos au mur du fond, face à la porte = +z)
+  const leather = mat(0x3a2a22, 0.7);
+  const chair = new THREE.Group();
+  chair.position.set(CHAIR.x, 0, CHAIR.z);
+  room.add(chair);
+  box(0.62, 0.09, 0.6, leather, 0, 0.45, 0, chair);                 // assise
+  box(0.62, 0.7, 0.09, leather, 0, 0.82, -0.28, chair);             // dossier
+  box(0.08, 0.06, 0.55, leather, -0.36, 0.68, 0, chair);            // accoudoirs
+  box(0.08, 0.06, 0.55, leather, 0.36, 0.68, 0, chair);
+  [[-0.36, 0.1], [0.36, 0.1]].forEach(function (p) { box(0.07, 0.24, 0.07, leather, p[0], 0.56, p[1], chair); });
+  [[-0.27, -0.25], [0.27, -0.25], [-0.27, 0.25], [0.27, 0.25]].forEach(function (p) {
+    box(0.06, 0.42, 0.06, mat(0x1c1410), p[0], 0.21, p[1], chair);
+  });
+
+  // Bibliothèque (mur gauche)
+  box(0.4, 2.3, 2.6, mat(0x3d2c20), RX - RW / 2 + 0.22, 1.15, -0.4);
+  const bookCols = [0x7a2e2e, 0x2e4a6a, 0x3f5a3a, 0x8a6a2e, 0x5a3a6a, 0x6a4a3a];
+  for (let r = 0; r < 4; r++) {
+    for (let i = 0; i < 9; i++) {
+      box(0.22, 0.28 + (i % 3) * 0.04, 0.1, mat(bookCols[(i + r) % bookCols.length]),
+        RX - RW / 2 + 0.45, 0.45 + r * 0.55, -1.55 + i * 0.27);
+    }
+  }
+
+  // Table d'appoint + lampe
+  box(0.5, 0.55, 0.5, mat(0x3d2c20), RX + 2.7, 0.28, -2.3);
+  box(0.06, 0.3, 0.06, mat(0x1c1410), RX + 2.7, 0.7, -2.3);
+  const shade = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.22, 0.26, 10, 1, true), new THREE.MeshBasicMaterial({ color: 0xffd9a0, side: THREE.DoubleSide }));
+  shade.position.set(RX + 2.7, 0.98, -2.3);
+  room.add(shade);
+
+  // Porte intérieure (mur de la porte, +z)
+  box(1.2, 2.3, 0.08, mat(0x3b2417), RX - 2.2, 1.15, RD / 2 - 0.05);
+  const knob = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), mat(0xb08a3a, 0.4));
+  knob.position.set(RX - 1.75, 1.05, RD / 2 - 0.12);
+  room.add(knob);
+
+  // Lumières (userData.keep : bedroom.js ne les supprime pas)
+  const l1 = new THREE.PointLight(0xffd6a0, 1.25, 14);
+  l1.position.set(RX, 2.6, 0.2);
+  l1.userData.keep = true;
+  room.add(l1);
+  const l2 = new THREE.PointLight(0xffc880, 0.6, 7);
+  l2.position.set(RX + 2.7, 1.1, -2.3);
+  l2.userData.keep = true;
+  room.add(l2);
+
+  // Pas de neige qui tombe dans la pièce
+  if (o.snow && o.snow.excludeBox) {
+    o.snow.excludeBox(origin.x + RX - RW / 2 - 0.3, origin.y - 1, origin.z - RD / 2 - 0.3,
+      origin.x + RX + RW / 2 + 0.3, origin.y + RH + 1, origin.z + RD / 2 + 0.3);
+  }
+
+  // ------------------------------------------
+  // Écran de chargement
+  // ------------------------------------------
+  let overlay = null, barEl = null, msgEl = null, dotsTimer = null;
+
+  function ensureOverlay() {
+    if (overlay) return;
+    overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:#050505;display:none;flex-direction:column;' +
+      'align-items:center;justify-content:center;opacity:0;transition:opacity .45s ease;color:#e8e8e8;text-align:center;' +
+      'padding:24px;font-family:"Press Start 2P",monospace;';
+    overlay.innerHTML =
+      '<div class="t" style="font-size:clamp(11px,2.6vw,20px);line-height:2.1;">Loading for the therapy session<span class="d"></span></div>' +
+      '<div style="width:min(360px,70vw);height:12px;border:2px solid #666;margin-top:30px;padding:2px;">' +
+      '<div class="b" style="height:100%;width:0%;background:#ddd;transition:width .25s ease;"></div></div>' +
+      '<div class="m" style="margin-top:20px;font-size:9px;line-height:1.8;color:#888;min-height:16px;"></div>';
+    document.body.appendChild(overlay);
+    barEl = overlay.querySelector('.b');
+    msgEl = overlay.querySelector('.m');
+  }
+
+  function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+  function showOverlay() {
+    ensureOverlay();
+    barEl.style.width = '0%';
+    msgEl.textContent = '';
+    overlay.style.display = 'flex';
+    const d = overlay.querySelector('.d');
+    let n = 0;
+    dotsTimer = setInterval(function () { n = (n + 1) % 4; d.textContent = '...'.slice(0, n); }, 350);
+    requestAnimationFrame(function () { overlay.style.opacity = '1'; });
+    return sleep(480);
+  }
+
+  function hideOverlay() {
+    overlay.style.opacity = '0';
+    return sleep(480).then(function () {
+      overlay.style.display = 'none';
+      clearInterval(dotsTimer);
+    });
+  }
+
+  function setProgress(p) {
+    if (barEl) barEl.style.width = Math.max(0, Math.min(100, p * 100)) + '%';
+  }
+
+  // ------------------------------------------
+  // Avatar (GLB + animation assise)
+  // ------------------------------------------
+  let avatar = null, mixer = null;
+
+  function loadGLB(url) {
+    return new Promise(function (resolve, reject) {
+      new GLTFLoader().load(url, resolve, function (e) {
+        if (e.lengthComputable && e.total > 0) setProgress(e.loaded / e.total * 0.95);
+      }, reject);
+    });
+  }
+
+  async function ensureAvatar() {
+    if (avatar) return;
+    let gltf = null, lastErr = null;
+    for (let i = 0; i < AVATAR_FILES.length && !gltf; i++) {
+      try {
+        msgEl.textContent = AVATAR_FILES[i];
+        gltf = await loadGLB(AVATAR_FILES[i]);
+      } catch (e) {
+        lastErr = e;
+        console.warn('[avatar] échec :', AVATAR_FILES[i], e);
+        setProgress(0);
+      }
+    }
+    if (!gltf) throw lastErr || new Error('avatar introuvable');
+
+    const model = gltf.scene;
+    model.traverse(function (m) { if (m.isMesh) m.frustumCulled = false; });
+
+    // Mise à l'échelle (taille debout) + pieds au sol, centrée
+    const bb = new THREE.Box3().setFromObject(model);
+    const size = new THREE.Vector3(), ctr = new THREE.Vector3();
+    bb.getSize(size); bb.getCenter(ctr);
+    const k = size.y > 0 ? AVATAR_HEIGHT / size.y : 1;
+    console.log('[avatar] taille brute', size.toArray(), '-> échelle', k, '| animations :', gltf.animations.map(function (a) { return a.name; }));
+
+    const holder = new THREE.Group();
+    model.position.set(-ctr.x, -bb.min.y, -ctr.z);
+    holder.add(model);
+    holder.scale.setScalar(k);
+
+    avatar = new THREE.Group();
+    avatar.add(holder);
+    avatar.position.set(CHAIR.x + AVATAR_OFFSET.x, AVATAR_OFFSET.y, CHAIR.z + AVATAR_OFFSET.z);
+    avatar.rotation.y = AVATAR_YAW;
+    room.add(avatar);
+
+    if (gltf.animations.length) {
+      mixer = new THREE.AnimationMixer(model);
+      let clip = gltf.animations.find(function (a) { return /sit|seat|chair|assis/i.test(a.name); }) || gltf.animations[0];
+      mixer.clipAction(clip).play();
+    }
+    setProgress(1);
+  }
+
+  // ------------------------------------------
+  // Entrer / sortir
+  // ------------------------------------------
+  let inside = false, busy = false, shown = false;
+
+  function teleport(lx, lz, yaw) {
+    camera.position.x = origin.x + lx;
+    camera.position.z = origin.z + lz;
+    camera.position.y = origin.y + 1.7;
+    if (o.view) o.view.set(yaw, 0);
+    if (o.onTeleport) o.onTeleport();
+  }
+
+  function showAct(label, fn) { if (o.action) { o.action.show(label, fn); shown = true; } }
+  function hideAct() { if (o.action && shown) { o.action.hide(); shown = false; } }
+
+  async function enter() {
+    if (busy || inside) return;
+    busy = true;
+    hideAct();
+    const t0 = performance.now();
+    await showOverlay();
+    try {
+      await ensureAvatar();
+    } catch (e) {
+      console.error('[avatar] impossible de charger', e);
+      msgEl.textContent = 'Avatar not found in models/ (see console). Entering anyway...';
+      await sleep(2200);
+    }
+    const rest = 1400 - (performance.now() - t0);
+    if (rest > 0) await sleep(rest);
+    setProgress(1);
+    teleport(RX, RD / 2 - 0.9, 0);
+    inside = true;
+    busy = false;
+    await hideOverlay();
+  }
+
+  function leave() {
+    if (!inside || busy) return;
+    inside = false;
+    hideAct();
+    teleport(o.exitX, o.exitZ, 0);
+  }
+
+  const DOOR = { x: o.doorX, z: o.doorZ };
+
+  return {
+    isInside: function () { return inside || busy; },
+    update: function (dt, time) {
+      if (inside) {
+        if (mixer) mixer.update(dt);
+        // On reste dans la pièce et on contourne le fauteuil
+        let x = camera.position.x - origin.x, z = camera.position.z - origin.z;
+        x = Math.max(RX - RW / 2 + 0.45, Math.min(RX + RW / 2 - 0.45, x));
+        z = Math.max(-RD / 2 + 0.45, Math.min(RD / 2 - 0.45, z));
+        const dx = x - CHAIR.x, dz = z - CHAIR.z, d = Math.hypot(dx, dz);
+        if (d < 1.0) { x = CHAIR.x + (d > 1e-4 ? dx / d : 0) * 1.0; z = CHAIR.z + (d > 1e-4 ? dz / d : 1) * 1.0; }
+        camera.position.x = origin.x + x;
+        camera.position.z = origin.z + z;
+        showAct('LEAVE', leave);
+        return;
+      }
+      if (busy) return;
+      if (o.isBusy && o.isBusy()) return;
+      const px = camera.position.x - origin.x, pz = camera.position.z - origin.z;
+      if (Math.hypot(px - DOOR.x, pz - DOOR.z) < 3.4) showAct('ENTER', enter);
+      else hideAct();
+    }
+  };
+}
 
 export function buildWork(parent, opts) {
 
@@ -442,10 +741,24 @@ export function buildWork(parent, opts) {
 
   const chimneyY = chTop + 0.3;
 
+  // Intérieur : la porte devient interactive (bouton ENTER devant la porte)
+  let interior = null;
+  if (opts.interior && opts.camera) {
+    interior = createInterior(parent, {
+      camera: opts.camera, origin: opts.origin, action: opts.action, view: opts.view,
+      snow: opts.snow, onTeleport: opts.onTeleport, isBusy: opts.isBusy,
+      doorX: hx, doorZ: hz - (D / 2 + 1.6),        // devant la porte (la façade regarde vers -z)
+      exitX: hx, exitZ: hz - (D / 2 + 3.9)         // on ressort au pied des marches
+    });
+  }
+
   return {
     group: g,
     colliders: colliders,
+    interior: interior,
     update: function(dt, time) {
+
+      if (interior) interior.update(dt, time);
 
       // Fumée : monte, grossit, se dissipe, poussée par le vent
       for (let i = 0; i < smoke.length; i++) {
