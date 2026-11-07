@@ -181,9 +181,12 @@ function createInterior(parent, o) {
     });
   }
 
+  let lastProgress = 0;
   function setProgress(p) {
+    lastProgress = p;
     if (barEl) barEl.style.width = Math.max(0, Math.min(100, p * 100)) + '%';
   }
+  function setMsg(t) { if (msgEl) msgEl.textContent = t; }
 
   // ------------------------------------------
   // Avatar (GLB + animation assise)
@@ -198,12 +201,21 @@ function createInterior(parent, o) {
     });
   }
 
-  async function ensureAvatar() {
+  // Une seule promesse partagée : le préchargement et le clic sur la porte utilisent le même chargement
+  let avatarPromise = null;
+  function ensureAvatar() {
+    if (!avatarPromise) {
+      avatarPromise = loadAvatar().catch(function (e) { avatarPromise = null; throw e; });
+    }
+    return avatarPromise;
+  }
+
+  async function loadAvatar() {
     if (avatar) return;
     let gltf = null, lastErr = null;
     for (let i = 0; i < AVATAR_FILES.length && !gltf; i++) {
       try {
-        msgEl.textContent = AVATAR_FILES[i];
+        setMsg(AVATAR_FILES[i]);
         gltf = await loadGLB(AVATAR_FILES[i]);
       } catch (e) {
         lastErr = e;
@@ -262,22 +274,26 @@ function createInterior(parent, o) {
     if (busy || inside) return;
     busy = true;
     hideAct();
-    const t0 = performance.now();
-    await showOverlay();
-    try {
-      await ensureAvatar();
-    } catch (e) {
-      console.error('[avatar] impossible de charger', e);
-      msgEl.textContent = 'Avatar not found in models/ (see console). Entering anyway...';
-      await sleep(2200);
+    const ready = !!avatar;          // déjà préchargé : on entre tout de suite, sans écran de chargement
+    if (!ready) {
+      const t0 = performance.now();
+      await showOverlay();
+      setProgress(lastProgress);
+      try {
+        await ensureAvatar();
+      } catch (e) {
+        console.error('[avatar] impossible de charger', e);
+        setMsg('Avatar not found in models/ (see console). Entering anyway...');
+        await sleep(2200);
+      }
+      const rest = 1400 - (performance.now() - t0);
+      if (rest > 0) await sleep(rest);
+      setProgress(1);
     }
-    const rest = 1400 - (performance.now() - t0);
-    if (rest > 0) await sleep(rest);
-    setProgress(1);
     teleport(RX, RD / 2 - 0.9, 0);
     inside = true;
     busy = false;
-    await hideOverlay();
+    if (!ready) await hideOverlay();
   }
 
   function leave() {
@@ -288,7 +304,7 @@ function createInterior(parent, o) {
   }
 
   const DOOR = { x: o.doorX, z: o.doorZ };
-  let loggedNear = false, loggedBtn = false;
+  let loggedNear = false, loggedBtn = false, streetTime = 0;
   console.log('[BT] intérieur créé. Porte (repère rue) :', DOOR, '| action dispo :', !!o.action);
 
   return {
@@ -308,9 +324,18 @@ function createInterior(parent, o) {
         return;
       }
       if (busy) return;
-      if (o.isBusy && o.isBusy()) return;
       const px = camera.position.x - origin.x, pz = camera.position.z - origin.z;
       const dd = Math.hypot(px - DOOR.x, pz - DOOR.z);
+
+      // Préchargement : dès qu'on est dehors depuis quelques secondes, ou à moins de 250 m de la maison
+      if (!avatarPromise && px > -300 && px < 1000) {
+        streetTime += dt;
+        if (streetTime > 6 || dd < 250) {
+          console.log('[BT] préchargement de l\'avatar en arrière-plan...');
+          ensureAvatar().then(function () { console.log('[BT] avatar prêt : entrée instantanée'); }, function () {});
+        }
+      }
+      if (o.isBusy && o.isBusy()) return;
       if (dd < 14 && !loggedNear) { loggedNear = true; console.log('[BT] tu es près de la porte, distance =', dd.toFixed(1), 'm (ENTER apparaît sous 3.4 m)'); }
       if (dd < 3.4) {
         if (!loggedBtn) { loggedBtn = true; console.log('[BT] bouton ENTER affiché'); }
