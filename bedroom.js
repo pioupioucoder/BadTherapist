@@ -475,6 +475,30 @@ export function buildWorld(scene, opts) {
     }
 
     let playerLevel = FLOOR_NUMBER;
+
+    // Son de la télé selon l'endroit : plein volume dans la chambre, étouffé et plus faible
+    // dans le couloir, très léger dans l'ascenseur (s'il est à l'étage de la chambre), rien ailleurs.
+    function tvAudioTarget() {
+        const px = camera.position.x, pz = camera.position.z;
+        if (px < 100) {
+            if (elevator.isInsideCab(px, pz)) {
+                const atBedroomFloor = Math.abs(elevator.getCabY() - LEVEL_Y[FLOOR_NUMBER]) < 1.5;
+                return { gain: atBedroomFloor ? 0.12 : 0, cut: 700 };
+            }
+            if (playerLevel === FLOOR_NUMBER) {
+                if (pz >= 0) {                                   // chambre
+                    const tv = window._tvPosition || { x: -7, z: 7.2 };
+                    const d = Math.hypot(px - tv.x, pz - tv.z);
+                    return { gain: 1 - 0.3 * Math.min(1, d / 14), cut: 20000 };
+                }
+                if (pz > -26 && Math.abs(px) < 3.2) {            // couloir
+                    const t = Math.min(1, -pz / 26);
+                    return { gain: 0.5 - 0.25 * t, cut: 1800 - 700 * t };
+                }
+            }
+        }
+        return { gain: 0, cut: 600 };
+    }
     let wasDriving = false;
     let lastX = null, lastZ = null;
     let smoothY = null;      // hauteur lissée du joueur (collines)
@@ -916,7 +940,7 @@ export function buildWorld(scene, opts) {
         video.muted = false;
         video.playsInline = true;
         video.crossOrigin = "anonymous";
-        video.preload = "auto";
+        video.preload = "metadata";   // la télé est éteinte au départ : on ne télécharge rien avant de l'allumer
 
         let history = [];
         let historyIndex = -1;
@@ -988,56 +1012,86 @@ export function buildWorld(scene, opts) {
             loadRandomVideo();
         });
 
-        let storedState = null;
+        // ── La télé est ÉTEINTE au départ : rien ne joue tant qu'on ne l'allume pas ──
+        window._isOn = false;
+        video.pause();
+
+        let volumeSetting = 0.6;
         try {
             const raw = sessionStorage.getItem('tvState');
-            if (raw) storedState = JSON.parse(raw);
+            if (raw) {
+                const st = JSON.parse(raw);
+                if (st && st.volume > 0) volumeSetting = st.volume;
+            }
         } catch (e) {}
-        let isOn = true;
-        let previousVolume = storedState ? storedState.volume : 0.6;
-        let videoMaterial = null;
-        let videoStarted = false;
+
+        const videoTexture = new THREE.VideoTexture(video);
+        videoTexture.minFilter = THREE.LinearFilter;
+        videoTexture.magFilter = THREE.LinearFilter;
+        window._videoTexture = videoTexture;
+        const videoMaterial = new THREE.MeshBasicMaterial({ map: videoTexture, side: THREE.DoubleSide });
 
         function saveTVState() {
             try {
                 sessionStorage.setItem('tvState', JSON.stringify({
-                    isOn: isOn,
-                    volume: video.volume || 0.6
+                    isOn: !!window._isOn,
+                    volume: volumeSetting
                 }));
             } catch (e) {}
         }
 
-        function startVideo() {
-            if (!videoStarted) {
-                video.play().then(() => {
-                    videoStarted = true;
-                    if (!isOn) { video.pause();
-                        video.volume = 0; }
-                    saveTVState();
-                }).catch(() => {
-                    document.addEventListener('click', startVideo, { once: true });
-                });
+        // ── Son réaliste : WebAudio (volume + filtre "étouffé" selon l'endroit où on se trouve) ──
+        let actx = null, lpNode = null, gainNode = null;
+        function initAudioGraph() {
+            if (actx) return;
+            try {
+                const AC = window.AudioContext || window.webkitAudioContext;
+                actx = new AC();
+                const src = actx.createMediaElementSource(video);
+                lpNode = actx.createBiquadFilter();
+                lpNode.type = 'lowpass';
+                lpNode.frequency.value = 20000;
+                gainNode = actx.createGain();
+                gainNode.gain.value = 0;
+                src.connect(lpNode);
+                lpNode.connect(gainNode);
+                gainNode.connect(actx.destination);
+                video.volume = 1;
+            } catch (e) {
+                console.warn('[TV] WebAudio indisponible, volume simple utilisé.', e);
+                actx = null; lpNode = null; gainNode = null;
             }
         }
-        document.addEventListener('click', startVideo, { once: true });
 
-        video.addEventListener('canplaythrough', function() {
-            if (!videoStarted) startVideo();
-            const videoTexture = new THREE.VideoTexture(video);
-            videoTexture.minFilter = THREE.LinearFilter;
-            videoTexture.magFilter = THREE.LinearFilter;
-            window._videoTexture = videoTexture;
-            videoMaterial = new THREE.MeshBasicMaterial({ map: videoTexture, side: THREE.DoubleSide });
-            if (isOn) {
-                screen.material = videoMaterial;
+        let curGain = 0, curCut = 20000;
+        video.volume = 0;
+        function audioUpdate(dt, targetGain, targetCut) {
+            if (!window._isOn) targetGain = 0;
+            const k = Math.min(1, dt * 5);
+            curGain += (targetGain - curGain) * k;
+            curCut += (targetCut - curCut) * k;
+            if (gainNode) {
+                gainNode.gain.value = curGain * volumeSetting;
+                lpNode.frequency.value = curCut;
             } else {
-                screen.material = blackMat;
+                video.volume = Math.max(0, Math.min(1, curGain * volumeSetting));
+            }
+        }
+
+        function setPower(on) {
+            window._isOn = !!on;
+            if (on) {
+                initAudioGraph();
+                if (actx && actx.state === 'suspended') actx.resume();
+                screen.material = videoMaterial;
+                video.play().catch(err => console.warn('[TV] lecture impossible :', err));
+            } else {
                 video.pause();
-                video.volume = 0;
+                screen.material = blackMat;
             }
             screen.material.needsUpdate = true;
             saveTVState();
-        });
+        }
 
         video.addEventListener('error', function(e) {
             console.error('❌ Erreur vidéo :', video.src, e);
@@ -1113,8 +1167,9 @@ export function buildWorld(scene, opts) {
         window._screen = screen;
         window._video = video;
         window._blackMat = blackMat;
-        window._videoMaterial = videoMaterial;
-        window._isOn = isOn;
+        window._tvSetPower = setPower;
+        window._tvSave = saveTVState;
+        window._tvAudioUpdate = audioUpdate;
         window._tvPosition = group.position.clone();
 
         function highlightKnob(knob) {
@@ -1243,25 +1298,7 @@ export function buildWorld(scene, opts) {
 
             switch (action) {
                 case 'power':
-                    if (isOn) {
-                        window._previousVolume = video.volume || 0.6;
-                        video.pause();
-                        video.volume = 0;
-                        screen.material = blackMat;
-                        window._isOn = false;
-                    } else {
-                        video.play().catch(() => {});
-                        video.volume = window._previousVolume > 0 ? window._previousVolume : 0.6;
-                        if (videoMaterial) {
-                            screen.material = videoMaterial;
-                        } else {
-                            const fallbackTex = new THREE.VideoTexture(video);
-                            fallbackTex.minFilter = THREE.LinearFilter;
-                            fallbackTex.magFilter = THREE.LinearFilter;
-                            screen.material = new THREE.MeshBasicMaterial({ map: fallbackTex, side: THREE.DoubleSide });
-                        }
-                        window._isOn = true;
-                    }
+                    window._tvSetPower(!window._isOn);
                     break;
                 case 'next':
                     window._nextVideo();
@@ -1270,12 +1307,7 @@ export function buildWorld(scene, opts) {
                     window._prevVideo();
                     break;
             }
-            try {
-                sessionStorage.setItem('tvState', JSON.stringify({
-                    isOn: window._isOn,
-                    volume: video.volume || 0.6
-                }));
-            } catch (e) {}
+            if (window._tvSave) window._tvSave();
         }
     }
     setupTVInteractions();
@@ -1529,6 +1561,10 @@ export function buildWorld(scene, opts) {
         update(dt, time) {
             updateMonologue(camera.position);
             elevator.update(dt);
+            if (window._tvAudioUpdate) {
+                const ta = tvAudioTarget();
+                window._tvAudioUpdate(dt, ta.gain, ta.cut);
+            }
             const truck = street.truck;
             if (truck && truck.isDriving()) {
                 // Au volant : le camion déplace la caméra, pas de marche à pied
