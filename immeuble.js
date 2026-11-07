@@ -1313,6 +1313,10 @@ const getFocus = ctx.getFocus || (camera
 // Maison de travail (work.js), au bout de la route
 const workY = SH.terrainH(HOUSE_POS.x, HOUSE_POS.z) + 0.02;
 const playerCam = ctx.driveCamera || ctx.camera;
+if (playerCam) {
+  console.log('[BT] rue construite', { camera: !!playerCam, action: !!ctx.action, view: !!ctx.view, input: !!ctx.input });
+  if (!ctx.action) console.warn('[BT] ctx.action est absent : world_base.html est probablement une ANCIENNE version (pas de bouton ENTER/EXIT).');
+}
 const work = buildWork(scene, {
   x: HOUSE_POS.x, z: HOUSE_POS.z, y: workY, light: ctx.workLight !== false,
   // Intérieur (seulement dans le vrai monde, pas dans la copie de la fenêtre)

@@ -288,6 +288,8 @@ function createInterior(parent, o) {
   }
 
   const DOOR = { x: o.doorX, z: o.doorZ };
+  let loggedNear = false, loggedBtn = false;
+  console.log('[BT] intérieur créé. Porte (repère rue) :', DOOR, '| action dispo :', !!o.action);
 
   return {
     isInside: function () { return inside || busy; },
@@ -308,8 +310,12 @@ function createInterior(parent, o) {
       if (busy) return;
       if (o.isBusy && o.isBusy()) return;
       const px = camera.position.x - origin.x, pz = camera.position.z - origin.z;
-      if (Math.hypot(px - DOOR.x, pz - DOOR.z) < 3.4) showAct('ENTER', enter);
-      else hideAct();
+      const dd = Math.hypot(px - DOOR.x, pz - DOOR.z);
+      if (dd < 14 && !loggedNear) { loggedNear = true; console.log('[BT] tu es près de la porte, distance =', dd.toFixed(1), 'm (ENTER apparaît sous 3.4 m)'); }
+      if (dd < 3.4) {
+        if (!loggedBtn) { loggedBtn = true; console.log('[BT] bouton ENTER affiché'); }
+        showAct('ENTER', enter);
+      } else hideAct();
     }
   };
 }
