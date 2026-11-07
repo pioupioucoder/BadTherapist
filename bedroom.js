@@ -4,6 +4,7 @@ import { buildWorld as buildOutside } from './immeuble.js';
 import { buildCorridor } from './corridor.js';
 import { buildElevator } from './elevator.js';
 import { buildGroundFloor } from './rdc.js';
+import { buildNightstand } from './nightstand.js';
 
 // bedroom.js – la chambre (copie d'illusion.js) adaptée à world_base.html
 // La fenêtre affiche en temps réel l'extérieur de immeuble.js,
@@ -1387,6 +1388,14 @@ export function buildWorld(scene, opts) {
     }
     setupDoorInteraction();
 
+    // ─── TABLE DE CHEVET : tiroir + livre-journal (nightstand.js / journal.js) ───
+    const nightstand = buildNightstand(scene, {
+        camera: camera,
+        canvas: canvas,
+        physics: physics,
+        level: FLOOR_NUMBER
+    });
+
     // ─── MONOLOGUES CONTEXTUELS ──────────────────────────────────────
     let monologueData = null;
     let lastMonologueTime = 0;
@@ -1559,6 +1568,7 @@ export function buildWorld(scene, opts) {
         },
 
         update(dt, time) {
+            nightstand.update(dt, time);
             updateMonologue(camera.position);
             elevator.update(dt);
             if (window._tvAudioUpdate) {

@@ -200,6 +200,13 @@
             display: none;
         }
 
+        .hint {
+            margin-top: 16px;
+            color: var(--gray);
+            font-size: 18px;
+            line-height: 1.2;
+        }
+
         @media (max-width: 500px) {
             .page {
                 padding-top: 25px;
@@ -264,7 +271,10 @@
                     <button id="export" type="button">EXPORT</button>
                     <button id="import-button" type="button">IMPORT</button>
                     <input type="file" id="import-file" accept=".json,application/json">
+                    <button id="export-book" type="button">EXPORT BOOK</button>
                 </div>
+
+                <p class="hint">EXPORT BOOK downloads book.json. Put it in the json folder of the project, then push it.</p>
             </section>
 
             <section class="section">
@@ -306,6 +316,8 @@
         const SESSION_CODE_KEY = 'lmtd_code_ok';
         const GAME_FLAGS_KEY = 'lmtd_gameFlags';
         const PLAYER_KEY = 'bt_player_state';   // sauvegarde de position du jeu 3D
+        const BOOK_KEY = 'bt_journal';          // le livre du tiroir (copie du navigateur)
+        const BOOK_FILE = 'json/book.json';     // le livre « définitif » poussé avec le jeu
 
         const volumeInput = document.getElementById('volume');
         const muteButton = document.getElementById('mute');
@@ -361,7 +373,8 @@
                 chapters: localStorage.getItem(CH_LS_CHAPTERS) || '[]',
                 endings: localStorage.getItem(CH_LS_ENDINGS_SEEN) || '[]',
                 gameFlags: localStorage.getItem(GAME_FLAGS_KEY) || '{}',
-                player: localStorage.getItem(PLAYER_KEY) || ''
+                player: localStorage.getItem(PLAYER_KEY) || '',
+                book: localStorage.getItem(BOOK_KEY) || ''
             };
 
             const blob = new Blob(
@@ -374,6 +387,51 @@
 
             link.href = url;
             link.download = 'bad-therapist-save.json';
+            link.click();
+
+            URL.revokeObjectURL(url);
+        });
+
+        // EXPORT BOOK : le fichier book.json à remettre dans le dossier json du projet, puis à pousser
+        document.getElementById('export-book').addEventListener('click', async () => {
+            const isBook = (b) => b && Array.isArray(b.pages);
+            const stamp = (b) => (b && Number(b.updated)) || 0;
+
+            let local = null;
+            let remote = null;
+
+            try { local = JSON.parse(localStorage.getItem(BOOK_KEY) || 'null'); } catch (e) { /* ignoré */ }
+
+            try {
+                const response = await fetch(BOOK_FILE + '?v=' + Date.now(), { cache: 'no-store' });
+                if (response.ok) remote = await response.json();
+            } catch (e) { /* ignoré */ }
+
+            // On exporte la version la plus récente (ce qui est écrit dans le navigateur, ou le fichier du jeu)
+            let book = isBook(local) ? local : null;
+            if (isBook(remote) && (!book || stamp(remote) > stamp(book))) book = remote;
+
+            if (!book) {
+                alert('There is no book to export yet.');
+                return;
+            }
+
+            const file = {
+                version: 1,
+                pages: book.pages.map(t => (typeof t === 'string' ? t : '')),
+                updated: stamp(book)
+            };
+
+            const blob = new Blob(
+                [JSON.stringify(file, null, 2) + '\n'],
+                { type: 'application/json' }
+            );
+
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+
+            link.href = url;
+            link.download = 'book.json';
             link.click();
 
             URL.revokeObjectURL(url);
@@ -436,6 +494,16 @@
                     } catch (e) { /* ignoré */ }
                 }
 
+                if (typeof data.book === 'string' && data.book) {
+                    // Le livre : on vérifie que c'est bien un JSON avec des pages
+                    try {
+                        const parsedBook = JSON.parse(data.book);
+                        if (parsedBook && Array.isArray(parsedBook.pages)) {
+                            localStorage.setItem(BOOK_KEY, data.book);
+                        }
+                    } catch (e) { /* ignoré */ }
+                }
+
                 alert('Save imported successfully.');
                 location.reload();
 
@@ -461,7 +529,8 @@
                 CH_LS_CHAPTERS,
                 CH_LS_ENDINGS_SEEN,
                 GAME_FLAGS_KEY,
-                PLAYER_KEY
+                PLAYER_KEY,
+                BOOK_KEY
             ].forEach(key => localStorage.removeItem(key));
 
             sessionStorage.removeItem(SESSION_CODE_KEY);
