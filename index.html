@@ -8,6 +8,7 @@
 <title>Bad Therapist</title>
 
 <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+<script src="save-data.js"></script>
 <script src="audio-manager.js" defer></script>
 
 <style>
@@ -404,6 +405,117 @@ nav a:hover::before {
     }
 }
 
+/* Admin : un petit œil pixel, presque invisible, qui suit le curseur */
+.admin-eye {
+    position: fixed;
+    left: 14px;
+    bottom: 14px;
+    z-index: 8;
+    width: 46px;
+    height: 46px;
+    padding: 0;
+    display: grid;
+    place-items: center;
+    background: none;
+    border: 0;
+    color: #8f8f8f;
+    opacity: .12;
+    cursor: pointer;
+    transition: opacity .5s ease, color .5s ease;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.admin-eye svg { display: block; overflow: visible; }
+.admin-eye .iris-a { fill: #ededed; }
+.admin-eye .iris-b { fill: #101010; }
+.eye-lid { opacity: 0; }
+
+.admin-eye:hover,
+.admin-eye:focus-visible {
+    opacity: .95;
+    color: #d6d6d6;
+    outline: none;
+}
+
+.admin-eye:hover .iris-a,
+.admin-eye:focus-visible .iris-a { fill: #b3262e; }
+
+/* Mode admin actif : l'œil reste visible et devient bleu.
+   Au survol, il prend l'aspect « joueur » (blanc) : un clic bascule vers le mode joueur. */
+.admin-eye.on { opacity: .95; color: #7fa8ff; }
+.admin-eye.on .iris-a { fill: #3b82f6; }
+.admin-eye.on:hover,
+.admin-eye.on:focus-visible { color: #d6d6d6; }
+.admin-eye.on:hover .iris-a,
+.admin-eye.on:focus-visible .iris-a { fill: #ededed; }
+
+.admin-eye.blink .eye-iris { opacity: 0; }
+.admin-eye.blink .eye-lid { opacity: 1; }
+
+/* Fenêtre admin */
+.admin-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 9;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(0,0,0,.82);
+}
+
+.admin-modal.hidden { display: none; }
+
+.admin-box {
+    width: min(480px, 100%);
+    padding: 24px 22px 22px;
+    background: #171717;
+    border: 2px solid #555;
+    box-shadow: 4px 4px 0 #050505;
+    text-align: center;
+}
+
+.admin-title {
+    margin: 0 0 18px;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 12px;
+    letter-spacing: .1em;
+    color: #b3262e;
+}
+
+.admin-text {
+    margin: 0 0 24px;
+    font-size: 22px;
+    line-height: 1.15;
+    color: var(--light);
+}
+
+.admin-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.admin-buttons button {
+    padding: 13px 12px;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 10px;
+    color: #aaa;
+    background: #171717;
+    border: 2px solid #555;
+    box-shadow: 3px 3px 0 #050505;
+    cursor: pointer;
+    transition: .15s ease;
+}
+
+.admin-buttons button:hover,
+.admin-buttons button:focus-visible {
+    color: #fff;
+    background: #353535;
+    border-color: #ddd;
+    outline: none;
+}
+
 @media(prefers-reduced-motion: reduce) {
     *, *::before, *::after {
         animation: none !important;
@@ -448,12 +560,33 @@ nav a:hover::before {
         <div class="divider"></div>
 
         <nav>
-            <a href="world_base.html?launch=1">PLAY</a>
+            <a id="play-link" href="world_base.html?launch=1">PLAY</a>
             <a href="settings.html">SETTINGS</a>
         </nav>
 
     </div>
 </main>
+
+<!-- Admin : tout petit œil en bas à gauche -->
+<button id="admin-eye" class="admin-eye" type="button" aria-label="Admin">
+    <svg viewBox="0 0 13 7" width="26" height="14" shape-rendering="crispEdges" aria-hidden="true">
+        <path fill="currentColor" d="M4 0h5v1H4zM2 1h2v1H2zM9 1h2v1H9zM1 2h1v1H1zM11 2h1v1h-1zM0 3h1v1H0zM12 3h1v1h-1zM1 4h1v1H1zM11 4h1v1h-1zM2 5h2v1H2zM9 5h2v1H9zM4 6h5v1H4z"/>
+        <g class="eye-iris" id="eye-iris">
+            <rect class="iris-a" x="5" y="2" width="3" height="3"/>
+            <rect class="iris-b" x="6" y="3" width="1" height="1"/>
+        </g>
+        <path class="eye-lid" fill="currentColor" d="M1 3h11v1H1z"/>
+    </svg>
+</button>
+
+<div id="admin-modal" class="admin-modal hidden" role="dialog" aria-modal="true" aria-labelledby="admin-title">
+    <div class="admin-box">
+        <p id="admin-title" class="admin-title">ADMIN</p>
+        <p id="admin-text" class="admin-text"></p>
+        <div id="admin-buttons" class="admin-buttons"></div>
+    </div>
+</div>
+
 
 <script>
 (() => {
@@ -492,6 +625,149 @@ nav a:hover::before {
 
         sessionStorage.removeItem(ACCEPTED_KEY);
         window.location.href = 'https://krismeow.straw.page/';
+    });
+})();
+</script>
+
+<script>
+// Icône admin : lance le jeu avec TA progression (json/bad-therapist-save.json poussé,
+// + ce qui est déjà dans ce navigateur et pas encore exporté). Le bouton PLAY, lui, ne touche à rien.
+(() => {
+    const Save = window.BadTherapistSave;
+    const eye = document.getElementById('admin-eye');
+
+    if (!Save) {
+        // save-data.js introuvable : on cache l'œil, le reste de la page marche comme avant
+        console.error('save-data.js not found: put it in the same folder as index.html.');
+        eye.style.display = 'none';
+        return;
+    }
+
+    const iris = document.getElementById('eye-iris');
+    const modal = document.getElementById('admin-modal');
+    const modalText = document.getElementById('admin-text');
+    const modalButtons = document.getElementById('admin-buttons');
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    // ── L'œil regarde le curseur (pixels entiers, pour rester net) ──
+    function look(dx, dy) {
+        dx = Math.max(-2, Math.min(2, Math.round(dx)));
+        dy = Math.max(-1, Math.min(1, Math.round(dy)));
+        if (dy !== 0) dx = Math.max(-1, Math.min(1, dx));   // reste bien dans l'œil
+        iris.setAttribute('transform', 'translate(' + dx + ' ' + dy + ')');
+    }
+
+    let lastMove = 0;
+
+    window.addEventListener('pointermove', (e) => {
+        lastMove = performance.now();
+        const r = eye.getBoundingClientRect();
+        const ax = e.clientX - (r.left + r.width / 2);
+        const ay = e.clientY - (r.top + r.height / 2);
+        const d = Math.hypot(ax, ay) || 1;
+        look(ax / d * 2.4, ay / d * 1.4);
+    }, { passive: true });
+
+    // Quand personne ne bouge : il regarde ailleurs de temps en temps, et cligne
+    if (!reduceMotion) {
+        setInterval(() => {
+            if (performance.now() - lastMove > 3500) look(Math.random() * 5 - 2.5, Math.random() * 3 - 1.5);
+        }, 2600);
+
+        (function blinkLater() {
+            setTimeout(() => {
+                eye.classList.add('blink');
+                setTimeout(() => eye.classList.remove('blink'), 150);
+                blinkLater();
+            }, 3500 + Math.random() * 6000);
+        })();
+    }
+
+    // ── Fenêtre de choix ──
+    function openModal(text, buttons) {
+        modalText.textContent = text;
+        modalButtons.textContent = '';
+        buttons.forEach((b) => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.textContent = b.label;
+            btn.addEventListener('click', () => { closeModal(); b.action(); });
+            modalButtons.appendChild(btn);
+        });
+        modal.classList.remove('hidden');
+        modalButtons.firstChild.focus();
+    }
+
+    function closeModal() {
+        modal.classList.add('hidden');
+        eye.classList.remove('blink');
+        busy = false;
+    }
+
+    modal.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
+
+    // ── Entrer dans le jeu (comme après YES puis PLAY) ──
+    function enterGame() {
+        sessionStorage.setItem('bt_intro_accepted', '1');
+        if (window.BadTherapistAudio) window.BadTherapistAudio.start();
+        window.location.href = 'world_base.html?launch=1';
+    }
+
+    // Œil bleu = mode admin actif, œil gris = mode joueur. PLAY, EXPORT, IMPORT et RESET agissent sur le mode actif.
+    function refreshEye() {
+        Save.syncMode();
+        const admin = Save.activeProfile() === 'admin';
+        eye.classList.toggle('on', admin);
+        eye.setAttribute('aria-pressed', admin ? 'true' : 'false');
+        eye.title = admin ? 'ADMIN mode: click to switch to PLAYER' : '';
+        eye.setAttribute('aria-label', admin ? 'Switch to player mode' : 'Admin');
+    }
+    refreshEye();
+    window.addEventListener('pageshow', refreshEye);   // retour du jeu avec le bouton « précédent »
+
+    let busy = false;
+
+    // Premier clic sur l'œil : mode admin + lancement du jeu
+    eye.addEventListener('click', async () => {
+        if (busy) return;
+
+        // Déjà en mode admin (œil bleu) : un clic remet le mode joueur. Ta sauvegarde admin est mise de côté, intacte.
+        if (Save.activeProfile() === 'admin') {
+            Save.switchTo('player');
+            refreshEye();
+            return;
+        }
+
+        busy = true;
+        eye.classList.add('blink');                 // l'œil se ferme pendant qu'on cherche ta sauvegarde
+
+        const pushed = await Save.fetchPushed();
+        const plan = Save.adminPlan(pushed);
+
+        if (plan === 'continue') {
+            Save.switchTo('admin');
+            return enterGame();
+        }
+
+        if (plan === 'load') {
+            Save.switchTo('admin');
+            Save.apply(pushed);
+            Save.markAdminClean();
+            return enterGame();
+        }
+
+        if (plan === 'adopt') {
+            return openModal("No pushed save yet. Use the game in progress in this browser as your admin save? PLAY will then start from zero.", [
+                { label: 'USE CURRENT GAME', action: () => { Save.adoptAsAdmin(); enterGame(); } },
+                { label: 'CANCEL', action: () => {} }
+            ]);
+        }
+
+        if (plan === 'missing') {
+            return openModal('No admin save found. Export your save in Settings, put the file in the json folder, then push it.', [
+                { label: 'OK', action: () => {} }
+            ]);
+        }
     });
 })();
 </script>

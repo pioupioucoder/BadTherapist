@@ -198,7 +198,7 @@ export function buildNightstand(scene, opts) {
     }
 
     // ─── LIVRE-JOURNAL (interface d'écriture) ────────────────────
-    const journal = createJournal({ api: opts.api, file: opts.file });
+    const journal = createJournal({});
 
     window.BadTherapist = window.BadTherapist || {};
     window.BadTherapist.getJournal = function() { return journal.exportData(); };

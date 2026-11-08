@@ -7,7 +7,8 @@
     <title>Settings | Bad Therapist</title>
 
 
-    <script src="audio-manager.js" defer></script>
+    <script src="save-data.js"></script>
+<script src="audio-manager.js" defer></script>
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
@@ -271,10 +272,7 @@
                     <button id="export" type="button">EXPORT</button>
                     <button id="import-button" type="button">IMPORT</button>
                     <input type="file" id="import-file" accept=".json,application/json">
-                    <button id="export-book" type="button">EXPORT BOOK</button>
                 </div>
-
-                <p class="hint">EXPORT BOOK downloads book.json. Put it in the json folder of the project, then push it.</p>
             </section>
 
             <section class="section">
@@ -307,17 +305,22 @@
         </main>
     </div>
 
-    <script>
-        const LS_KEY = 'lmtd_save_v3';
+        <script>
         const LS_VOL_KEY = 'lmtd_volume';
         const LS_MUTE_KEY = 'lmtd_muted';
-        const CH_LS_CHAPTERS = 'lmtd_chapters_v1';
-        const CH_LS_ENDINGS_SEEN = 'lmtd_endings_seen_v1';
         const SESSION_CODE_KEY = 'lmtd_code_ok';
-        const GAME_FLAGS_KEY = 'lmtd_gameFlags';
-        const PLAYER_KEY = 'bt_player_state';   // sauvegarde de position du jeu 3D
-        const BOOK_KEY = 'bt_journal';          // le livre du tiroir (copie du navigateur)
-        const BOOK_FILE = 'json/book.json';     // le livre « définitif » poussé avec le jeu
+
+        // Tout ce qui s'exporte / s'importe / se remet à zéro est défini dans save-data.js
+        const Save = window.BadTherapistSave;
+
+        if (!Save) {
+            // save-data.js introuvable : le son marche toujours, seuls EXPORT / IMPORT / RESET sont désactivés
+            console.error('save-data.js not found: put it in the same folder as settings.html.');
+            ['export', 'import-button', 'reset'].forEach(id => { document.getElementById(id).disabled = true; });
+        }
+
+        // Retour depuis le cache de retour arrière : on recharge pour afficher le bon profil
+        window.addEventListener('pageshow', (e) => { if (e.persisted) location.reload(); });
 
         const volumeInput = document.getElementById('volume');
         const muteButton = document.getElementById('mute');
@@ -366,16 +369,9 @@
 
         // EXPORT SAVE DATA
         document.getElementById('export').addEventListener('click', () => {
-            const data = {
-                save: localStorage.getItem(LS_KEY) || '',
-                volume: localStorage.getItem(LS_VOL_KEY) || '0.7',
-                muted: localStorage.getItem(LS_MUTE_KEY) || '0',
-                chapters: localStorage.getItem(CH_LS_CHAPTERS) || '[]',
-                endings: localStorage.getItem(CH_LS_ENDINGS_SEEN) || '[]',
-                gameFlags: localStorage.getItem(GAME_FLAGS_KEY) || '{}',
-                player: localStorage.getItem(PLAYER_KEY) || '',
-                book: localStorage.getItem(BOOK_KEY) || ''
-            };
+            const data = Save.collect();
+            const profile = Save.activeProfile();
+            data.profile = profile;
 
             const blob = new Blob(
                 [JSON.stringify(data, null, 2)],
@@ -386,55 +382,14 @@
             const link = document.createElement('a');
 
             link.href = url;
-            link.download = 'bad-therapist-save.json';
+            // admin : le nom exact à pousser dans json/ ; joueur : un autre nom, pour ne jamais les confondre
+            link.download = profile === 'admin' ? 'bad-therapist-save.json' : 'bad-therapist-player-save.json';
             link.click();
 
             URL.revokeObjectURL(url);
-        });
 
-        // EXPORT BOOK : le fichier book.json à remettre dans le dossier json du projet, puis à pousser
-        document.getElementById('export-book').addEventListener('click', async () => {
-            const isBook = (b) => b && Array.isArray(b.pages);
-            const stamp = (b) => (b && Number(b.updated)) || 0;
-
-            let local = null;
-            let remote = null;
-
-            try { local = JSON.parse(localStorage.getItem(BOOK_KEY) || 'null'); } catch (e) { /* ignoré */ }
-
-            try {
-                const response = await fetch(BOOK_FILE + '?v=' + Date.now(), { cache: 'no-store' });
-                if (response.ok) remote = await response.json();
-            } catch (e) { /* ignoré */ }
-
-            // On exporte la version la plus récente (ce qui est écrit dans le navigateur, ou le fichier du jeu)
-            let book = isBook(local) ? local : null;
-            if (isBook(remote) && (!book || stamp(remote) > stamp(book))) book = remote;
-
-            if (!book) {
-                alert('There is no book to export yet.');
-                return;
-            }
-
-            const file = {
-                version: 1,
-                pages: book.pages.map(t => (typeof t === 'string' ? t : '')),
-                updated: stamp(book)
-            };
-
-            const blob = new Blob(
-                [JSON.stringify(file, null, 2) + '\n'],
-                { type: 'application/json' }
-            );
-
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-
-            link.href = url;
-            link.download = 'book.json';
-            link.click();
-
-            URL.revokeObjectURL(url);
+            // Export de la sauvegarde admin : plus rien de « non exporté », l'œil pourra recharger le fichier poussé
+            if (Save.activeProfile() === 'admin') Save.markAdminClean();
         });
 
         // IMPORT SAVE DATA
@@ -455,54 +410,20 @@
                     throw new Error('Invalid save file');
                 }
 
-                if (!window.confirm('Import this save file? Current progress may be overwritten.')) {
+                const target = Save.activeProfile();
+                const label = target === 'admin' ? 'ADMIN' : 'PLAYER';
+                let msg = 'Import this file into the ' + label + ' save? Current ' + label + ' progress will be overwritten.';
+                if (data.profile && data.profile !== target) {
+                    msg = 'WARNING: this file comes from the ' + data.profile.toUpperCase() + ' save, but you are importing into the ' + label + ' save.\n\n' + msg;
+                }
+
+                if (!window.confirm(msg)) {
                     importFile.value = '';
                     return;
                 }
 
-                if (typeof data.save === 'string') {
-                    localStorage.setItem(LS_KEY, data.save);
-                }
-
-                if (data.volume !== undefined) {
-                    localStorage.setItem(LS_VOL_KEY, String(data.volume));
-                }
-
-                if (data.muted !== undefined) {
-                    localStorage.setItem(LS_MUTE_KEY, String(data.muted));
-                }
-
-                if (typeof data.chapters === 'string') {
-                    localStorage.setItem(CH_LS_CHAPTERS, data.chapters);
-                }
-
-                if (typeof data.endings === 'string') {
-                    localStorage.setItem(CH_LS_ENDINGS_SEEN, data.endings);
-                }
-
-                if (typeof data.gameFlags === 'string') {
-                    localStorage.setItem(GAME_FLAGS_KEY, data.gameFlags);
-                }
-
-                if (typeof data.player === 'string' && data.player) {
-                    // Position du joueur : on vérifie que c'est bien un JSON valide
-                    try {
-                        const parsed = JSON.parse(data.player);
-                        if (parsed && typeof parsed === 'object' && parsed.worlds) {
-                            localStorage.setItem(PLAYER_KEY, data.player);
-                        }
-                    } catch (e) { /* ignoré */ }
-                }
-
-                if (typeof data.book === 'string' && data.book) {
-                    // Le livre : on vérifie que c'est bien un JSON avec des pages
-                    try {
-                        const parsedBook = JSON.parse(data.book);
-                        if (parsedBook && Array.isArray(parsedBook.pages)) {
-                            localStorage.setItem(BOOK_KEY, data.book);
-                        }
-                    } catch (e) { /* ignoré */ }
-                }
+                // Sur le profil admin, l'import reste « non exporté » : l'œil ne l'écrasera pas avant un EXPORT
+                Save.apply(data);
 
                 alert('Save imported successfully.');
                 location.reload();
@@ -522,16 +443,7 @@
 
             if (!confirmed) return;
 
-            [
-                LS_KEY,
-                LS_VOL_KEY,
-                LS_MUTE_KEY,
-                CH_LS_CHAPTERS,
-                CH_LS_ENDINGS_SEEN,
-                GAME_FLAGS_KEY,
-                PLAYER_KEY,
-                BOOK_KEY
-            ].forEach(key => localStorage.removeItem(key));
+            Save.resetPlayer();   // remet le profil joueur à zéro ; la sauvegarde admin n'est jamais touchée
 
             sessionStorage.removeItem(SESSION_CODE_KEY);
 

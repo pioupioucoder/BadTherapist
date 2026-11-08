@@ -1,13 +1,7 @@
 // journal.js – le livre du tiroir : un livre ouvert où l'on écrit directement.
 //
-// OÙ EST LE TEXTE ?
-//  - Le fichier  json/book.json  (à côté de world_base.html) est la version "définitive" du livre :
-//    c'est celui qu'on pousse sur GitHub, et le jeu le lit à chaque chargement (en ligne comme en local).
-//  - En local (XAMPP), à chaque modification, journal.php réécrit ce fichier tout seul.
-//  - En ligne, GitHub Pages ne peut pas écrire de fichier : ce qu'on écrit reste dans le navigateur
-//    (localStorage, clé "bt_journal"). Settings > EXPORT BOOK donne le book.json à remettre dans le
-//    dossier json, puis on pousse.
-//  - Si le fichier et le navigateur diffèrent, la version la plus récente (champ "updated") gagne.
+// Le texte est gardé dans le navigateur (localStorage, clé "bt_journal") à chaque frappe.
+// Il fait partie de la sauvegarde globale : Settings > EXPORT / IMPORT (voir save-data.js).
 
 const KEY = 'bt_journal';
 const MAX_PAGES = 400;     // nombre de pages maximum
@@ -67,21 +61,8 @@ const CSS = `
 .btj-book[data-mode="1"] .btj-left{width:100%;border-radius:6px;opacity:1;box-shadow:0 22px 50px rgba(0,0,0,.6)}
 `;
 
-// Ordinateur / réseau maison (XAMPP, wifi) : seul endroit où journal.php peut écrire
-function isLocalHost() {
-    const h = location.hostname;
-    return h === 'localhost' || h === '[::1]' || /\.local$/.test(h) ||
-        /^127\./.test(h) || /^10\./.test(h) || /^192\.168\./.test(h) || /^172\.(1[6-9]|2\d|3[01])\./.test(h);
-}
-
 export function createJournal(opts) {
     opts = opts || {};
-    const FILE = opts.file === undefined ? 'json/book.json' : opts.file;   // '' = ne pas lire de fichier
-    const API = opts.api === undefined ? 'journal.php' : opts.api;         // '' = ne pas écrire de fichier
-    const WEB = /^https?:$/.test(location.protocol);
-    const CAN_READ = !!FILE && WEB;
-    const CAN_WRITE = !!API && WEB && isLocalHost();   // jamais en ligne : GitHub Pages ne sait pas écrire
-
     // ─── DONNÉES ─────────────────────────────────────────────────
     function normalize(d) {
         const pages = (d && Array.isArray(d.pages) ? d.pages : [])
@@ -133,70 +114,6 @@ export function createJournal(opts) {
         } catch (e) {}
     }
 
-    // ─── FICHIER json/book.json ───────────────────────────────────
-    let writeOK = null;         // null = pas encore essayé, true = ça écrit, false = indisponible
-    let remoteDirty = false;
-    let pushTimer = null;
-    let writeWarned = false;
-
-    function payload() {
-        return JSON.stringify({ version: data.version, pages: data.pages, updated: data.updated });
-    }
-
-    function schedulePush() {
-        if (!CAN_WRITE || writeOK === false || !remoteDirty) return;
-        clearTimeout(pushTimer);
-        pushTimer = setTimeout(pushFile, 1000);
-    }
-
-    // Demande à journal.php de réécrire json/book.json
-    function pushFile() {
-        if (!CAN_WRITE || writeOK === false) return Promise.resolve();
-        clearTimeout(pushTimer);
-        return fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: payload() })
-            .then(function(r) {
-                if (r.status === 409) { remoteDirty = false; return; }    // le fichier est plus récent : il sera relu au prochain chargement
-                if (!r.ok) throw new Error('HTTP ' + r.status);
-                writeOK = true;
-                remoteDirty = false;
-            })
-            .catch(function(e) {
-                writeOK = false;
-                if (!writeWarned) {
-                    writeWarned = true;
-                    console.warn('[journal] json/book.json non écrit (' + e.message + ') : le livre reste dans le navigateur. Vérifie que XAMPP tourne et que journal.php est là.');
-                }
-            });
-    }
-
-    // Au chargement : on lit json/book.json et on garde la version la plus récente
-    function syncFromFile() {
-        if (!CAN_READ) return;
-        fetch(FILE + '?v=' + Date.now(), { cache: 'no-store' })
-            .then(function(r) {
-                if (!r.ok) throw new Error('HTTP ' + r.status);
-                return r.json();
-            })
-            .then(function(remote) {
-                if (!remote || !Array.isArray(remote.pages)) return;
-                const rem = normalize(remote);
-                if (rem.updated > data.updated) {
-                    // le fichier est plus récent (ex. nouveau push, ou cache effacé) : on le reprend
-                    rem.pos = data.pos < rem.pages.length ? data.pos : 0;
-                    data = rem;
-                    writeLocal();
-                    if (isOpen) render();
-                } else if (data.updated > rem.updated && CAN_WRITE) {
-                    // ce qu'on a écrit est plus récent que le fichier : on le réécrit (local seulement)
-                    remoteDirty = true;
-                    pushFile();
-                }
-            })
-            .catch(function(e) {
-                console.info('[journal] ' + FILE + ' non lu (' + e.message + ') : livre du navigateur uniquement.');
-            });
-    }
-
     // ─── SAUVEGARDE ──────────────────────────────────────────────
     let saveTimer = null;
     let savedTimer = null;
@@ -213,7 +130,6 @@ export function createJournal(opts) {
         saveTimer = null;
         writeLocal();
         if (hasText(data)) askPersist();
-        schedulePush();
         showSaved();
     }
 
@@ -224,11 +140,6 @@ export function createJournal(opts) {
 
     function flushOnLeave() {
         if (saveTimer) saveNow();
-        if (CAN_WRITE && writeOK !== false && remoteDirty) {
-            try {
-                navigator.sendBeacon(API, new Blob([payload()], { type: 'application/json' }));
-            } catch (e) {}
-        }
     }
     window.addEventListener('pagehide', flushOnLeave);
     document.addEventListener('visibilitychange', function() { if (document.hidden) flushOnLeave(); });
@@ -298,7 +209,6 @@ export function createJournal(opts) {
                 if (idx >= data.pages.length) return;
                 data.pages[idx] = el.ta[i].value;
                 data.updated = Date.now();
-                remoteDirty = true;
                 updateNav();
                 saveSoon();
             });
@@ -454,8 +364,6 @@ export function createJournal(opts) {
         if (typeof opts.onClose === 'function') opts.onClose();
     }
 
-    syncFromFile();
-
     return {
         open: open,
         close: close,
@@ -466,9 +374,7 @@ export function createJournal(opts) {
             if (!d || !Array.isArray(d.pages)) return;
             data = normalize(d);
             data.updated = Date.now();
-            remoteDirty = true;
             writeLocal();
-            schedulePush();
             if (isOpen) render();
         }
     };
