@@ -14,6 +14,7 @@ const CAP = {
     facts: 40, factLen: 200,
     secrets: 15, secretLen: 240,
     will: 4, willLen: 160,
+    habits: 8, habitLen: 180,
     feelingLen: 160, nameLen: 40,
     summaryLen: 1200, lastLen: 400,
     pending: 14, pendingLen: 240
@@ -38,6 +39,7 @@ function blank() {
         facts: [],        // [{ text, at }]  ce qu'elle retient du joueur
         secrets: [],      // [{ text, at }]  ses pensées à elle (le joueur ne les voit pas en jeu)
         will: [],         // [string]        ce qu'elle veut
+        habits: [],       // [string]        SES règles à elle : façon de parler / d'être qu'elle a choisie (ex. « je ne finis plus par une question »)
         feeling: '',
         summary: '',      // l'histoire de vos séances
         lastSession: '',
@@ -65,6 +67,7 @@ function clean(raw) {
     m.facts = noteList(raw.facts, CAP.facts, CAP.factLen);
     m.secrets = noteList(raw.secrets, CAP.secrets, CAP.secretLen);
     m.will = asArray(raw.will).map(function (x) { return txt(x, CAP.willLen); }).filter(Boolean).slice(0, CAP.will);
+    m.habits = asArray(raw.habits).map(function (x) { return txt(x, CAP.habitLen); }).filter(Boolean).slice(0, CAP.habits);
     m.feeling = txt(raw.feeling, CAP.feelingLen);
     m.summary = txt(raw.summary, CAP.summaryLen);
     m.lastSession = txt(raw.lastSession, CAP.lastLen);
@@ -140,6 +143,10 @@ function applyOps(ops) {
         m.will = ops.will.map(function (x) { return txt(x, CAP.willLen); }).filter(Boolean).slice(0, CAP.will);
         changed = true;
     }
+    if (Array.isArray(ops.habits)) {
+        m.habits = ops.habits.map(function (x) { return txt(x, CAP.habitLen); }).filter(Boolean).slice(0, CAP.habits);
+        changed = true;
+    }
     if (typeof ops.feeling === 'string') { m.feeling = txt(ops.feeling, CAP.feelingLen); changed = true; }
     if (typeof ops.player_name === 'string' && txt(ops.player_name, CAP.nameLen)) {
         m.playerName = txt(ops.player_name, CAP.nameLen);
@@ -196,6 +203,10 @@ function promptBlock() {
     if (m.lastSession) L.push('- Dernière séance : ' + m.lastSession);
     if (m.feeling) L.push('- Ce que tu ressens pour lui en ce moment : ' + m.feeling);
     if (m.will.length) L.push('- Ce que tu veux : ' + m.will.join(' / '));
+    if (m.habits.length) {
+        L.push('Tes HABITUDES à toi (tu les as choisies ; elles passent avant ton style par défaut ; tu peux les changer ou y renoncer quand tu veux) :');
+        m.habits.forEach(function (h) { L.push('  * ' + h); });
+    }
     L.push(m.facts.length ? 'Ce que tu as choisi de retenir du patient :' : 'Tu n\'as encore rien retenu du patient.');
     m.facts.forEach(function (n, i) { L.push('  [f' + (i + 1) + '] ' + n.text + (n.at ? ' (' + n.at + ')' : '')); });
     if (m.secrets.length) {
