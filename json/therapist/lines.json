@@ -1,7 +1,7 @@
 {
-  "greeting": "Ah. There you are. I was starting to wonder.",
+  "greeting": "Ah. There you are. Thank you for answering my call, and for waiting. What should I call you?",
   "greetingReturning": [
-    "You came back. I hoped you would.",
+    "You came back. Thank you for picking up when I called.",
     "Sit. I kept thinking about our last conversation."
   ],
   "standing": [
@@ -21,11 +21,9 @@
     "Already? ...Of course. Come back soon.",
     "Mm. We will pick this up another time."
   ],
-  "fallbackLines": [
-    "Mm. Go on.",
-    "Say more about that.",
-    "I am listening. Take your time.",
-    "Hm. What comes to mind when you say that?"
-  ],
+  "retry": "[ the line went dead. Press SEND to try again ]",
+  "noAnswer": "[ it rings... and rings. Nobody picks up ]",
+  "callFail": "[ the line is dead. It will ring again ]",
+  "fallbackLines": ["Mm. Go on."],
   "thinking": "..."
 }

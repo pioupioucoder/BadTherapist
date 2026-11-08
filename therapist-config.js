@@ -26,6 +26,12 @@ export const THERAPIST_CONFIG = {
   maxOutputTokens: 1000,                     // 'max_tokens' pour Groq ; gpt-oss y compte aussi sa réflexion, ne descends pas trop
   maxHistoryTurns: 12,                       // nombre d'échanges gardés pendant la séance
   maxPlayerChars: 300,                       // longueur max d'un message du joueur
+  sessionMinutes: 30,                        // durée prévue d'une séance (Evelyn la surveille en secret et conclut toute seule ; elle peut la changer)
+  sessionPrice: '50 dollars',                // le tarif qu'elle a fait accepter au téléphone avant la séance, et qu'elle réclame à la fin
+  callTimeScale: 1,                          // 1 = ses délais de rappel sont en heures réelles. Pour tester : 0.02 (« demain » ≈ 30 min... mets 0.001 pour quelques secondes)
   typeSpeedMs: 34,                           // vitesse d'affichage des lettres
+  lifeEnabled: true,                         // le Worker la fait « vivre » quand le jeu est fermé (messages vocaux, appels décidés seule)
+  lifeSyncSec: 120,                          // le jeu se synchronise avec le Worker toutes les 2 min
+  evelynNumber: '555-0142',                  // son numéro, affiché sur le téléphone portable
   name: 'EVELYN'                             // nom affiché au-dessus du texte
 };
