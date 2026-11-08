@@ -1,0 +1,31 @@
+{
+  "greeting": "Ah. There you are. I was starting to wonder.",
+  "greetingReturning": [
+    "You came back. I hoped you would.",
+    "Sit. I kept thinking about our last conversation."
+  ],
+  "standing": [
+    "Please, sit down. We begin once you are seated.",
+    "Oh. A visitor. Take the chair, and we can start."
+  ],
+  "standingReturning": [
+    "Back again. Sit, please. The chair is waiting.",
+    "I wondered when you would come. Sit down."
+  ],
+  "nudge": [
+    "The chair, please. Then we can talk.",
+    "I do not talk to people who stand at the door.",
+    "Sit. Whatever it is, it is easier sitting down."
+  ],
+  "farewell": [
+    "Already? ...Of course. Come back soon.",
+    "Mm. We will pick this up another time."
+  ],
+  "fallbackLines": [
+    "Mm. Go on.",
+    "Say more about that.",
+    "I am listening. Take your time.",
+    "Hm. What comes to mind when you say that?"
+  ],
+  "thinking": "..."
+}

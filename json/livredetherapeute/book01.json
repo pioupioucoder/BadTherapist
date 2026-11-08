@@ -1,0 +1,17 @@
+{
+  "title": "Case Notes, Volume I",
+  "author": "Dr. M. Vale",
+  "cover": {
+    "color": "#7c2431",
+    "accent": "#d6ae5c",
+    "textColor": "#e8d6a8",
+    "symbol": "diamond",
+    "image": ""
+  },
+  "pages": [
+    "Case Notes, Volume I\n\n(Placeholder text. Replace this with your own pages in json/livredetherapeute/book01.json.)",
+    "Each string in the \"pages\" list is one page. Use \\n for line breaks.\n\nThe book opens on a double page: page 1 on the left, page 2 on the right.",
+    "You can change the cover in this same file:\n\n\"color\": the cover and the spine on the shelf\n\"accent\": frame, symbol and spine bands\n\"textColor\": the title\n\"symbol\": diamond, circle, cross, moon, eye or none\n\"image\": a picture such as images/my-cover.png (replaces the symbol)",
+    "Add as many pages as you want."
+  ]
+}

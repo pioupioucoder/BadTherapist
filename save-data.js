@@ -27,7 +27,8 @@
         endings:   'lmtd_endings_seen_v1',
         gameFlags: 'lmtd_gameFlags',
         player:    'bt_player_state',     // position du joueur dans le jeu 3D
-        book:      'bt_journal'           // le livre du tiroir
+        book:      'bt_journal',          // le livre du tiroir
+        evelyn:    'bt_evelyn_memory'     // la mémoire d'Evelyn (la thérapeute) : voir therapist-memory.js
     };
 
     // valeurs écrites dans l'export quand il n'y a encore rien
@@ -60,7 +61,8 @@
     // Vérifications minimales pour ne jamais écrire un contenu cassé
     const VALID = {
         player: function (o) { return !!(o && typeof o === 'object' && o.worlds); },
-        book:   function (o) { return !!(o && Array.isArray(o.pages)); }
+        book:   function (o) { return !!(o && Array.isArray(o.pages)); },
+        evelyn: function (o) { return !!(o && typeof o === 'object' && !Array.isArray(o) && o.v); }
     };
 
     // ─── Profil de CETTE page ───────────────────────────────────────
@@ -140,6 +142,8 @@
             return !!(v && typeof v === 'object' && Object.keys(v).length);
         };
         if (d.save || d.player) return true;
+        const ev = parse(d.evelyn);
+        if (ev && ev.sessions > 0) return true;          // Evelyn a déjà reçu le joueur
         if (filled(d.chapters) || filled(d.endings) || filled(d.gameFlags)) return true;
         const book = parse(d.book);
         return !!(book && Array.isArray(book.pages) && book.pages.some(function (t) { return String(t).trim() !== ''; }));
@@ -206,7 +210,7 @@
         d = d || {};
         const book = parse(d.book);
         return JSON.stringify([
-            d.save || '', d.chapters || '', d.endings || '', d.gameFlags || '',
+            d.save || '', d.chapters || '', d.endings || '', d.gameFlags || '', d.evelyn || '',
             book && Array.isArray(book.pages) ? book.pages : []
         ]);
     }
