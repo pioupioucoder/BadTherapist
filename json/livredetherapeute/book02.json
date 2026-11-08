@@ -1,0 +1,17 @@
+{
+  "title": "The Snowbound House",
+  "author": "Lila Hart",
+  "cover": {
+    "color": "#1c2530",
+    "accent": "#d4af37",
+    "textColor": "#f0e6d2",
+    "symbol": "moon",
+    "image": "images/snowbound_house.png"
+  },
+  "pages": [
+    "The promise is that within this quiet space you can find a steady, gentle comfort that remains even when everything else feels uncertain.",
+    "A soft sigh escaped the walls, as if the house itself whispered, \"You are safe here; let the snow outside be the only thing that moves.\"",
+    "Beyond the window, the world was white, yet inside a single breath could stir the air, reminding you that even stillness can hold a pulse.",
+    "The lamp flickered, casting a thin line of gold that seemed to hold the room together, a quiet promise that warmth could linger even in the cold."
+  ]
+}
