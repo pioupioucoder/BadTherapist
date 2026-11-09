@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { loadMixamoAvatar } from './avatar-loader.js';
 import { buildWorld as buildOutside, WORK_SPOT } from './immeuble.js';
 import { createBookReader } from './bookreader.js';
 import { createTherapistTalk } from './therapist-ai.js';
@@ -22,9 +22,8 @@ import { createTherapistTalk } from './therapist-ai.js';
 // ==========================================
 // INTÉRIEUR : cabinet du thérapeute (chargé au clic sur la porte)
 // ==========================================
-// Les fichiers GLB sont dans le dossier models/ (à côté de world_base.html).
-// Le premier de la liste est essayé en premier ; s'il échoue, on essaie le suivant.
-const AVATAR_FILES = ['models/avatar_pbr.glb', 'models/avatar_shaded.glb'];
+// L'avatar d'Evelyn (Mixamo) : avatars/evelyn/ à côté de world_base.html : evelyn.fbx, idle.fbx, sit.fbx, sit_talk.fbx + les 4 textures.
+const AVATAR_DIR = 'avatars/evelyn/';
 
 // Réglages de l'avatar (à ajuster si elle n'est pas bien assise sur la chaise)
 const AVATAR_HEIGHT = 1.7;                       // taille debout, en mètres
@@ -393,15 +392,7 @@ function createInterior(parent, o) {
   // ------------------------------------------
   // Avatar (GLB + animation assise)
   // ------------------------------------------
-  let avatar = null, mixer = null;
-
-  function loadGLB(url) {
-    return new Promise(function (resolve, reject) {
-      new GLTFLoader().load(url, resolve, function (e) {
-        if (e.lengthComputable && e.total > 0) setProgress(e.loaded / e.total * 0.95);
-      }, reject);
-    });
-  }
+  let avatar = null, mixer = null, evAvatar = null;
 
   // Une seule promesse partagée : le préchargement et le clic sur la porte utilisent le même chargement
   let avatarPromise = null;
@@ -414,45 +405,30 @@ function createInterior(parent, o) {
 
   async function loadAvatar() {
     if (avatar) return;
-    let gltf = null, lastErr = null;
-    for (let i = 0; i < AVATAR_FILES.length && !gltf; i++) {
-      try {
-        gltf = await loadGLB(AVATAR_FILES[i]);
-      } catch (e) {
-        lastErr = e;
-        console.warn('[avatar] échec :', AVATAR_FILES[i], e);
-        setProgress(0);
-      }
-    }
-    if (!gltf) throw lastErr || new Error('avatar introuvable');
-
-    const model = gltf.scene;
-    model.traverse(function (m) { if (m.isMesh) m.frustumCulled = false; });
-
-    // Mise à l'échelle (taille debout) + pieds au sol, centrée
-    const bb = new THREE.Box3().setFromObject(model);
-    const size = new THREE.Vector3(), ctr = new THREE.Vector3();
-    bb.getSize(size); bb.getCenter(ctr);
-    const k = size.y > 0 ? AVATAR_HEIGHT / size.y : 1;
-    console.log('[avatar] taille brute', size.toArray(), '-> échelle', k, '| animations :', gltf.animations.map(function (a) { return a.name; }));
-
-    const holder = new THREE.Group();
-    model.position.set(-ctr.x, -bb.min.y, -ctr.z);
-    holder.add(model);
-    holder.scale.setScalar(k);
+    const d = AVATAR_DIR;
+    const ev = await loadMixamoAvatar({
+      model: d + 'evelyn.fbx',
+      textures: {
+        map: d + 'texture_diffuse.png', normalMap: d + 'texture_normal.png',
+        roughnessMap: d + 'texture_roughness.png', metalnessMap: d + 'texture_metallic.png'
+      },
+      animations: { idle: d + 'idle.fbx', sit: d + 'sit.fbx', sit_talk: d + 'sit_talk.fbx' },
+      height: AVATAR_HEIGHT,                                   // taille debout : l'échelle se règle toute seule
+      onProgress: function (f) { setProgress(f * 0.95); }
+    });
+    evAvatar = ev;
+    mixer = ev.mixer;                                          // la boucle du jeu fait déjà mixer.update(dt)
+    console.log('[avatar] animations :', Object.keys(ev.actions));
 
     avatar = new THREE.Group();
-    avatar.add(holder);
+    avatar.add(ev.root);
     avatar.position.set(CHAIR.x + AVATAR_OFFSET.x, AVATAR_OFFSET.y, CHAIR.z + AVATAR_OFFSET.z);
     avatar.rotation.y = AVATAR_YAW;
     avatar.userData.kind = 'therapist';
     room.add(avatar);
+    window.BadTherapistAvatar = { ev: ev, group: avatar, actions: ev.actions, play: ev.play };   // pour régler à la main dans la console (F12)
 
-    if (gltf.animations.length) {
-      mixer = new THREE.AnimationMixer(model);
-      const clip = gltf.animations.find(function (a) { return /sit|seat|chair|assis/i.test(a.name); }) || gltf.animations[0];
-      mixer.clipAction(clip).play();
-    }
+    ev.play(ev.actions.sit ? 'sit' : (ev.actions.idle ? 'idle' : 'default'));
     setProgress(1);
   }
 
@@ -473,6 +449,8 @@ function createInterior(parent, o) {
   const BUBBLE_Y = 1.65;                                     // hauteur de la bulle au-dessus de sa tête (monte-la si elle chevauche son visage)
   const bubbleV = new THREE.Vector3();
   const talk = createTherapistTalk({
+    // Pendant qu'elle parle : animation « sit_talk » ; sinon « sit »
+    onSpeak: function (on) { if (evAvatar && evAvatar.actions.sit_talk) evAvatar.play(on ? 'sit_talk' : 'sit'); },
     // Ce qu'Evelyn sait de l'instant présent (ajouté à son prompt)
     getWorld: function () {
       return [

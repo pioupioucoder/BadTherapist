@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Test avatar Evelyn</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  html,body{margin:0;height:100%;background:#101018;color:#eee;font-family:monospace;overflow:hidden}
+  #ui{position:fixed;left:10px;top:10px;z-index:2;max-width:min(520px,92vw);font-size:13px;line-height:1.5}
+  #ui button{background:#222;color:#eee;border:1px solid #888;padding:6px 10px;margin:2px;cursor:pointer;font-family:inherit}
+  #ui button.on{background:#eee;color:#000}
+  #log{white-space:pre-wrap;margin-top:8px;color:#9fd}
+  #log.err{color:#f88}
+  canvas{display:block}
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/examples/jsm/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="ui"><div id="btns">Chargement...</div><div id="log"></div></div>
+<script type="module">
+import * as THREE from 'three';
+import { loadMixamoAvatar } from './avatar-loader.js';
+
+const logEl = document.getElementById('log');
+const say = (t, err) => { logEl.textContent = t; logEl.className = err ? 'err' : ''; };
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x101018);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x333344, 1.1));
+const sun = new THREE.DirectionalLight(0xffffff, 1.6);
+sun.position.set(2, 4, 3);
+scene.add(sun);
+scene.add(new THREE.GridHelper(6, 12, 0x555577, 0x2a2a3a));
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.05, 100);
+let yaw = 0.3, pitch = 0.15, dist = 3.2;
+const target = new THREE.Vector3(0, 1.0, 0);
+function placeCamera() {
+  camera.position.set(
+    target.x + dist * Math.sin(yaw) * Math.cos(pitch),
+    target.y + dist * Math.sin(pitch),
+    target.z + dist * Math.cos(yaw) * Math.cos(pitch));
+  camera.lookAt(target);
+}
+placeCamera();
+let drag = false, lx = 0, ly = 0;
+addEventListener('pointerdown', e => { if (e.target.tagName === 'BUTTON') return; drag = true; lx = e.clientX; ly = e.clientY; });
+addEventListener('pointerup', () => drag = false);
+addEventListener('pointermove', e => {
+  if (!drag) return;
+  yaw -= (e.clientX - lx) * 0.01; pitch = Math.max(-0.6, Math.min(1.2, pitch + (e.clientY - ly) * 0.01));
+  lx = e.clientX; ly = e.clientY; placeCamera();
+});
+addEventListener('wheel', e => { dist = Math.max(1, Math.min(10, dist + e.deltaY * 0.004)); placeCamera(); });
+addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
+
+let ev = null;
+const clock = new THREE.Clock();
+(function loop() {
+  requestAnimationFrame(loop);
+  if (ev) ev.update(Math.min(clock.getDelta(), 0.1)); else clock.getDelta();
+  renderer.render(scene, camera);
+})();
+
+// combien de pistes d'une animation ne trouvent PAS leur os sur le personnage (0 = parfait)
+function unresolved(model, clip) {
+  let bad = 0;
+  clip.tracks.forEach(t => {
+    const node = THREE.PropertyBinding.parseTrackName(t.name).nodeName;
+    if (!THREE.PropertyBinding.findNode(model, node)) bad++;
+  });
+  return bad + '/' + clip.tracks.length;
+}
+
+(async () => {
+  try {
+    const dir = 'avatars/evelyn/';
+    ev = await loadMixamoAvatar({
+      model: dir + 'evelyn.fbx',
+      textures: {
+        map: dir + 'texture_diffuse.png', normalMap: dir + 'texture_normal.png',
+        roughnessMap: dir + 'texture_roughness.png', metalnessMap: dir + 'texture_metallic.png'
+      },
+      animations: { idle: dir + 'idle.fbx', sit: dir + 'sit.fbx', sit_talk: dir + 'sit_talk.fbx' }
+    });
+    scene.add(ev.root);
+
+    const size = new THREE.Box3().setFromObject(ev.root).getSize(new THREE.Vector3());
+    const names = Object.keys(ev.actions);
+    const lines = ['Hauteur du personnage : ' + size.y.toFixed(2) + ' m  (attendu : environ 1.6 a 1.8)'];
+    names.forEach(n => { lines.push('animation « ' + n + ' » : pistes sans os = ' + unresolved(ev.model, ev.actions[n].getClip())); });
+    lines.push('(« 0/xxx » = ca marche ; un nombre eleve = les os ne portent pas les memes noms)');
+    say(lines.join('\n'));
+
+    const box = document.getElementById('btns');
+    box.textContent = '';
+    names.forEach(n => {
+      const b = document.createElement('button');
+      b.textContent = n;
+      b.onclick = () => { ev.play(n); [...box.children].forEach(c => c.classList.toggle('on', c === b)); };
+      box.appendChild(b);
+    });
+    if (names.length) { ev.play(names[0]); box.children[0].classList.add('on'); }
+  } catch (e) {
+    document.getElementById('btns').textContent = 'Erreur';
+    say(String(e && e.message ? e.message : e), true);
+    console.error(e);
+  }
+})();
+</script>
+</body>
+</html>
