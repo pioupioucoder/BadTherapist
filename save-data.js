@@ -86,8 +86,12 @@
         return origGet.call(this, k);
     };
     proto.setItem = function (k, v) {
-        if (this === localStorage && FIELD_OF[k]) k = physKey(FIELD_OF[k], pageProfile);
-        return origSet.call(this, k, v);
+        const field = this === localStorage ? FIELD_OF[k] : undefined;
+        if (field) k = physKey(field, pageProfile);
+        const result = origSet.call(this, k, v);
+        // profil admin : toute écriture de progression (sauf la simple position du joueur) planifie une synchro
+        if (field && field !== 'player' && pageProfile === 'admin') scheduleSync();
+        return result;
     };
     proto.removeItem = function (k) {
         if (this === localStorage && FIELD_OF[k]) k = physKey(FIELD_OF[k], pageProfile);
@@ -247,7 +251,266 @@
         return hasProgress('player') ? 'adopt' : 'missing';
     }
 
+    // ─── Synchronisation automatique du profil ADMIN (compte Google via Firebase, gratuit) ───
+    // Colle ici la config de ton projet Firebase (ces valeurs ne sont PAS secrètes : la sécurité vient
+    // des règles Firestore, qui n'autorisent que TON compte Google). Voir les étapes données dans le chat.
+    const FIREBASE_CONFIG = {
+        apiKey: 'AIzaSyCDF19H621_R0mJcYWAbHfGVADqUPQTb68',
+        authDomain: 'badtherapist-7bc8a.firebaseapp.com',
+        projectId: 'badtherapist-7bc8a',
+        appId: '1:986871133548:web:8584ac9d59411d00d72f49'
+    };
+
+    const FB_VERSION = '10.14.1';
+    const FB_COLLECTION = 'adminSave';          // meta + un document par morceau de champ
+    const CHUNK_SIZE = 700000;                  // un document Firestore est limité à ~1 Mo : on découpe
+    const SYNC_ON_KEY = 'bt_sync_on';           // '1' = ce navigateur est connecté à la synchro
+    const SYNC_REV_KEY = 'bt_sync_rev';         // dernière version du cloud vue par CE navigateur
+    const SYNC_DIRTY_KEY = 'bt_sync_dirty';     // '1' = changements locaux pas encore envoyés
+    const SYNC_DELAY = 5000;                    // délai avant envoi automatique (ms)
+    const lastPushed = {};                      // champ -> dernière valeur connue du cloud
+    let fbPromise = null;
+    let syncTimer = null;
+    let syncBusy = false;
+
+    function syncAvailable() {
+        return !!(FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.projectId && FIREBASE_CONFIG.appId);
+    }
+
+    function syncIsDirty() { return rawGet(SYNC_DIRTY_KEY) === '1'; }
+
+    // Firebase est chargé à la demande (rien n'est téléchargé pour un joueur normal)
+    function loadFirebase() {
+        if (!fbPromise) {
+            const base = 'https://www.gstatic.com/firebasejs/' + FB_VERSION + '/';
+            fbPromise = Promise.all([
+                import(base + 'firebase-app.js'),
+                import(base + 'firebase-auth.js'),
+                import(base + 'firebase-firestore.js')
+            ]).then(function (m) {
+                const app = m[0].initializeApp(FIREBASE_CONFIG);
+                return { auth: m[1].getAuth(app), a: m[1], db: m[2].getFirestore(app), f: m[2] };
+            });
+            fbPromise.catch(function () { fbPromise = null; });
+        }
+        return fbPromise;
+    }
+
+    async function currentUser() {
+        const fb = await loadFirebase();
+        await fb.auth.authStateReady();
+        if (fb.auth.currentUser) rawSet(SYNC_ON_KEY, '1');
+        return fb.auth.currentUser;
+    }
+
+    function errCode(e) { return (e && (e.code || e.message)) || 'error'; }
+
+    // { available, user: email | null }
+    async function syncStatus() {
+        if (!syncAvailable()) return { available: false, user: null };
+        try {
+            const user = await currentUser();
+            return { available: true, user: user ? (user.email || 'Google account') : null };
+        } catch (e) {
+            return { available: true, user: null, error: errCode(e) };
+        }
+    }
+
+    async function syncSignIn() {
+        if (!syncAvailable()) return { ok: false, error: 'not-configured' };
+        try {
+            const fb = await loadFirebase();
+            const provider = new fb.a.GoogleAuthProvider();
+            try {
+                await fb.a.signInWithPopup(fb.auth, provider);
+            } catch (e) {
+                const c = errCode(e);
+                if (c === 'auth/popup-blocked' || c === 'auth/operation-not-supported-in-this-environment') {
+                    await fb.a.signInWithRedirect(fb.auth, provider);   // téléphone : la page est quittée puis revient
+                    return { ok: true, redirect: true };
+                }
+                throw e;
+            }
+            rawSet(SYNC_ON_KEY, '1');
+            return { ok: true };
+        } catch (e) {
+            return { ok: false, error: errCode(e) };
+        }
+    }
+
+    async function syncSignOut() {
+        try {
+            const fb = await loadFirebase();
+            await fb.a.signOut(fb.auth);
+        } catch (e) { /* on déconnecte quand même localement */ }
+        [SYNC_ON_KEY, SYNC_REV_KEY, SYNC_DIRTY_KEY].forEach(rawRemove);
+    }
+
+    function blobToBase64(blob) {
+        return new Promise(function (resolve, reject) {
+            const reader = new FileReader();
+            reader.onload = function () { resolve(String(reader.result).split(',')[1] || ''); };
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+        });
+    }
+
+    function pack(str) {
+        const stream = new Blob([str]).stream().pipeThrough(new CompressionStream('gzip'));
+        return new Response(stream).blob().then(blobToBase64);
+    }
+
+    function unpack(b64) {
+        const bin = atob(String(b64).trim());
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+        return new Response(stream).text();
+    }
+
+    function scheduleSync() {
+        if (!syncAvailable() || rawGet(SYNC_ON_KEY) !== '1') return;
+        rawSet(SYNC_DIRTY_KEY, '1');
+        clearTimeout(syncTimer);
+        syncTimer = setTimeout(function () { syncPush().catch(function () {}); }, SYNC_DELAY);
+    }
+
+    // Envoie le profil admin vers le cloud.
+    // Résultat : { ok:true } | { ok:false, conflict:true } | { ok:false, error:'...' }
+    // force = true : écrase le cloud sans vérifier (après confirmation)
+    async function syncPush(force) {
+        if (!syncAvailable()) return { ok: false, error: 'not-configured' };
+        if (syncBusy) return { ok: false, error: 'busy' };
+        syncBusy = true;
+        try {
+            const user = await currentUser();
+            if (!user) return { ok: false, error: 'signed-out' };
+
+            const snap = snapshot('admin');
+            if (!hasProgressIn(snap)) return { ok: true, nothing: true };   // jamais écraser le cloud avec du vide
+
+            const fb = await loadFirebase();
+            const f = fb.f;
+            const metaRef = f.doc(fb.db, FB_COLLECTION, 'meta');
+            const metaSnap = await f.getDoc(metaRef);
+            const meta = metaSnap.exists() ? metaSnap.data() : null;
+            const rev = rawGet(SYNC_REV_KEY);
+            if (!force && meta && String(meta.rev) !== rev) return { ok: false, conflict: true };
+
+            const inSync = !!meta && String(meta.rev) === rev;
+            const chunks = Object.assign({}, meta && meta.chunks);
+
+            for (const field of PROGRESS) {
+                const v = snap[field];
+                if (inSync && lastPushed[field] === v) continue;            // inchangé depuis le dernier envoi
+                const oldCount = chunks[field] || 0;
+                const packed = v === '' ? '' : await pack(v);
+                const count = packed === '' ? 0 : Math.ceil(packed.length / CHUNK_SIZE);
+                for (let i = 0; i < count; i++) {
+                    await f.setDoc(f.doc(fb.db, FB_COLLECTION, field + '__' + i),
+                        { d: packed.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE) });
+                }
+                for (let i = count; i < oldCount; i++) {
+                    await f.deleteDoc(f.doc(fb.db, FB_COLLECTION, field + '__' + i));
+                }
+                chunks[field] = count;
+            }
+
+            const newRev = String(Date.now());
+            await f.setDoc(metaRef, { rev: newRev, chunks: chunks });    // en dernier : les autres appareils ne voient la nouvelle version qu'une fois tout écrit
+
+            PROGRESS.forEach(function (field) { lastPushed[field] = snap[field]; });
+            rawSet(SYNC_REV_KEY, newRev);
+            rawRemove(SYNC_DIRTY_KEY);
+            markAdminClean();
+            return { ok: true };
+        } catch (e) {
+            return { ok: false, error: errCode(e) };
+        } finally {
+            syncBusy = false;
+        }
+    }
+
+    // Télécharge le cloud dans le profil admin (écrase la progression admin locale).
+    // onlyIfClean = true : abandonne si le jeu a écrit quelque chose entre-temps.
+    // Résultat : { ok:true, empty? } | { ok:false, error:'...' }
+    async function syncPull(onlyIfClean) {
+        if (!syncAvailable()) return { ok: false, error: 'not-configured' };
+        try {
+            const user = await currentUser();
+            if (!user) return { ok: false, error: 'signed-out' };
+
+            const fb = await loadFirebase();
+            const f = fb.f;
+            const metaSnap = await f.getDoc(f.doc(fb.db, FB_COLLECTION, 'meta'));
+            if (!metaSnap.exists()) return { ok: true, empty: true };
+            const meta = metaSnap.data();
+
+            const data = {};
+            let found = 0;
+            for (const field of PROGRESS) {
+                const count = (meta.chunks && meta.chunks[field]) || 0;
+                if (!count) continue;
+                let packed = '';
+                for (let i = 0; i < count; i++) {
+                    const part = await f.getDoc(f.doc(fb.db, FB_COLLECTION, field + '__' + i));
+                    if (!part.exists()) throw new Error('missing-chunk');
+                    packed += part.data().d;
+                }
+                data[field] = await unpack(packed);
+                found++;
+            }
+            if (!found) return { ok: true, empty: true };    // cloud vide : on ne touche à rien en local
+            if (onlyIfClean && syncIsDirty()) return { ok: false, error: 'dirty' };
+
+            writeProgress('admin', data);
+            PROGRESS.forEach(function (field) { lastPushed[field] = data[field] || ''; });
+            rawSet(SYNC_REV_KEY, String(meta.rev));
+            rawRemove(SYNC_DIRTY_KEY);
+            markAdminClean();
+            return { ok: true };
+        } catch (e) {
+            return { ok: false, error: errCode(e) };
+        }
+    }
+
+    // À l'ouverture d'une page en mode admin : si un autre appareil a synchronisé du neuf, on le récupère
+    // tout seul (puis la page se recharge une fois). Jamais si ce navigateur a des changements non envoyés,
+    // ni s'il n'a encore jamais été synchronisé (la 1re synchro se fait à la main dans SETTINGS).
+    async function autoPull() {
+        if (pageProfile !== 'admin' || !syncAvailable() || rawGet(SYNC_ON_KEY) !== '1') return;
+        if (syncIsDirty() || rawGet(SYNC_REV_KEY) === null) return;
+        if (sessionStorage.getItem('bt_sync_reloaded') === '1') { sessionStorage.removeItem('bt_sync_reloaded'); return; }
+
+        const user = await currentUser();
+        if (!user) return;
+        const fb = await loadFirebase();
+        const metaSnap = await fb.f.getDoc(fb.f.doc(fb.db, FB_COLLECTION, 'meta'));
+        if (!metaSnap.exists() || String(metaSnap.data().rev) === rawGet(SYNC_REV_KEY)) return;
+
+        const res = await syncPull(true);
+        if (res.ok && !res.empty) {
+            sessionStorage.setItem('bt_sync_reloaded', '1');
+            location.reload();
+        }
+    }
+    autoPull().catch(function () {});
+
+    // Envoi de dernière minute quand on quitte la page (au mieux : les envois sont déjà faits après 5 s)
+    document.addEventListener('visibilitychange', function () {
+        if (document.visibilityState === 'hidden' && pageProfile === 'admin' && syncIsDirty() && rawGet(SYNC_ON_KEY) === '1') {
+            clearTimeout(syncTimer);
+            syncPush().catch(function () {});
+        }
+    });
+
     window.BadTherapistSave = {
+        syncStatus: syncStatus,
+        syncSignIn: syncSignIn,
+        syncSignOut: syncSignOut,
+        syncIsDirty: syncIsDirty,
+        syncPush: syncPush,
+        syncPull: syncPull,
         KEYS: KEYS,
         PUSHED_FILE: PUSHED_FILE,
         collect: collect,

@@ -742,6 +742,30 @@ nav a:hover::before {
         busy = true;
         eye.classList.add('blink');                 // l'œil se ferme pendant qu'on cherche ta sauvegarde
 
+        // Rien en local mais synchro cloud disponible (nouvel appareil, navigation privée) : connexion Google, puis chargement du cloud
+        if (Save.syncAvailable() && !Save.hasProgress('admin')) {
+            const st = await Save.syncStatus();
+            const notFound = (text) => openModal(text, [{ label: 'OK', action: () => {} }]);
+
+            if (st.user) {
+                const res = await Save.syncPull();
+                if (res.ok && !res.empty) { Save.switchTo('admin'); return enterGame(); }
+                // cloud vide ou erreur : on continue avec l'ancien chemin ci-dessous
+            } else {
+                return openModal('No admin save in this browser. Sign in with Google to load your cloud save.', [
+                    { label: 'SIGN IN WITH GOOGLE', action: async () => {
+                        const r = await Save.syncSignIn();
+                        if (r.redirect) { Save.switchTo('admin'); return; }   // téléphone : la page revient connectée et charge le cloud
+                        if (!r.ok) return notFound('Sign-in failed (' + r.error + ').');
+                        const res = await Save.syncPull();
+                        if (res.ok && !res.empty) { Save.switchTo('admin'); return enterGame(); }
+                        notFound(res.ok ? 'Signed in, but the cloud save is empty.' : 'Cloud sync failed (' + res.error + ').');
+                    } },
+                    { label: 'CANCEL', action: () => {} }
+                ]);
+            }
+        }
+
         const pushed = await Save.fetchPushed();
         const plan = Save.adminPlan(pushed);
 

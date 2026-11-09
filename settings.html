@@ -202,6 +202,11 @@
             display: none;
         }
 
+        [hidden] {
+            display: none !important;
+        }
+
+
         .hint {
             margin-top: 16px;
             color: var(--gray);
@@ -266,7 +271,7 @@
                 </div>
             </section>
 
-            <section class="section">
+            <section class="section" id="player-save-section">
                 <h2>SAVE DATA</h2>
 
                 <div class="button-group">
@@ -274,6 +279,25 @@
                     <button id="import-button" type="button">IMPORT</button>
                     <input type="file" id="import-file" accept=".json,application/json">
                 </div>
+            </section>
+
+            <section class="section" id="admin-sync-section" hidden>
+                <h2>CLOUD SYNC</h2>
+
+                <div id="sync-signed-out" hidden>
+                    <div class="button-group">
+                        <button id="sync-signin" type="button">SIGN IN WITH GOOGLE</button>
+                    </div>
+                </div>
+
+                <div id="sync-signed-in" hidden>
+                    <div class="button-group">
+                        <button id="sync-now" type="button">SYNC NOW</button>
+                        <button id="sync-signout" class="danger" type="button">SIGN OUT</button>
+                    </div>
+                </div>
+
+                <p class="hint" id="sync-status"></p>
             </section>
 
             <section class="section">
@@ -367,6 +391,95 @@
                 window.BadTherapistAudio.setMuted(muted);
             }
         });
+
+        // CLOUD SYNC (profil admin uniquement : à la place d'EXPORT / IMPORT)
+        if (Save && Save.activeProfile() === 'admin') {
+            const playerSection = document.getElementById('player-save-section');
+            const syncSection = document.getElementById('admin-sync-section');
+            const signedOutBox = document.getElementById('sync-signed-out');
+            const signedInBox = document.getElementById('sync-signed-in');
+            const statusEl = document.getElementById('sync-status');
+
+            playerSection.hidden = true;
+            syncSection.hidden = false;
+
+            const say = (text) => { statusEl.textContent = text; };
+
+            const errorText = (err) => {
+                if (err === 'not-configured') return 'Firebase is not configured yet (see FIREBASE_CONFIG in save-data.js).';
+                if (err === 'auth/unauthorized-domain') return 'This site is not an authorized domain in Firebase (Authentication > Settings).';
+                if (err === 'auth/popup-closed-by-user' || err === 'auth/cancelled-popup-request') return 'Sign-in cancelled.';
+                if (err === 'permission-denied') return 'Access refused. Check the Firestore rules: only your Google account must be allowed.';
+                if (err === 'signed-out') return 'You are signed out. Sign in again.';
+                return 'Sync failed (' + err + '). Check your connection and try again.';
+            };
+
+            const refresh = async () => {
+                say('Loading...');
+                const st = await Save.syncStatus();
+                if (!st.available) {
+                    signedOutBox.hidden = true;
+                    signedInBox.hidden = true;
+                    say(errorText('not-configured'));
+                    return;
+                }
+                signedOutBox.hidden = !!st.user;
+                signedInBox.hidden = !st.user;
+                if (st.user) say('Signed in as ' + st.user + '. ' + (Save.syncIsDirty() ? 'Changes not sent yet.' : 'Auto sync is on.'));
+                else say(st.error ? errorText(st.error) : 'Sign in once with your Google account. It stays signed in on this browser.');
+            };
+            refresh();
+
+            // Première synchro / synchro manuelle
+            const runSync = async () => {
+                const button = document.getElementById('sync-now');
+                button.disabled = true;
+                say('Syncing...');
+
+                try {
+                    let res = await Save.syncPush(false);
+
+                    if (res.conflict) {
+                        // Le cloud a une autre version que celle vue par ce navigateur
+                        if (window.confirm('The cloud save is different from this browser.\n\nOK = DOWNLOAD the cloud save (replaces this browser\'s admin progress).\nCancel = see the other option.')) {
+                            res = await Save.syncPull();
+                            if (res.ok) { alert('Cloud save loaded.'); location.reload(); return; }
+                        } else if (window.confirm('Overwrite the CLOUD with this browser\'s admin save instead?\n\nThe cloud version will be replaced.')) {
+                            res = await Save.syncPush(true);
+                        } else {
+                            say('Nothing changed.');
+                            return;
+                        }
+                    } else if (res.ok && res.nothing) {
+                        // Rien en local : on récupère le cloud
+                        res = await Save.syncPull();
+                        if (res.ok && !res.empty) { alert('Cloud save loaded.'); location.reload(); return; }
+                    }
+
+                    say(res.ok ? 'Synced.' : errorText(res.error));
+                } finally {
+                    button.disabled = false;
+                    if (statusEl.textContent === 'Synced.') setTimeout(refresh, 2500);
+                }
+            };
+
+            document.getElementById('sync-now').addEventListener('click', runSync);
+
+            document.getElementById('sync-signin').addEventListener('click', async () => {
+                say('Opening Google sign-in...');
+                const res = await Save.syncSignIn();
+                if (res.redirect) return;                 // la page est quittée puis revient connectée
+                if (!res.ok) { say(errorText(res.error)); return; }
+                await refresh();
+                runSync();                                // 1re synchro tout de suite
+            });
+
+            document.getElementById('sync-signout').addEventListener('click', async () => {
+                if (!window.confirm('Sign out? Auto sync stops on this browser. Your local admin save stays as it is.')) return;
+                await Save.syncSignOut();
+                refresh();
+            });
+        }
 
         // EXPORT SAVE DATA
         document.getElementById('export').addEventListener('click', () => {
