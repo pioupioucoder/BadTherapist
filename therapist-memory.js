@@ -58,6 +58,8 @@ function blank() {
         lastCallAt: 0,
         missed: 0,        // appels d'Evelyn restés sans réponse (remis à 0 quand il décroche)
         dialed: 0,        // fois où le patient l'a appelée lui-même
+        price: '',        // tarif négocié avec le patient (vide = pas encore fixé)
+        callAttempts: 0,  // fois où elle lui a parlé au téléphone (ou lui à elle) : sert au tout premier contact
         lastSeenAt: 0,    // dernière fois (heure réelle) où le patient était dans le jeu
         voicemails: [],   // [{ id, at, text, heard }]  messages vocaux qu'ELLE lui a laissés
         leftMsgs: [],     // [{ at, text, read }]       messages que LUI lui a laissés sur son répondeur
@@ -104,6 +106,8 @@ function clean(raw) {
     m.lastCallAt = Number(raw.lastCallAt) || 0;
     m.missed = Math.max(0, Math.min(999, Math.floor(Number(raw.missed)) || 0));
     m.dialed = Math.max(0, Math.min(9999, Math.floor(Number(raw.dialed)) || 0));
+    m.price = txt(raw.price, 60);
+    m.callAttempts = Math.max(0, Math.min(9999, Math.floor(Number(raw.callAttempts)) || 0));
     m.lastSeenAt = Number(raw.lastSeenAt) || 0;
     m.voicemails = asArray(raw.voicemails).filter(function (x) { return x && typeof x === 'object'; }).map(function (x) {
         return { id: txt(x.id, 40), at: Number(x.at) || 0, text: txt(x.text, 600), heard: x.heard === true };
@@ -323,6 +327,28 @@ function noteMissedCall(retry) {
     save();
 }
 
+// Le tarif sur lequel ils se sont mis d'accord (négocié par Evelyn elle-même au téléphone)
+function setPrice(p) {
+    const t = txt(p, 60);
+    if (!t) return false;
+    get().price = t;
+    save();
+    return true;
+}
+
+function noteCallAttempt() {
+    get().callAttempts += 1;
+    save();
+}
+
+// Vrai UNIQUEMENT pour un tout nouveau joueur : aucune séance, aucun appel, aucun prénom, rien d'agendé.
+// (une sauvegarde qui a déjà vécu quelque chose, comme ton profil admin, ne passe jamais ici)
+function needsFirstCall() {
+    const m = get();
+    return m.sessions === 0 && m.calls === 0 && m.callAttempts === 0 && m.missed === 0 && !m.dialed &&
+        !m.nextCall && !m.price && !m.playerName && !m.summary && !m.facts.length;
+}
+
 // Le patient l'a appelée lui-même alors qu'un appel d'elle était dû : on le considère comme réglé
 function clearDueCall() {
     const m = get();
@@ -493,6 +519,9 @@ export const Mem = {
     humanize: humanize,
     noteDialed: noteDialed,
     clearDueCall: clearDueCall,
+    setPrice: setPrice,
+    noteCallAttempt: noteCallAttempt,
+    needsFirstCall: needsFirstCall,
     promptBlock: promptBlock,
     exportData: exportData,
     importData: importData,

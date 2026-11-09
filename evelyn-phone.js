@@ -19,6 +19,7 @@ const BUILDING_WORLDS = ['bedroom.js', 'corridor.js', 'elevator.js', 'rdc.js', '
 const CHECK_MS = 4000;          // le jeu regarde toutes les 4 s si le téléphone doit sonner
 const RING_MS = 30000;          // il sonne 30 s, puis reste « appel manqué » jusqu'à ce qu'on le rappelle
 const RETRY_AFTER_MS = 60000;   // si le joueur raccroche trop tôt, ça resonne 1 min plus tard
+const FIRST_CALL_MS = 20000;    // un TOUT NOUVEAU joueur : Evelyn l'appelle ~20 s après son arrivée dans l'immeuble
 const IMPULSE_MS = 600000;      // toutes les 10 min (jeu ouvert), Evelyn se demande si elle a envie d'appeler
 
 const CSS = `
@@ -139,6 +140,8 @@ function answer() {
 
 function tick() {
     if (inCall || document.hidden) return;
+    // TOUT NOUVEAU joueur seulement (Mem.needsFirstCall() est faux pour toute sauvegarde déjà vécue) : elle l'appelle la première fois
+    if (inBuilding() && Mem.needsFirstCall()) Mem.setCallAt(Date.now() + FIRST_CALL_MS, 'première prise de contact');
     if (!Mem.callDue() || !inBuilding()) { stopRinging(); hideUi(); ringStart = 0; return; }
     if (Date.now() < nextTry) return;
     if (!ringStart) { ringStart = Date.now(); missedLogged = false; }
@@ -175,25 +178,19 @@ function buildPhoneButton() {
     setInterval(refresh, 5000);
 }
 
-// Le patient compose son numéro (clic sur le téléphone de la chambre, ou bouton CALL du portable)
-async function dialEvelyn() {
-    if (inCall || !item) return;
-    inCall = true;
-    stopRinging();
-    hideUi();
-    let r = null;
-    try { r = await item.callNow(); } catch (e) { r = null; }
-    if (!r || !r.answered) inCall = false;       // si elle a décroché, onCallEnd(..., 'out') libérera
-}
+// Le portable prévient ce fichier quand le joueur lance / termine un appel vers Evelyn
+function onDialStart() { inCall = true; stopRinging(); hideUi(); }
+function onDialResult(r) { if (!r || !r.answered) inCall = false; }     // si elle a décroché, onCallEnd(..., 'out') libère
 
 function startLife() {
     if (life) return;
     const t = getTalk();
     life = createEvelynLife({ talk: t, getGameTime: gameTime });
-    item = createPhoneItem({ talk: t, life: life, getGameTime: gameTime });
+    item = createPhoneItem({ talk: t, life: life, getGameTime: gameTime, onCallStart: onDialStart, onCallResult: onDialResult });
     life.start();
     buildPhoneButton();
-    window.addEventListener('badtherapist:phone-dial', dialEvelyn);     // émis par phone.js quand on clique le téléphone au repos
+    // cliquer le téléphone de la chambre (au repos) OUVRE le portable : journal d'appels, messages, bouton CALL. Ça n'appelle pas.
+    window.addEventListener('badtherapist:phone-dial', function () { if (item && !inCall) item.open(); });
     setInterval(function () {
         if (inCall || document.hidden || !inBuilding() || Mem.callDue()) return;
         t.considerCall().catch(function () { /* rien */ });              // si elle en a envie, Mem.callDue() devient vrai et le téléphone sonne
@@ -206,7 +203,7 @@ setInterval(tick, CHECK_MS);
 // Pour tester dans la console : BadTherapistEvelyn.callNow()
 window.BadTherapistEvelyn = {
     callNow: function () { Mem.scheduleCall(0.0001, 'test call'); const m = Mem.get(); m.nextCall.dueAt = Date.now() - 1; Mem.importData(m); nextTry = 0; ringStart = 0; tick(); },
-    dial: dialEvelyn,
+    dial: function () { return item ? item.callNow() : null; },
     sync: function () { return life ? life.sync() : null; },
     status: function () { return { due: Mem.callDue(), nextCall: Mem.get().nextCall, world: currentWorld() }; }
 };

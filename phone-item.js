@@ -195,6 +195,7 @@ export function createPhoneItem(opts) {
     async function callNow() {
         if (calling || !talk || (talk.isOpen && talk.isOpen())) return null;
         calling = true;
+        if (opts.onCallStart) opts.onCallStart();
         note = '';
         tab = 'home';
         show();
@@ -202,6 +203,7 @@ export function createPhoneItem(opts) {
         let r = { answered: false };
         try { r = await talk.openDial(); } catch (e) { r = { answered: false }; }
         calling = false;
+        if (opts.onCallResult) opts.onCallResult(r);
         if (r && r.answered) { hide(); return r; }
         note = r && r.busy ? '' : 'It rings... nobody picks up. Leave a message?';
         show();
