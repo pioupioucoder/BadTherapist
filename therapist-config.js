@@ -30,6 +30,7 @@ export const THERAPIST_CONFIG = {
   sessionPrice: '50 dollars',                // le tarif qu'elle a fait accepter au téléphone avant la séance, et qu'elle réclame à la fin
   callTimeScale: 1,                          // 1 = ses délais de rappel sont en heures réelles. Pour tester : 0.02 (« demain » ≈ 30 min... mets 0.001 pour quelques secondes)
   typeSpeedMs: 34,                           // vitesse d'affichage des lettres
+  thinkEveryMin: 15,                         // toutes les ~15 min (jeu ouvert), elle décide librement : penser, appeler, laisser un message, ou rien
   lifeEnabled: true,                         // le Worker la fait « vivre » quand le jeu est fermé (messages vocaux, appels décidés seule)
   lifeSyncSec: 120,                          // le jeu se synchronise avec le Worker toutes les 2 min
   evelynNumber: '555-0142',                  // son numéro, affiché sur le téléphone portable

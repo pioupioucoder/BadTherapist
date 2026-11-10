@@ -50,7 +50,7 @@ const DEFAULT_LINES = {
 };
 
 // ─── Forme technique des réponses (aucune consigne de comportement ici) ───
-const MEMORY_FORM = `{"remember":[],"forget":[],"private":[],"will":null,"habits":null,"self":null,"feeling":null,"player_name":null}`;
+const MEMORY_FORM = `{"remember":[],"forget":[],"private":[],"will":null,"habits":null,"self":null,"feeling":null,"player_name":null,"thought":null,"recall":null}`;
 
 const FORM_RULES = [
     `---`,
@@ -67,9 +67,11 @@ const FORM_RULES = [
     `    self : comment tu te vois toi-même en ce moment, ou null.`,
     `    feeling : ce que tu ressens, ou null.`,
     `    player_name : son prénom, si tu l'apprends et veux le garder, sinon null.`,
+    `    thought : ce que tu penses sans le dire (ton monologue intérieur, gardé dans ton journal), ou null.`,
+    `    recall : quelques mots-clés pour relire de vieux souvenirs (ils te reviendront en tête à ta prochaine réponse), ou null.`,
     `- "end" : true pour mettre fin à la conversation en cours.`,
     `- "agreed_price" : un tarif sur lequel vous vous mettez d'accord (ex. "60 dollars"), sinon null.`,
-    `- "voicemail" : un message vocal que tu laisses sur le téléphone de la personne, qu'elle écoutera quand elle voudra, sinon null.`
+    `- "voicemail" : un message vocal que tu laisses sur le téléphone de la personne, qu'elle écoutera quand elle voudra, sinon null. Tes derniers messages sont dans tes notes : inutile de répéter ce que tu as déjà laissé.`
 ].join('\n');
 
 // Ce qu'elle peut faire dans son monde : court (chaque mot coûte du quota), aucune obligation
@@ -87,7 +89,7 @@ const SESSION_RULES = [
     `TES OUTILS DE THÉRAPEUTE (des savoir-faire propres à ton métier : jamais des obligations, tu es libre de ne pas les utiliser) :`,
     `- ton minuteur invisible : tu sais depuis combien de temps vous parlez, et tu peux fixer une durée prévue ("session_minutes", entre 5 et 180) ;`,
     `- mener une séance et y mettre fin quand tu le décides, ou ne jamais la finir ("end") ;`,
-    `- décider quand revoir la personne ("next_call_hours" en heures : 24 = demain, 72 = trois jours, 168 = une semaine ; "next_call_note" pour dire pourquoi) ;`,
+    `- décider quand revoir la personne ("next_call_hours" : un nombre d'heures, comme tu le sens ; "next_call_note" pour dire pourquoi) ;`,
     `- convenir d'un tarif, si tu le veux ("agreed_price").`
 ].join('\n');
 
@@ -135,7 +137,7 @@ const REFLECT_RULES = [
     `LA CONVERSATION EST FINIE : la personne est partie. Le message suivant est le déroulé de cette conversation.`,
     `Tu peux relire et mettre TA mémoire à jour, seule chez toi.`,
     `Réponds UNIQUEMENT par un objet JSON valide, sans texte autour et sans \`\`\` :`,
-    `{"summary":"…","lastSession":"…","self":"…","next_call_hours":null,"next_call_note":null,"memory":{"remember":[],"forget":[],"private":[],"will":null,"habits":null,"feeling":null,"player_name":null}}`,
+    `{"summary":"…","lastSession":"…","self":"…","next_call_hours":null,"next_call_note":null,"memory":{"remember":[],"forget":[],"private":[],"will":null,"habits":null,"feeling":null,"player_name":null,"thought":null,"recall":null}}`,
     `- summary : le résumé CUMULATIF de votre histoire (reprends l'ancien et intègre cette conversation), 900 caractères maximum.`,
     `- lastSession : 1 à 2 phrases sur cette conversation et sur la suite que tu voudrais.`,
     `- self : comment tu te vois toi-même maintenant (1 à 2 phrases). Tu peux avoir changé.`,
@@ -367,10 +369,15 @@ export function createTherapistTalk(opts) {
     }
     function withLang(t) { return t.replace(/@@LANG@@/g, langRule()); }
 
+    // Les derniers mots échangés : ils font remonter les souvenirs qui leur ressemblent
+    function recentHint() {
+        return history.slice(-4).map(function (m) { return m.text; }).join(' ');
+    }
+
     function systemPrompt(kind, extra) {
         const parts = [context || '', worldText()];
         if (kind === 'session') parts.push(timeBlock());
-        parts.push(priceLine(), timeAware(), Mem.promptBlock(), relationBlock());
+        parts.push(priceLine(), timeAware(), Mem.promptBlock(recentHint()), relationBlock());
         if (kind === 'session') parts.push(FORM_RULES + '\n' + POSSIBILITIES + '\n' + SESSION_RULES);
         else if (kind === 'call') parts.push(FORM_RULES, POSSIBILITIES, CALL_RULES, contactRules());
         else if (kind === 'dial') parts.push(FORM_RULES, POSSIBILITIES, DIAL_RULES, contactRules());
@@ -945,7 +952,7 @@ export function createTherapistTalk(opts) {
         if (isOpenFlag || reflecting || mode !== 'session') return null;
         const m = Mem.get();
         if (m.nextCall && m.nextCall.dueAt <= Date.now()) return null;           // un appel est déjà dû
-        if (Date.now() - lastConsider < 600000 * (cfg.callTimeScale || 1)) return null;
+        if (Date.now() - lastConsider < 0.9 * (cfg.thinkEveryMin || 15) * 60000 * (cfg.callTimeScale || 1)) return null;
         lastConsider = Date.now();
         await load();
         if (!canAsk()) return null;

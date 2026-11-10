@@ -21,7 +21,7 @@ const RING_MS = 30000;          // il sonne 30 s, puis reste « appel manqué »
 const RETRY_AFTER_MS = 60000;   // si le joueur raccroche trop tôt, ça resonne 1 min plus tard
 const FIRST_CALL_MS = 20000;    // (utilisé seulement si AUTO_FIRST_CALL est vrai)
 const AUTO_FIRST_CALL = false;  // false : plus d'appel automatique au début, Evelyn décide seule si et quand elle appelle
-const IMPULSE_MS = 600000;      // toutes les 10 min (jeu ouvert), Evelyn se demande si elle a envie d'appeler
+const IMPULSE_MS = 900000;      // toutes les 15 min (jeu ouvert), Evelyn se demande librement ce qu'elle a envie de faire (voir thinkEveryMin)
 
 const CSS = `
 .evp{position:fixed;right:14px;top:14px;z-index:220;display:none;background:#050505;color:#f2f2f2;border:3px solid #f2f2f2;box-shadow:0 0 0 3px #000;
