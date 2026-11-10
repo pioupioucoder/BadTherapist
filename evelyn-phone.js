@@ -19,7 +19,8 @@ const BUILDING_WORLDS = ['bedroom.js', 'corridor.js', 'elevator.js', 'rdc.js', '
 const CHECK_MS = 4000;          // le jeu regarde toutes les 4 s si le téléphone doit sonner
 const RING_MS = 30000;          // il sonne 30 s, puis reste « appel manqué » jusqu'à ce qu'on le rappelle
 const RETRY_AFTER_MS = 60000;   // si le joueur raccroche trop tôt, ça resonne 1 min plus tard
-const FIRST_CALL_MS = 20000;    // un TOUT NOUVEAU joueur : Evelyn l'appelle ~20 s après son arrivée dans l'immeuble
+const FIRST_CALL_MS = 20000;    // (utilisé seulement si AUTO_FIRST_CALL est vrai)
+const AUTO_FIRST_CALL = false;  // false : plus d'appel automatique au début, Evelyn décide seule si et quand elle appelle
 const IMPULSE_MS = 600000;      // toutes les 10 min (jeu ouvert), Evelyn se demande si elle a envie d'appeler
 
 const CSS = `
@@ -112,7 +113,7 @@ function getTalk() {
     if (talk) return talk;
     talk = createTherapistTalk({
         getWorld: function () {
-            return ['Tu appelles le patient sur le téléphone de son appartement, dans l\'immeuble. Il fait nuit.'];
+            return [];
         },
         onCallEnd: function (completed, kind) {
             if (kind === 'out') {                         // c'est le patient qui l'avait appelée : rien à voir avec ses rappels
@@ -141,7 +142,7 @@ function answer() {
 function tick() {
     if (inCall || document.hidden) return;
     // TOUT NOUVEAU joueur seulement (Mem.needsFirstCall() est faux pour toute sauvegarde déjà vécue) : elle l'appelle la première fois
-    if (inBuilding() && Mem.needsFirstCall()) Mem.setCallAt(Date.now() + FIRST_CALL_MS, 'première prise de contact');
+    if (AUTO_FIRST_CALL && inBuilding() && Mem.needsFirstCall()) Mem.setCallAt(Date.now() + FIRST_CALL_MS, 'première prise de contact');
     if (!Mem.callDue() || !inBuilding()) { stopRinging(); hideUi(); ringStart = 0; return; }
     if (Date.now() < nextTry) return;
     if (!ringStart) { ringStart = Date.now(); missedLogged = false; }

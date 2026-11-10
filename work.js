@@ -454,9 +454,8 @@ function createInterior(parent, o) {
     // Ce qu'Evelyn sait de l'instant présent (ajouté à son prompt)
     getWorld: function () {
       return [
-        'Il fait nuit. Il neige sur la montagne.',
-        seated ? 'Le patient est assis en face de toi, dans ton cabinet.' : 'Le patient est dans ton cabinet mais reste debout.',
-        openedBooks.length ? 'Livres de ton étagère que le patient a ouverts pendant cette visite : ' + openedBooks.join(' ; ') + '.' : ''
+        seated ? 'La personne est assise en face de toi.' : 'La personne est debout près de toi.',
+        openedBooks.length ? 'Livres que la personne a ouverts pendant cette visite : ' + openedBooks.join(' ; ') + '.' : ''
       ];
     }
   });
@@ -519,6 +518,7 @@ function createInterior(parent, o) {
     busy = true;
     talk.hideBubble(true);
     if (seated) standUp(true);
+    else if (talk.isOpen()) talk.endSession();               // conversation commencée debout : elle se termine aussi
     innerGoal = 1;                                           // la porte intérieure s'ouvre
     await waitFor(function () { return innerT > 0.97; }, 1600);
     await fadeBlack(true);
@@ -623,7 +623,7 @@ function createInterior(parent, o) {
     if (p.kind === 'enter') enterHouse();
     else if (p.kind === 'exit') leaveHouse();
     else if (p.kind === 'seat') { if (seated) standUp(); else sitDown(); }
-    else if (p.kind === 'therapist') { hoverBook = -1; if (seated) talk.open(); else talk.nudge(); }
+    else if (p.kind === 'therapist') { hoverBook = -1; talk.hideBubble(true); talk.open(); }      // on peut lui parler assis ou debout
     else if (p.kind === 'book') {
       hoverBook = -1;
       const bd = slots[p.idx].data;
