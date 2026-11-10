@@ -30,7 +30,9 @@ const AVATAR_HEIGHT = 1.78;                 // taille debout d'Oliver (m)
 // yaw = PI : Mixamo regarde vers +z, le taxi roule vers -z.
 // Si Oliver flotte / s'enfonce dans le siège : change DRIVER.y. Réglage en direct dans la console (F12) :
 //   BadTherapistTaxi.driver(x, y, z, yawEnDegres)
-const DRIVER = { x: -0.5, y: 0.40, z: 0.10, yaw: Math.PI };
+const DRIVER = { x: -0.5, y: 0.40, z: -0.25, yaw: Math.PI };
+// Volant (repère du taxi). Réglage en direct : BadTherapistTaxi.wheel(x, y, z)
+const WHEEL = { x: -0.5, y: 1.12, z: -0.55 };
 
 const VMAX = 48;          // m/s (~170 km/h) en ligne droite
 const ACC = 20;           // accélération (m/s²)
@@ -148,7 +150,7 @@ export function createTaxi(parent, o) {
   // Intérieur : tableau de bord, volant, sièges
   box(1.8, 0.22, 0.4, M.dark, 0, 1.02, CAB_Z0 + 0.25);
   const wheelSteer = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.025, 6, 14), M.dark);
-  wheelSteer.position.set(DRIVER.x, 1.2, -0.68);
+  wheelSteer.position.set(WHEEL.x, WHEEL.y, WHEEL.z);
   wheelSteer.rotation.x = -0.95;
   g.add(wheelSteer);
   function seat(x, z) {
@@ -225,6 +227,10 @@ export function createTaxi(parent, o) {
       driverSlot.position.set(x, y, z);
       if (yawDeg != null) driverSlot.rotation.y = yawDeg * Math.PI / 180;
       console.log('[taxi] DRIVER = { x:', x, ', y:', y, ', z:', z, ', yaw:', driverSlot.rotation.y, '}');
+    },
+    wheel: function (x, y, z) {
+      wheelSteer.position.set(x, y, z);
+      console.log('[taxi] WHEEL = { x:', x, ', y:', y, ', z:', z, '}');
     },
     ev: function () { return ev; }
   };
@@ -314,9 +320,10 @@ export function createTaxi(parent, o) {
       const p = back[i];
       pts.push([p.x + LANE * p.tz, p.z - LANE * p.tx]);
     }
-    // sur la place : il passe à l'ouest, fait demi-tour (rayon 4) et se gare nez vers la route
-    pts.push([1.8, 30], [-2, 20], [-7, 11], [-10.2, 3], [-10.2, -6]);
-    arc(HOME_PARK.x - 4, HOME_PARK.z - 1.5, 4, Math.PI, 2 * Math.PI, 6).forEach(function (q) { pts.push(q); });
+    // sur la place : il passe à l'ouest, fait demi-tour (rayon 5,5) et se gare nez vers la route
+    // (le grand chêne en x -9.5, z 2 est contourné par l'ouest)
+    pts.push([1.8, 30], [-3, 22], [-7, 16], [-11.5, 9], [-13.2, 2], [-13.2, -6]);
+    arc(HOME_PARK.x - 5.5, HOME_PARK.z - 1.5, 5.5, Math.PI, 2 * Math.PI, 8).forEach(function (q) { pts.push(q); });
     pts.push([HOME_PARK.x, HOME_PARK.z]);        // dernier mètre en ligne droite : il s'arrête bien droit
     return makePath(pts);
   }
