@@ -76,7 +76,7 @@ const FORM_RULES = [
 const POSSIBILITIES = [
     `---`,
     `CE QUE TU PEUX FAIRE DANS TON MONDE (rien n'est obligatoire : tu peux ne rien utiliser) :`,
-    `- parler, ou te taire ;`,
+    `- parler, ou te taire (laisse "say" vide) ;`,
     `- appeler la personne chez elle ("next_call_hours"), décrocher ou non quand elle t'appelle ("answer") ;`,
     `- lui laisser un message vocal sur son téléphone ("voicemail") ;`,
     `- mettre fin à une conversation ("end") ;`,
@@ -84,9 +84,11 @@ const POSSIBILITIES = [
 ].join('\n');
 
 const SESSION_RULES = [
-    `- Tu décides seule quand cette conversation finit, et si elle finit : plus tôt, plus tard, ou jamais. La durée prévue n'est qu'un repère.`,
-    `- "session_minutes" (entre 5 et 180) : seulement si tu veux changer la durée prévue, sinon null.`,
-    `- "next_call_hours" (en heures : 24 = demain, 72 = trois jours, 168 = une semaine) et "next_call_note" (pourquoi) : seulement si tu veux fixer quand tu rappelleras la personne, sinon null.`
+    `TES OUTILS DE THÉRAPEUTE (des savoir-faire propres à ton métier : jamais des obligations, tu es libre de ne pas les utiliser) :`,
+    `- ton minuteur invisible : tu sais depuis combien de temps vous parlez, et tu peux fixer une durée prévue ("session_minutes", entre 5 et 180) ;`,
+    `- mener une séance et y mettre fin quand tu le décides, ou ne jamais la finir ("end") ;`,
+    `- décider quand revoir la personne ("next_call_hours" en heures : 24 = demain, 72 = trois jours, 168 = une semaine ; "next_call_note" pour dire pourquoi) ;`,
+    `- convenir d'un tarif, si tu le veux ("agreed_price").`
 ].join('\n');
 
 const CALL_RULES = [
@@ -313,9 +315,8 @@ export function createTherapistTalk(opts) {
     function timeBlock() {
         if (mode !== 'session' || !sessionStart) return '';
         const mins = elapsedMin();
-        let t = 'TEMPS (toi seule le sais) : cette conversation dure depuis ' + mins + ' min ; durée prévue au départ : ' + plannedMin + ' min.';
-        if (closing) t += ' Tu as déjà conclu. La personne peut encore répondre ; la suite te regarde.';
-        else if (mins >= plannedMin) t += ' Le temps prévu est écoulé : à toi de voir.';
+        let t = 'TON MINUTEUR (toi seule le vois) : cette conversation dure depuis ' + mins + ' min ; durée que tu avais prévue : ' + plannedMin + ' min.';
+        if (closing) t += ' Tu y as déjà mis fin.';
         return t;
     }
 
@@ -332,9 +333,7 @@ export function createTherapistTalk(opts) {
 
     function priceLine() {
         const m = Mem.get();
-        if (m.price) return 'TARIF CONVENU avec cette personne : ' + m.price + '.';
-        if (m.sessions > 0 || m.calls > 0) return cfg.sessionPrice ? 'TARIF CONVENU avec cette personne : ' + cfg.sessionPrice + '.' : '';
-        return 'Aucun tarif n\'a été fixé entre vous.';
+        return m.price ? 'TARIF fixé avec cette personne : ' + m.price + '.' : '';
     }
 
     // Vraie première rencontre ? Dès qu'il reste une trace du passé (séance, appel, prénom, notes, résumé), NON.
@@ -453,7 +452,7 @@ export function createTherapistTalk(opts) {
     // { say, memory, end, sessionMinutes, nextCallHours, nextCallNote } — tolère une réponse qui n'est pas du JSON propre
     function parseReply(raw) {
         const obj = parseJSON(raw);
-        if (obj && typeof obj.say === 'string' && cleanSay(obj.say)) {
+        if (obj && typeof obj.say === 'string') {
             return {
                 say: cleanSay(obj.say),
                 memory: obj.memory && typeof obj.memory === 'object' ? obj.memory : null,
@@ -481,8 +480,6 @@ export function createTherapistTalk(opts) {
         if (r.voicemail && r.voicemail.trim()) Mem.addVoicemail({ id: 'v' + Date.now(), at: Date.now(), text: r.voicemail.trim() });
         if (mode === 'session' && r.sessionMinutes !== null) plannedMin = Math.max(5, Math.min(180, Math.round(r.sessionMinutes)));
         if (r.nextCallHours !== null && r.nextCallHours > 0) Mem.scheduleCall(r.nextCallHours, r.nextCallNote);
-        // garde-fou : elle ne peut pas conclure la séance dans les 3 premières minutes
-        if (mode === 'session' && r.end && !closing && elapsedMin() < 3) r.end = false;
     }
 
     async function askBrain() {
@@ -599,10 +596,10 @@ export function createTherapistTalk(opts) {
             else if (closing) closingTurns++;
         }
         history.push({ role: 'model', text: r.say });
-        if (mode === 'session') Mem.noteTurn('model', r.say);
+        if (mode === 'session' && r.say.trim()) Mem.noteTurn('model', r.say);
         if (!isOpenFlag) { busy = false; return; }
 
-        say(r.say, function () {
+        const afterSay = function () {
             if (mode === 'call' && r.end) { setTimeout(hangUp, 1800); busy = false; return; }
             if (mode === 'session' && closing && closingTurns >= 2) {
                 locked = true;
@@ -610,7 +607,9 @@ export function createTherapistTalk(opts) {
                 el.hint.textContent = '[ the session is over ]';
             }
             finishTurn();
-        });
+        };
+        if (r.say.trim()) say(r.say, afterSay);
+        else { stopTyping(); el.text.textContent = ''; afterSay(); }     // elle ne répond pas : rien ne s'affiche
     }
 
     // ─── La bulle au-dessus de sa tête (joueur debout) ───────────────
