@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { buildWork } from './work.js';
 import { scatterPoints, pickSpecies, buildForest } from './forest.js';
 import { createTruck } from './vehicle.js';
+import { createTaxi } from './taxi.js';
 
 // ==========================================
 // TERRAIN, ROUTES ET MONTAGNES (calculés une seule fois, partagés entre toutes les copies)
@@ -1325,7 +1326,7 @@ const work = buildWork(scene, {
   origin: { x: scene.position.x, y: scene.position.y, z: scene.position.z },
   action: ctx.action, view: ctx.view, snow: ctx.snow,
   onTeleport: function () { walkY = null; if (ctx.onTeleport) ctx.onTeleport(); },
-  isBusy: function () { return !!(truck && truck.isDriving()); }
+  isBusy: function () { return !!(truck && truck.isDriving()) || !!(taxi && taxi.isRiding()); }
 });
 
 // Hauteur du joueur sur les collines (seulement si le monde nous donne la caméra)
@@ -1333,6 +1334,7 @@ let walkY = null;
 
 // Le camion (un seul véhicule). Créé seulement si le monde nous donne la caméra de conduite.
 let truck = null;
+let taxi = null;
 if (ctx.driveCamera) {
   const org = { x: scene.position.x, y: scene.position.y, z: scene.position.z };
   const truckRects = [{ x0: -12.2, x1: 12.2, z0: -34.4, z1: -24.2 }].concat(work.colliders);
@@ -1344,6 +1346,18 @@ if (ctx.driveCamera) {
     collide: forest.collide,
     rects: truckRects,
     bounds: { x0: TER.x0 + 30, x1: TER.x1 - 30, z0: TER.z0 + 30, z1: TER.z1 - 30 },
+    snow: ctx.snow,
+    onExit: function () { walkY = null; if (ctx.onTruckExit) ctx.onTruckExit(); }
+  });
+
+  // Le taxi d'Oliver : garé près du camion, fait la navette immeuble <-> maison d'Evelyn (taxi.js)
+  taxi = createTaxi(scene, {
+    origin: org,
+    camera: ctx.driveCamera, view: ctx.view, action: ctx.action,
+    groundH: SH.walkHeight,
+    road: SH.main,
+    rects: truckRects,
+    truck: truck,
     snow: ctx.snow,
     onExit: function () { walkY = null; if (ctx.onTruckExit) ctx.onTruckExit(); }
   });
@@ -1370,7 +1384,8 @@ return {
   collideTrees: forest.collide,
   setEntrance: setEntrance,
   truck: truck,
-  isDriving: function () { return !!(truck && truck.isDriving()); },
+  taxi: taxi,
+  isDriving: function () { return !!(truck && truck.isDriving()) || !!(taxi && taxi.isRiding()); },
   getMapData: function () {
     return {
       bounds: { x0: TER.x0, x1: TER.x1, z0: TER.z0, z1: TER.z1 },
@@ -1394,9 +1409,11 @@ return {
     
     // Autonome (immeuble.js / work.js) : on suit le relief, on contourne les arbres, on conduit
     if (camera) {
-      if (truck) truck.update(dt, true);
+      const riding = !!(taxi && taxi.isRiding());
+      if (truck) truck.update(dt, !riding);
+      if (taxi) taxi.update(dt, true);
       
-      if (!(truck && truck.isDriving())) {
+      if (!(truck && truck.isDriving()) && !riding) {
         const tc = forest.collide(camera.position.x, camera.position.z, 0.3);
         camera.position.x = tc[0];
         camera.position.z = tc[1];
