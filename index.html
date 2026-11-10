@@ -731,7 +731,16 @@ nav a:hover::before {
     // Premier clic sur l'œil : mode admin + lancement du jeu
     eye.addEventListener('click', async () => {
         if (busy) return;
+        try {
+            await onEyeClick();
+        } catch (err) {                                 // jamais bloqué pour toujours : on libère l'œil et on le dit dans la console
+            console.error('[admin eye]', err);
+            busy = false;
+            eye.classList.remove('blink');
+        }
+    });
 
+    async function onEyeClick() {
         // Déjà en mode admin (œil bleu) : un clic remet le mode joueur. Ta sauvegarde admin est mise de côté, intacte.
         if (Save.activeProfile() === 'admin') {
             Save.switchTo('player');
@@ -743,7 +752,7 @@ nav a:hover::before {
         eye.classList.add('blink');                 // l'œil se ferme pendant qu'on cherche ta sauvegarde
 
         // Rien en local mais synchro cloud disponible (nouvel appareil, navigation privée) : connexion Google, puis chargement du cloud
-        if (Save.syncAvailable() && !Save.hasProgress('admin')) {
+        if (typeof Save.syncAvailable === 'function' && Save.syncAvailable() && !Save.hasProgress('admin')) {
             const st = await Save.syncStatus();
             const notFound = (text) => openModal(text, [{ label: 'OK', action: () => {} }]);
 
@@ -793,7 +802,7 @@ nav a:hover::before {
                 { label: 'OK', action: () => {} }
             ]);
         }
-    });
+    }
 })();
 </script>
 

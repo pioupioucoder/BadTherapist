@@ -300,12 +300,19 @@
                 <p class="hint" id="sync-status"></p>
             </section>
 
-            <section class="section">
+            <section class="section" id="reset-section">
                 <h2>RESET</h2>
 
                 <button class="danger" id="reset" type="button">
                     RESET DATA
                 </button>
+            </section>
+
+            <section class="section" id="update-section" hidden>
+                <h2>UPDATE</h2>
+
+                <button id="update-version" type="button">UPDATE VERSION</button>
+                <p class="hint" id="update-status">Forces this browser to fetch the latest pushed files. Your admin save is not touched.</p>
             </section>
 
             <section class="section">
@@ -394,6 +401,8 @@
 
         // CLOUD SYNC (profil admin uniquement : à la place d'EXPORT / IMPORT)
         if (Save && Save.activeProfile() === 'admin') {
+            document.getElementById('reset-section').hidden = true;      // RESET DATA ne sert à rien pour l'admin
+            document.getElementById('update-section').hidden = false;    // : UPDATE VERSION à la place
             const playerSection = document.getElementById('player-save-section');
             const syncSection = document.getElementById('admin-sync-section');
             const signedOutBox = document.getElementById('sync-signed-out');
@@ -562,6 +571,105 @@
             sessionStorage.removeItem(SESSION_CODE_KEY);
 
             location.reload();
+        });
+
+        // UPDATE VERSION : force le navigateur à re-vérifier TOUS les fichiers du jeu auprès du serveur.
+        // RESET DATA ne vide que la sauvegarde, jamais le cache du navigateur : c'est lui qui garde les vieux fichiers.
+        // Ici : (1) on retire les service workers et le Cache Storage, (2) on parcourt le jeu (HTML, JS, CSS, JSON, TXT) en
+        // suivant les imports, et on redemande chaque fichier au serveur avec « no-cache » (réponse 304 si rien n'a changé,
+        // nouveau fichier sinon : le cache du navigateur est mis à jour), (3) on recharge avec une adresse neuve.
+        // Les sauvegardes (localStorage) ne sont JAMAIS touchées. Les gros fichiers (.glb, .fbx, sons, images) ne sont pas
+        // retéléchargés : donne-leur un nouveau nom s'ils changent.
+        async function updateVersion(onProgress) {
+            const base = document.baseURI;
+            const seen = new Set();
+            const queue = [];
+            let checked = 0, failed = 0, newest = 0;
+
+            const add = (raw, from) => {
+                if (!raw || /[${}\s]/.test(raw) || /^(data:|blob:|mailto:|javascript:|#)/.test(raw)) return;
+                let u;
+                try { u = new URL(raw, from); } catch (e) { return; }
+                if (u.origin !== location.origin || !/\.(html|js|mjs|css|json|txt)$/i.test(u.pathname)) return;
+                u.hash = '';
+                if (seen.has(u.href) || seen.size >= 600) return;
+                seen.add(u.href);
+                queue.push(u.href);
+            };
+
+            const scan = (text, file) => {
+                const patterns = [
+                    /(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s+)['"]([^'"]+)['"]/g,
+                    /\b(?:src|href)\s*=\s*["']([^"']+)["']/g,
+                    /['"`]([\w\-./]+\.(?:js|mjs|css|json|txt|html))['"`]/g
+                ];
+                patterns.forEach((re) => {
+                    let m;
+                    while ((m = re.exec(text))) add(m[1], /^\.{1,2}\//.test(m[1]) ? file : base);
+                });
+            };
+
+            // 1. service workers + Cache Storage (s'il y en a)
+            try {
+                if ('serviceWorker' in navigator) {
+                    const regs = await navigator.serviceWorker.getRegistrations();
+                    await Promise.all(regs.map((r) => r.unregister()));
+                }
+                if (window.caches) {
+                    const keys = await caches.keys();
+                    await Promise.all(keys.map((k) => caches.delete(k)));
+                }
+            } catch (e) { /* tant pis */ }
+
+            // 2. on part des pages et des scripts déjà présents, puis on suit les imports
+            ['index.html', 'settings.html', 'world_base.html', 'credit.html', location.pathname].forEach((p) => add(p, base));
+            document.querySelectorAll('script[src], link[href]').forEach((el) => add(el.getAttribute('src') || el.getAttribute('href'), base));
+
+            const visit = async (href) => {
+                try {
+                    const r = await fetch(href, { cache: 'no-cache' });
+                    if (r.ok) {
+                        const lm = Date.parse(r.headers.get('Last-Modified') || '');
+                        if (lm > newest) newest = lm;
+                        const text = await r.text();
+                        if (/\.(html|js|mjs|css)$/i.test(new URL(href).pathname)) scan(text, href);
+                    } else {
+                        failed++;           // fichier facultatif absent (ex. therapist-secret.js) : sans importance
+                    }
+                } catch (e) {
+                    failed++;
+                }
+                checked++;
+                onProgress(checked, seen.size);
+            };
+            const worker = async () => { while (queue.length) await visit(queue.shift()); };
+            await Promise.all([1, 2, 3, 4, 5, 6].map(worker));
+
+            return { checked, failed, newest, offline: checked > 0 && failed === checked };
+        }
+
+        document.getElementById('update-version').addEventListener('click', async () => {
+            const btn = document.getElementById('update-version');
+            const status = document.getElementById('update-status');
+            btn.disabled = true;
+            try {
+                const res = await updateVersion((done, total) => { btn.textContent = 'CHECKING ' + done + '/' + total + '...'; });
+                if (res.offline) {
+                    status.textContent = 'No connection to the server. Nothing was updated.';
+                    btn.textContent = 'UPDATE VERSION';
+                    btn.disabled = false;
+                    return;
+                }
+                const when = res.newest ? ' Newest file: ' + new Date(res.newest).toLocaleString() + '.' : '';
+                status.textContent = 'Done: ' + res.checked + ' files checked.' + when + ' Reloading...';
+                btn.textContent = 'UPDATED';
+                setTimeout(() => { location.replace(location.pathname + '?u=' + Date.now()); }, 1200);
+            } catch (e) {
+                console.error(e);
+                status.textContent = 'Update failed. Try again.';
+                btn.textContent = 'UPDATE VERSION';
+                btn.disabled = false;
+            }
         });
 
         // SHARE GAME

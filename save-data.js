@@ -505,6 +505,7 @@
     });
 
     window.BadTherapistSave = {
+        syncAvailable: syncAvailable,
         syncStatus: syncStatus,
         syncSignIn: syncSignIn,
         syncSignOut: syncSignOut,
