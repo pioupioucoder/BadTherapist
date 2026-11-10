@@ -9,6 +9,7 @@
 
 <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
 <script src="save-data.js"></script>
+<script src="loader.js"></script>
 <script type="module" src="therapist-memory.js"></script>
 <script src="audio-manager.js" defer></script>
 
@@ -627,6 +628,13 @@ nav a:hover::before {
         sessionStorage.removeItem(ACCEPTED_KEY);
         window.location.href = 'https://krismeow.straw.page/';
     });
+
+    // PLAY : écran de chargement pixel + préchargement de tous les fichiers du site, puis le jeu
+    document.getElementById('play-link').addEventListener('click', (e) => {
+        if (!window.BTGo) return;                 // loader.js absent : le lien marche comme avant
+        e.preventDefault();
+        window.BTGo(e.currentTarget.getAttribute('href'));
+    });
 })();
 </script>
 
@@ -711,7 +719,7 @@ nav a:hover::before {
     function enterGame() {
         sessionStorage.setItem('bt_intro_accepted', '1');
         if (window.BadTherapistAudio) window.BadTherapistAudio.start();
-        window.location.href = 'world_base.html?launch=1';
+        if (window.BTGo) window.BTGo('world_base.html?launch=1'); else window.location.href = 'world_base.html?launch=1';
     }
 
     // Œil bleu = mode admin actif, œil gris = mode joueur. PLAY, EXPORT, IMPORT et RESET agissent sur le mode actif.

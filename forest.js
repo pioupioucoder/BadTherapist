@@ -36,41 +36,56 @@ function getTex() {
   if (TEX) return TEX;
   const rnd = prng(777);
 
-  // Atlas de feuillage : moitié gauche = feuilles vertes, moitié droite = feuilles givrées
+  // Atlas de feuillage (fond transparent) : gauche = feuilles ovales pointues, droite = petites feuilles rondes.
+  // Chaque case est un petit rameau garni de vraies feuilles, avec des trous : pas de boule pleine.
   const lc = document.createElement('canvas');
   lc.width = 512; lc.height = 256;
   const g = lc.getContext('2d');
 
-  function clump(ox, frost) {
-    for (let i = 0; i < 520; i++) {
-      const a = rnd() * Math.PI * 2;
-      const r = Math.pow(rnd(), 0.6) * 112;
-      const x = ox + 128 + Math.cos(a) * r;
-      const y = 128 + Math.sin(a) * r * 0.9;
-      const sz = 8 + rnd() * 13;
-      const v = rnd();
-      let col;
-      if (frost) {
-        const w = 150 + v * 90;
-        col = (rnd() < 0.72)
-          ? 'rgb(' + (w * 0.92 | 0) + ',' + (w | 0) + ',' + (w * 1.02 | 0) + ')'
-          : 'rgb(' + (40 + v * 25 | 0) + ',' + (70 + v * 35 | 0) + ',' + (52 + v * 20 | 0) + ')';
-      } else {
-        const l = 26 + v * 40;
-        col = 'rgb(' + (l * 0.75 + 6 | 0) + ',' + (l * 1.45 + 14 | 0) + ',' + (l * 0.8 + 8 | 0) + ')';
+  function leafShape(x, y, ang, len, wid, col, vein) {
+    g.save();
+    g.translate(x, y);
+    g.rotate(ang);
+    g.fillStyle = col;
+    g.beginPath();
+    g.moveTo(0, 0);
+    g.quadraticCurveTo(len * 0.45, -wid, len, 0);
+    g.quadraticCurveTo(len * 0.45, wid, 0, 0);
+    g.fill();
+    if (vein) {
+      g.strokeStyle = vein; g.lineWidth = 1;
+      g.beginPath(); g.moveTo(1, 0); g.lineTo(len * 0.9, 0); g.stroke();
+    }
+    g.restore();
+  }
+  function leafColor() {
+    const v = rnd();
+    if (v > 0.88) return 'rgb(' + (92 + rnd() * 30 | 0) + ',' + (128 + rnd() * 30 | 0) + ',' + (40 + rnd() * 16 | 0) + ')';   // quelques feuilles plus claires
+    return 'rgb(' + (30 + v * 28 | 0) + ',' + (74 + v * 52 | 0) + ',' + (28 + v * 24 | 0) + ')';
+  }
+  function twigCluster(ox, round) {
+    const cx = ox + 128, cy = 128;
+    const twigs = 7 + (rnd() * 3 | 0);
+    for (let t = 0; t < twigs; t++) {
+      const a = (t / twigs) * Math.PI * 2 + rnd() * 0.5;
+      const L = 60 + rnd() * 30;
+      const ex = cx + Math.cos(a) * L, ey = cy + Math.sin(a) * L;
+      g.strokeStyle = 'rgb(56,42,30)'; g.lineWidth = 2;
+      g.beginPath(); g.moveTo(cx, cy); g.lineTo(ex, ey); g.stroke();
+      const n = 6 + (rnd() * 4 | 0);
+      for (let i = 0; i < n; i++) {
+        const f = 0.12 + 0.88 * (i / (n - 1));
+        const px = cx + (ex - cx) * f, py = cy + (ey - cy) * f;
+        [-1, 1].forEach(function (side) {
+          const len = (round ? 15 : 22) + rnd() * (round ? 8 : 12);
+          leafShape(px, py, a + side * (0.65 + rnd() * 0.55), len, len * (round ? 0.55 : 0.33), leafColor(), 'rgba(14,34,12,0.55)');
+        });
       }
-      g.fillStyle = col;
-      g.save();
-      g.translate(x, y);
-      g.rotate(rnd() * Math.PI);
-      g.beginPath();
-      g.ellipse(0, 0, sz, sz * 0.42, 0, 0, Math.PI * 2);
-      g.fill();
-      g.restore();
+      leafShape(ex, ey, a, round ? 18 : 24, round ? 10 : 8, leafColor(), 'rgba(14,34,12,0.55)');
     }
   }
-  clump(0, false);
-  clump(256, true);
+  twigCluster(0, false);
+  twigCluster(256, true);
 
   const leaf = new THREE.CanvasTexture(lc);
   leaf.encoding = THREE.sRGBEncoding;
@@ -141,30 +156,28 @@ function makeMats(boost) {
 
   const bark = new THREE.MeshStandardMaterial({
     map: T.bark, vertexColors: true, roughness: 1,
-    emissive: new THREE.Color(0x120d0a).multiplyScalar(1 + b * 0.8),
+    emissive: new THREE.Color(0x030202).multiplyScalar(1 + b * 0.8),
     side: THREE.DoubleSide
   });
   patchWind(bark, 1.6);
 
   const leaf = new THREE.MeshStandardMaterial({
     map: T.leaf, vertexColors: true, alphaTest: 0.5, roughness: 1,
-    emissive: new THREE.Color(0x26342b).multiplyScalar(1 + b * 0.8),
-    emissiveMap: T.leaf,
+    emissive: new THREE.Color(0x030504).multiplyScalar(1 + b * 0.8),
     side: THREE.DoubleSide
   });
   patchWind(leaf, 1.6);
 
   const bush = new THREE.MeshStandardMaterial({
     map: T.leaf, vertexColors: true, alphaTest: 0.5, roughness: 1,
-    emissive: new THREE.Color(0x26342b).multiplyScalar(1 + b * 0.8),
-    emissiveMap: T.leaf,
+    emissive: new THREE.Color(0x030504).multiplyScalar(1 + b * 0.8),
     side: THREE.DoubleSide
   });
   patchWind(bush, 0.35);
 
   const rock = new THREE.MeshStandardMaterial({
     vertexColors: true, roughness: 1, flatShading: true,
-    emissive: new THREE.Color(0x0e1214).multiplyScalar(1 + b * 1.2)
+    emissive: new THREE.Color(0x020303).multiplyScalar(1 + b * 1.2)
   });
 
   return { bark: bark, leaf: leaf, bush: bush, rock: rock };
@@ -227,59 +240,84 @@ function addSeg(b, a, e, r0, r1, sides, col, H) {
   }
 }
 
-// Touffe de feuillage : 2 cartes verticales croisées + 1 carte horizontale givrée
-function addClump(b, rnd, c, size, tint, H, center) {
-  const yaw = rnd() * Math.PI;
-  const k = 0.85 + rnd() * 0.3;
+// Une carte de feuilles, orientée au hasard en 3D (cell : 0 = feuilles ovales, 1 = petites feuilles rondes)
+function addCard(b, rnd, c, size, tint, H, center, cell) {
+  const ax = new V3(rnd() - 0.5, (rnd() - 0.5) * 0.6, rnd() - 0.5).normalize();
+  const ay = new V3(rnd() - 0.5, rnd() * 0.7 + 0.3, rnd() - 0.5);
+  ay.addScaledVector(ax, -ay.dot(ax)).normalize();
+  const k = 0.8 + rnd() * 0.4;
   const col = [tint[0] * k, tint[1] * k, tint[2] * k];
-  const white = [1, 1, 1];
-  const quads = [
-    { ax: new V3(Math.cos(yaw), 0, Math.sin(yaw)), ay: new V3(0, 1, 0), sy: 0.85, top: false },
-    { ax: new V3(Math.cos(yaw + 1.1), 0, Math.sin(yaw + 1.1)), ay: new V3(0, 1, 0), sy: 0.85, top: false },
-    { ax: new V3(Math.cos(yaw), 0, Math.sin(yaw)), ay: new V3(-Math.sin(yaw), 0, Math.cos(yaw)), sy: 1, top: true }
-  ];
-  quads.forEach(function (q) {
-    const hx = size * 0.5, hy = size * 0.5 * q.sy;
-    const corners = [[-1, -1, 0, 0], [1, -1, 1, 0], [1, 1, 1, 1], [-1, 1, 0, 1]];
-    const pts = corners.map(function (cn) {
-      return new V3().copy(c).addScaledVector(q.ax, cn[0] * hx).addScaledVector(q.ay, cn[1] * hy);
-    });
-    const u0 = q.top ? 0.5 : 0, uS = 0.5;
-    function put(i) {
-      const p = pts[i];
-      const n = new V3().subVectors(p, center).normalize();
-      n.y = n.y * 0.7 + 0.45;
-      n.normalize();
-      const sw = Math.pow(Math.max(0, p.y) / H, 1.5) * 0.9 + 0.05;
-      vtx(b, p, n, u0 + corners[i][2] * uS, corners[i][3], q.top ? white : col, sw, 0.8);
-    }
-    [0, 1, 2, 0, 2, 3].forEach(put);
+  const h = size * 0.5;
+  const corners = [[-1, -1, 0, 0], [1, -1, 1, 0], [1, 1, 1, 1], [-1, 1, 0, 1]];
+  const pts = corners.map(function (cn) {
+    return new V3().copy(c).addScaledVector(ax, cn[0] * h).addScaledVector(ay, cn[1] * h);
   });
+  const u0 = cell * 0.5;
+  function put(i) {
+    const p = pts[i];
+    const n = new V3().subVectors(p, center).normalize();
+    n.y = n.y * 0.7 + 0.45;
+    n.normalize();
+    const sw = Math.pow(Math.max(0, p.y) / H, 1.5) * 0.9 + 0.05;
+    vtx(b, p, n, u0 + corners[i][2] * 0.5, corners[i][3], col, sw, 0.8);
+  }
+  [0, 1, 2, 0, 2, 3].forEach(put);
 }
 
-// Espèces : H = hauteur totale, trunkH = hauteur du tronc nu
+// Touffe de feuillage (buissons) : 3 cartes
+function addClump(b, rnd, c, size, tint, H, center) {
+  for (let k = 0; k < 3; k++) addCard(b, rnd, c, size, tint, H, center, 0);
+}
+
+// Touffe de feuillage : cartes de feuilles groupées
+function makeBushGeo() {
+  const rnd = prng(99);
+  const leaf = newB();
+  const center = new V3(0, 0.8, 0);
+  for (let i = 0; i < 6; i++) {
+    const a = rnd() * Math.PI * 2, r = rnd() * 0.9;
+    const c = new V3(Math.cos(a) * r, 0.7 + rnd() * 0.7, Math.sin(a) * r);
+    addClump(leaf, rnd, c, 1.5 + rnd() * 0.9, [0.9 + rnd() * 0.3, 1.0, 0.85], 3, center);
+  }
+  return { leaf: toGeo(leaf), H: 3 };
+}
+
+// Espèces (toutes feuillues, hautes, sans conifères) : H = hauteur totale, trunkH = hauteur du tronc nu
+// cell : 0 = feuilles ovales, 1 = petites feuilles rondes
 const SPECIES = {
-  oak: {
-    seed: 11, H: 20, trunkH: 7.2, trunkR: 0.85, crownR: 8.8, branches: 8, branchFrom: 0.55,
-    elev: 0.8, lift: 0.28, depth: 3, leafSize: 5.0, leafProb: 1, clumps: 1,
-    bark: [0.62, 0.55, 0.5], leaf: [1.0, 1.05, 0.95], leader: true
+  oak: {      // chêne : grand, tronc fort, houppier large et aéré
+    seed: 11, H: 30, trunkH: 12.5, trunkR: 1.0, crownR: 7.8, branches: 8, branchFrom: 0.62,
+    elev: 0.7, lift: 0.25, depth: 3, leafSize: 3.9, leafProb: 0.95, clumps: 3, cell: 0,
+    bark: [0.55, 0.5, 0.46], leaf: [0.95, 1.05, 0.9], leader: true
   },
-  pop: {
-    seed: 23, H: 28, trunkH: 11, trunkR: 0.62, crownR: 4.6, branches: 11, branchFrom: 0.35,
-    elev: 1.15, lift: 0.5, depth: 2, leafSize: 4.2, leafProb: 1, clumps: 1,
-    bark: [0.55, 0.5, 0.47], leaf: [0.9, 1.0, 0.95], leader: true
+  beech: {    // hêtre : très haut, tronc lisse et gris, houppier ovale
+    seed: 29, H: 35, trunkH: 15, trunkR: 0.8, crownR: 5.8, branches: 10, branchFrom: 0.55,
+    elev: 0.9, lift: 0.32, depth: 3, leafSize: 3.5, leafProb: 0.85, clumps: 3, cell: 0,
+    bark: [0.95, 0.92, 0.9], leaf: [0.85, 1.1, 0.85], leader: true
   },
-  birch: {
-    seed: 37, H: 16, trunkH: 6.2, trunkR: 0.4, crownR: 5.4, branches: 7, branchFrom: 0.5,
-    elev: 0.95, lift: 0.35, depth: 2, leafSize: 3.8, leafProb: 1, clumps: 1,
-    bark: [1.7, 1.65, 1.6], leaf: [1.45, 1.55, 1.05], leader: true
+  birch: {    // bouleau : fin, tronc blanc, petites feuilles
+    seed: 37, H: 25, trunkH: 11.5, trunkR: 0.3, crownR: 3.6, branches: 9, branchFrom: 0.5,
+    elev: 1.05, lift: 0.45, depth: 3, leafSize: 2.4, leafProb: 0.95, clumps: 3, cell: 1,
+    bark: [2.1, 2.05, 1.95], leaf: [1.3, 1.45, 0.95], leader: true
   },
-  dead: {
-    seed: 51, H: 18, trunkH: 8, trunkR: 0.72, crownR: 7.2, branches: 7, branchFrom: 0.5,
-    elev: 0.6, lift: 0.2, depth: 4, leafSize: 3.4, leafProb: 0.3, clumps: 1,
-    bark: [0.5, 0.45, 0.42], leaf: [2.0, 1.45, 0.65], leader: false
+  pop: {      // peuplier : très haut et étroit
+    seed: 23, H: 40, trunkH: 17, trunkR: 0.55, crownR: 3.0, branches: 13, branchFrom: 0.35,
+    elev: 1.3, lift: 0.6, depth: 2, leafSize: 2.6, leafProb: 1, clumps: 3, cell: 1,
+    bark: [0.7, 0.66, 0.6], leaf: [1.0, 1.15, 0.85], leader: true
+  },
+  maple: {    // érable : rond, feuillage un peu doré
+    seed: 41, H: 27, trunkH: 10.5, trunkR: 0.75, crownR: 5.8, branches: 9, branchFrom: 0.55,
+    elev: 0.9, lift: 0.3, depth: 3, leafSize: 3.4, leafProb: 0.85, clumps: 3, cell: 0,
+    bark: [0.6, 0.55, 0.5], leaf: [1.35, 1.2, 0.6], leader: true
+  },
+  elm: {      // orme : tronc qui s'ouvre en vase
+    seed: 53, H: 33, trunkH: 12, trunkR: 0.85, crownR: 6.6, branches: 8, branchFrom: 0.6,
+    elev: 1.05, lift: 0.4, depth: 3, leafSize: 3.4, leafProb: 0.85, clumps: 3, cell: 0,
+    bark: [0.58, 0.52, 0.48], leaf: [0.9, 1.1, 0.8], leader: false
   }
 };
+// Anciens noms (les autres fichiers peuvent encore les utiliser)
+SPECIES.dead = SPECIES.maple;
 
 function makeTreeGeos(S) {
   const rnd = prng(S.seed);
@@ -334,15 +372,15 @@ function makeTreeGeos(S) {
     grow(start, dir, S.crownR * (0.7 + rnd() * 0.45), S.trunkR * 0.42, S.depth);
   }
   if (S.leader) {
-    grow(top, new V3(0.05, 1, 0.03).normalize(), (H - S.trunkH) * 0.8, S.trunkR * 0.38, 2);
+    grow(top, new V3(0.05, 1, 0.03).normalize(), (H - S.trunkH) * 0.5, S.trunkR * 0.38, 3);
   }
 
   const center = new V3(0, S.trunkH + (H - S.trunkH) * 0.5, 0);
   anchors.forEach(function (p) {
     if (rnd() > S.leafProb) return;
     for (let k = 0; k < S.clumps; k++) {
-      const c = p.clone().add(new V3((rnd() - 0.5) * 1.2, (rnd() - 0.3) * 1.0, (rnd() - 0.5) * 1.2));
-      addClump(leaf, rnd, c, S.leafSize * (0.8 + rnd() * 0.5), S.leaf, H, center);
+      const c = p.clone().add(new V3((rnd() - 0.5) * 1.8, (rnd() - 0.35) * 1.4, (rnd() - 0.5) * 1.8));
+      addCard(leaf, rnd, c, S.leafSize * (0.75 + rnd() * 0.55), S.leaf, H, center, S.cell || 0);
     }
   });
 
@@ -351,17 +389,6 @@ function makeTreeGeos(S) {
   return out;
 }
 
-function makeBushGeo() {
-  const rnd = prng(99);
-  const leaf = newB();
-  const center = new V3(0, 0.8, 0);
-  for (let i = 0; i < 6; i++) {
-    const a = rnd() * Math.PI * 2, r = rnd() * 0.9;
-    const c = new V3(Math.cos(a) * r, 0.7 + rnd() * 0.7, Math.sin(a) * r);
-    addClump(leaf, rnd, c, 1.5 + rnd() * 0.9, [0.9 + rnd() * 0.3, 1.0, 0.85], 3, center);
-  }
-  return { leaf: toGeo(leaf), H: 3 };
-}
 
 function noise3(x, y, z) {
   const n = Math.sin(x * 12.9898 + y * 78.233 + z * 37.719) * 43758.5453;
@@ -456,10 +483,12 @@ export function scatterPoints(R, o) {
 
 export function pickSpecies(x, z, R) {
   const t = R();
-  if (t < 0.42) return 'oak';
-  if (t < 0.66) return 'pop';
-  if (t < 0.86) return 'birch';
-  return 'dead';
+  if (t < 0.24) return 'oak';
+  if (t < 0.46) return 'beech';
+  if (t < 0.62) return 'birch';
+  if (t < 0.74) return 'pop';
+  if (t < 0.88) return 'maple';
+  return 'elm';
 }
 
 // ==========================================
@@ -546,7 +575,7 @@ export function buildForest(parent, data, opts) {
       group.add(im);
       meshes.push({
         mesh: im, x: ax, z: az,
-        cull: c.kind === 'tree' ? 330 : (c.kind === 'bush' ? 170 : 260)
+        cull: c.kind === 'tree' ? (opts.cullTree || 140) : (c.kind === 'bush' ? (opts.cullBush || 80) : (opts.cullRock || 110))
       });
     });
   });
