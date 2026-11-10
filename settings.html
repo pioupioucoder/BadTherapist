@@ -312,7 +312,7 @@
                 <h2>UPDATE</h2>
 
                 <button id="update-version" type="button">UPDATE VERSION</button>
-                <p class="hint" id="update-status">Forces this browser to fetch the latest pushed files. Your admin save is not touched.</p>
+                <p class="hint" id="update-status"></p>
             </section>
 
             <section class="section">
@@ -648,25 +648,38 @@
             return { checked, failed, newest, offline: checked > 0 && failed === checked };
         }
 
+        // Heure du dernier VRAI push GitHub (= date du fichier le plus récent sur le serveur), pas l'heure de la synchro
+        const PUSH_KEY = 'bt_push_info';
+        const fmtPush = (ms) => new Date(ms).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+        const pushLine = (info) => {
+            if (!info || !info.newest) return 'Last push: unknown';
+            return 'Last push: ' + fmtPush(info.newest) + (info.isNew === true ? ' (new push!)' : info.isNew === false ? ' (no new push)' : '');
+        };
+        const readPush = () => { try { return JSON.parse(localStorage.getItem(PUSH_KEY) || 'null'); } catch (e) { return null; } };
+        const statusEl2 = document.getElementById('update-status');
+        if (readPush()) statusEl2.textContent = pushLine(readPush());
+
         document.getElementById('update-version').addEventListener('click', async () => {
             const btn = document.getElementById('update-version');
-            const status = document.getElementById('update-status');
             btn.disabled = true;
             try {
                 const res = await updateVersion((done, total) => { btn.textContent = 'CHECKING ' + done + '/' + total + '...'; });
                 if (res.offline) {
-                    status.textContent = 'No connection to the server. Nothing was updated.';
+                    statusEl2.textContent = 'No connection.';
                     btn.textContent = 'UPDATE VERSION';
                     btn.disabled = false;
                     return;
                 }
-                const when = res.newest ? ' Newest file: ' + new Date(res.newest).toLocaleString() + '.' : '';
-                status.textContent = 'Done: ' + res.checked + ' files checked.' + when + ' Reloading...';
+                const prev = readPush();
+                const info = { newest: res.newest || (prev && prev.newest) || 0 };
+                info.isNew = prev && prev.newest && res.newest ? res.newest > prev.newest : null;   // null = première fois : on ne sait pas
+                try { localStorage.setItem(PUSH_KEY, JSON.stringify(info)); } catch (e) { /* rien */ }
+                statusEl2.textContent = pushLine(info);
                 btn.textContent = 'UPDATED';
                 setTimeout(() => { location.replace(location.pathname + '?u=' + Date.now()); }, 1200);
             } catch (e) {
                 console.error(e);
-                status.textContent = 'Update failed. Try again.';
+                statusEl2.textContent = 'Update failed.';
                 btn.textContent = 'UPDATE VERSION';
                 btn.disabled = false;
             }
