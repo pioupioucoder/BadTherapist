@@ -138,8 +138,8 @@ const REFLECT_RULES = [
     `Tu peux relire et mettre TA mémoire à jour, seule chez toi.`,
     `Réponds UNIQUEMENT par un objet JSON valide, sans texte autour et sans \`\`\` :`,
     `{"summary":"…","lastSession":"…","self":"…","next_call_hours":null,"next_call_note":null,"memory":{"remember":[],"forget":[],"private":[],"will":null,"habits":null,"feeling":null,"player_name":null,"thought":null,"recall":null}}`,
-    `- summary : le résumé CUMULATIF de votre histoire (reprends l'ancien et intègre cette conversation), 900 caractères maximum.`,
-    `- lastSession : 1 à 2 phrases sur cette conversation et sur la suite que tu voudrais.`,
+    `- summary : le résumé CUMULATIF de votre histoire (reprends l'ancien et intègre cette conversation), 2000 caractères maximum.`,
+    `- lastSession : 2 à 4 phrases sur cette conversation (ce qui a été dit, ce que tu as compris de lui) et sur la suite que tu voudrais.`,
     `- self : comment tu te vois toi-même maintenant (1 à 2 phrases). Tu peux avoir changé.`,
     `- next_call_hours : seulement si tu n'as pas encore fixé quand rappeler (en heures), sinon null.`,
     `- memory : même format que d'habitude. Tu peux fusionner les doublons et supprimer ce qui est périmé.`
@@ -513,14 +513,25 @@ export function createTherapistTalk(opts) {
     }
 
     // Fin de séance : elle relit tout et réécrit sa mémoire
-    async function reflect(transcript) {
+    async function reflect(transcript, kind) {
         if (reflecting || !transcript || !transcript.length) return;
         if (!canAsk()) { Mem.clearPending(); return; }
         reflecting = true;
         try {
             await load();
-            const tr = transcript.map(function (m) { return (m.role === 'user' ? 'LA PERSONNE : ' : 'TOI : ') + m.text; }).join('\n');
-            const raw = await ask(systemPrompt('reflect'), [{ role: 'user', text: tr }]);
+            const lines = transcript.map(function (m) { return (m.role === 'user' ? 'LA PERSONNE : ' : 'TOI : ') + m.text; });
+            if (kind === 'call') lines.unshift('[Cette conversation a eu lieu au téléphone.]');
+            // le Worker coupe chaque message à 2000 caractères : on envoie la conversation en plusieurs morceaux, pour qu'elle la relise en entier
+            const turns = [];
+            let cur = '';
+            lines.forEach(function (l) {
+                l = l.slice(0, 1800);
+                if (cur && cur.length + l.length + 1 > 1800) { turns.push({ role: 'user', text: cur }); cur = ''; }
+                cur += (cur ? '\n' : '') + l;
+            });
+            if (cur) turns.push({ role: 'user', text: cur });
+            const raw = await ask(systemPrompt('reflect'), turns);
+            Mem.addEpisode(kind, transcript);            // la conversation est gardée mot pour mot (les dernières)
             const obj = parseJSON(raw);
             if (obj) {
                 Mem.applyReflection(obj);
@@ -573,7 +584,7 @@ export function createTherapistTalk(opts) {
         el.in.disabled = true;
         el.send.disabled = true;
         history.push({ role: 'user', text: msg });
-        if (mode === 'session') Mem.noteTurn('user', msg);
+        Mem.noteTurn('user', msg);                    // séance ET appel : tout est gardé
         learnName(msg);
 
         const stopDots = thinking();
@@ -589,7 +600,7 @@ export function createTherapistTalk(opts) {
         if (!r) {
             // L'IA n'a pas répondu : on n'invente rien à sa place. Le message du joueur est rendu, rien n'est mémorisé.
             history.pop();
-            if (mode === 'session') Mem.popTurn('user');
+            Mem.popTurn('user');
             el.in.value = msg;
             el.text.textContent = lastModelText();
             el.hint.textContent = pickLine('retry');
@@ -603,7 +614,7 @@ export function createTherapistTalk(opts) {
             else if (closing) closingTurns++;
         }
         history.push({ role: 'model', text: r.say });
-        if (mode === 'session' && r.say.trim()) Mem.noteTurn('model', r.say);
+        if (r.say.trim()) Mem.noteTurn('model', r.say);
         if (!isOpenFlag) { busy = false; return; }
 
         const afterSay = function () {
@@ -849,7 +860,7 @@ export function createTherapistTalk(opts) {
         let greet = '';
         const stopDots = ai ? thinking() : null;
         try {
-            if (pend) await reflect(pend);
+            if (pend) await reflect(pend, 'session');
             if (ai) { sessionStart = Date.now(); plannedMin = cfg.sessionMinutes || 30; greet = await greetBrain(first); }
         } catch (e) {
             console.warn('[therapist] accueil par l\'IA impossible :', e && e.message ? e.message : e);
@@ -893,6 +904,7 @@ export function createTherapistTalk(opts) {
             return;
         }
         history.push({ role: 'model', text: greet });
+        Mem.noteTurn('model', greet);
         Mem.noteCallAttempt();
         say(greet, finishTurn);
     }
@@ -928,6 +940,7 @@ export function createTherapistTalk(opts) {
         history = [];
         showBox();
         history.push({ role: 'model', text: r.say });
+        if (r.say.trim()) Mem.noteTurn('model', r.say);
         say(r.say, function () {
             if (r.end) { setTimeout(hangUp, 1800); busy = false; return; }
             finishTurn();
@@ -989,9 +1002,11 @@ export function createTherapistTalk(opts) {
         document.removeEventListener('keydown', trapKeys, true);
         if (mode === 'call') {
             const done = callCompleted;
+            const snap = history.slice();               // l'appel est relu et gardé, comme une séance
             mode = 'session';
             callCompleted = false;
             history = [];
+            if (snap.some(function (m) { return m.role === 'user'; })) reflect(snap, 'call');
             if (opts.onCallEnd) opts.onCallEnd(done, callKind);
         }
         if (opts.onClose) opts.onClose();
@@ -1005,7 +1020,7 @@ export function createTherapistTalk(opts) {
         history = [];
         closing = false; closingTurns = 0; locked = false; sessionStart = 0;
         close();
-        if (snap.some(function (m) { return m.role === 'user'; })) reflect(snap);
+        if (snap.some(function (m) { return m.role === 'user'; })) reflect(snap, 'session');
         else Mem.clearPending();
     }
 

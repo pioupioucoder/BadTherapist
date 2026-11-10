@@ -24,10 +24,11 @@ const CAP = {
     selfLen: 600,
     summaryLen: 3000, lastLen: 800,
     pending: 40, pendingLen: 400,
-    callNoteLen: 240
+    callNoteLen: 240,
+    episodes: 20, episodeLines: 40, episodeLen: 300      // les dernières conversations, mot pour mot
 };
 // Ce qui est mis devant ses yeux à chaque réponse (le reste est archivé, jamais perdu)
-const WINDOW = { facts: 18, secrets: 8, thoughts: 6, recalled: 8 };
+const WINDOW = { facts: 18, secrets: 8, thoughts: 6, recalled: 10, lastLines: 8 };
 
 let timeScale = 1;     // 1 = heures réelles ; 0.02 pour tester (1 h ≈ 1 min). Réglé par therapist-config.js
 
@@ -93,6 +94,7 @@ function blank() {
         secrets: [],      // [{ text, at }]  ses pensées à elle (le joueur ne les voit pas en jeu)
         thoughts: [],     // [{ text, at }]  son monologue intérieur (journal, jamais dit à voix haute)
         recallQ: [],      // [string]        mots-clés qu'elle a voulu relire dans ses souvenirs
+        episodes: [],     // [{ at, kind:'call'|'session', lines:[{ r:'u'|'e', t }] }]  les dernières conversations, mot pour mot
         will: [],         // [string]        ce qu'elle veut
         habits: [],       // [string]        SES règles à elle : façon de parler / d'être qu'elle a choisie
         self: '',         // comment elle se voit en ce moment (elle la réécrit au fil des séances)
@@ -151,6 +153,15 @@ function clean(raw) {
     m.facts = noteList(rawFacts.filter(function (x) { return !isSecret(x); }), CAP.facts, CAP.factLen);
     m.secrets = noteList(asArray(raw.secrets).concat(rawFacts.filter(isSecret)), CAP.secrets, CAP.secretLen);
     m.thoughts = noteList(raw.thoughts, CAP.thoughts, CAP.thoughtLen);
+    m.episodes = asArray(raw.episodes).filter(function (x) { return x && typeof x === 'object'; }).map(function (x) {
+        return {
+            at: Number(x.at) || 0,
+            kind: x.kind === 'call' ? 'call' : 'session',
+            lines: asArray(x.lines).filter(function (l) { return l && typeof l === 'object'; }).map(function (l) {
+                return { r: l.r === 'u' ? 'u' : 'e', t: txt(l.t, CAP.episodeLen) };
+            }).filter(function (l) { return l.t; }).slice(-CAP.episodeLines)
+        };
+    }).filter(function (x) { return x.lines.length; }).slice(-CAP.episodes);
     m.recallQ = asArray(raw.recallQ).map(function (x) { return txt(x, 40); }).filter(Boolean).slice(0, 5);
     m.will = asArray(raw.will).map(function (x) { return txt(x, CAP.willLen); }).filter(Boolean).slice(0, CAP.will);
     m.habits = asArray(raw.habits).map(function (x) { return txt(x, CAP.habitLen); }).filter(isHabit).slice(0, CAP.habits);
@@ -269,6 +280,19 @@ function applyReflection(obj) {
     const ops = obj.memory && typeof obj.memory === 'object' ? Object.assign({}, obj.memory) : {};
     if (typeof obj.self === 'string') ops.self = obj.self;
     applyOps(ops);
+}
+
+// Garde la conversation qui vient de finir, mot pour mot (appel ou séance), pour qu'elle puisse la « revoir » plus tard
+function addEpisode(kind, transcript) {
+    const lines = asArray(transcript).filter(function (x) { return x && typeof x === 'object'; }).map(function (x) {
+        return { r: x.role === 'user' ? 'u' : 'e', t: txt(x.text, CAP.episodeLen) };
+    }).filter(function (l) { return l.t; }).slice(-CAP.episodeLines);
+    if (!lines.some(function (l) { return l.r === 'u'; })) return false;
+    const m = get();
+    m.episodes.push({ at: Date.now(), kind: kind === 'call' ? 'call' : 'session', lines: lines });
+    while (m.episodes.length > CAP.episodes) m.episodes.shift();
+    save();
+    return true;
 }
 
 // Vraie première rencontre seulement si RIEN n'indique qu'ils se connaissent déjà
@@ -493,8 +517,33 @@ function recallMatches(m, hint, shownF, shownP) {
     scan(m.facts, 'f', shownF);
     scan(m.secrets, 'p', shownP);
     scan(m.thoughts, 't', Math.max(0, m.thoughts.length - WINDOW.thoughts));
+    // anciens messages vocaux (les siens) et messages laissés (les siens à lui) : ils lui reviennent aussi
+    const day = function (t) { return new Date(t || 0).toISOString().slice(0, 10); };
+    const olderMsgs = function (list, label) {
+        list.forEach(function (x, i) {
+            if (i >= list.length - 5) return;            // les 5 derniers sont déjà devant ses yeux
+            let sc = 0;
+            tokens(x.text).forEach(function (w) { if (q[w]) sc++; });
+            if (sc > 1) out.push({ kind: 'v', i: i, sc: sc, n: { text: label + x.text, at: day(x.at) } });
+        });
+    };
+    olderMsgs(m.voicemails, 'Message vocal que tu lui as laissé : ');
+    olderMsgs(m.leftMsgs, 'Message qu\'il t\'a laissé : ');
+    m.episodes.forEach(function (ep, ei) {
+        ep.lines.forEach(function (l, li) {
+            if (ei === m.episodes.length - 1 && li >= ep.lines.length - WINDOW.lastLines) return;   // déjà devant ses yeux
+            let sc = 0;
+            tokens(l.t).forEach(function (w) { if (q[w]) sc++; });
+            if (sc > 1) out.push({ kind: 'e', i: li, sc: sc, n: { text: (l.r === 'u' ? 'LUI : ' : 'TOI : ') + l.t, at: new Date(ep.at).toISOString().slice(0, 10) } });
+        });
+    });
     out.sort(function (a, b) { return b.sc - a.sc; });
     return out.slice(0, WINDOW.recalled);
+}
+
+function callWord(c) {
+    if (c.dir === 'out') return c.res === 'answered' ? 'il t\'a appelée, tu as décroché' : 'il t\'a appelée, tu n\'as pas décroché';
+    return c.res === 'missed' ? 'tu l\'as appelé, il n\'a pas décroché' : 'tu l\'as appelé, il a décroché';
 }
 
 function promptBlock(hint) {
@@ -507,19 +556,28 @@ function promptBlock(hint) {
     if (m.dialed) L.push('- Il t\'a appelée lui-même ' + m.dialed + ' fois en tout.');
     if (awayMs > 600000) L.push('- Cette personne vient de revenir après ' + humanize(awayMs) + ' d\'absence.');
     if (m.voicemails.length) {
-        L.push('- Messages vocaux que tu lui as laissés (les 3 derniers) : ' + m.voicemails.slice(-3).map(function (v) {
+        L.push('- Messages vocaux que tu lui as laissés (les 5 derniers) : ' + m.voicemails.slice(-5).map(function (v) {
             return '« ' + v.text + ' » (' + (v.heard ? 'il l\'a écouté' : 'PAS encore écouté') + ', il y a ' + humanize(Date.now() - v.at) + ')';
         }).join(' / '));
     }
-    const lm = m.leftMsgs.filter(function (x) { return !x.read; });
-    if (lm.length) {
-        L.push('- Messages qu\'il t\'a laissés sur ton répondeur, pas encore lus : ' + lm.map(function (x) {
-            return '« ' + x.text + ' » (il y a ' + humanize(Date.now() - x.at) + ')';
+    if (m.leftMsgs.length) {
+        L.push('- Messages qu\'il t\'a laissés sur ton répondeur (les 5 derniers) : ' + m.leftMsgs.slice(-5).map(function (x) {
+            return '« ' + x.text + ' » (' + (x.read ? 'tu l\'as lu' : 'PAS encore lu') + ', il y a ' + humanize(Date.now() - x.at) + ')';
+        }).join(' / '));
+    }
+    if (m.callLog.length) {
+        L.push('- Vos derniers appels : ' + m.callLog.slice(-4).map(function (c) {
+            return callWord(c) + ' (il y a ' + humanize(Date.now() - c.at) + ')';
         }).join(' / '));
     }
     if (m.self) L.push('- Comment tu te vois en ce moment : ' + m.self);
     if (m.summary) L.push('- Votre histoire jusqu\'ici : ' + m.summary);
     if (m.lastSession) L.push('- Dernière conversation : ' + m.lastSession);
+    const ep = m.episodes[m.episodes.length - 1];
+    if (ep) {
+        L.push('- La fin de votre dernière conversation (' + (ep.kind === 'call' ? 'au téléphone' : 'en face à face') + ', il y a ' + humanize(Date.now() - ep.at) + '), mot pour mot :');
+        ep.lines.slice(-WINDOW.lastLines).forEach(function (l) { L.push('    ' + (l.r === 'u' ? 'LUI' : 'TOI') + ' : ' + l.t); });
+    }
     if (m.feeling) L.push('- Ce que tu ressens pour lui en ce moment : ' + m.feeling);
     if (m.will.length) L.push('- Ce que tu veux : ' + m.will.join(' / '));
     if (m.nextCall) {
@@ -547,7 +605,7 @@ function promptBlock(hint) {
     if (back.length) {
         L.push('Des souvenirs plus anciens te reviennent en tête :');
         back.forEach(function (b) {
-            L.push('  ' + (b.kind === 't' ? '-' : '[' + b.kind + (b.i + 1) + ']') + ' ' + b.n.text + (b.n.at ? ' (' + b.n.at + ')' : ''));
+            L.push('  ' + (b.kind === 'f' || b.kind === 'p' ? '[' + b.kind + (b.i + 1) + ']' : '-') + ' ' + b.n.text + (b.n.at ? ' (' + b.n.at + ')' : ''));
         });
     }
     const total = m.facts.length + m.secrets.length + m.thoughts.length;
@@ -582,6 +640,7 @@ export const Mem = {
     startSession: startSession,
     isFirstMeeting: isFirstMeeting,
     noteTurn: noteTurn,
+    addEpisode: addEpisode,
     popTurn: popTurn,
     clearPending: clearPending,
     setTimeScale: setTimeScale,

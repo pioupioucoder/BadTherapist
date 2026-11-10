@@ -1,0 +1,260 @@
+﻿{
+    "files":  [
+                  {
+                      "path":  "audio-manager.js",
+                      "size":  6115
+                  },
+                  {
+                      "path":  "avatar-loader.js",
+                      "size":  8182
+                  },
+                  {
+                      "path":  "avatar-test.html",
+                      "size":  4968
+                  },
+                  {
+                      "path":  "bedroom.js",
+                      "size":  68402
+                  },
+                  {
+                      "path":  "bookreader.js",
+                      "size":  13438
+                  },
+                  {
+                      "path":  "corridor.js",
+                      "size":  13806
+                  },
+                  {
+                      "path":  "credit.html",
+                      "size":  5957
+                  },
+                  {
+                      "path":  "elevator.js",
+                      "size":  23169
+                  },
+                  {
+                      "path":  "evelyn-brain.js",
+                      "size":  6046
+                  },
+                  {
+                      "path":  "evelyn-life.js",
+                      "size":  5565
+                  },
+                  {
+                      "path":  "evelyn-phone.js",
+                      "size":  9694
+                  },
+                  {
+                      "path":  "forest.js",
+                      "size":  24052
+                  },
+                  {
+                      "path":  "immeuble.js",
+                      "size":  53663
+                  },
+                  {
+                      "path":  "index.html",
+                      "size":  21181
+                  },
+                  {
+                      "path":  "journal.js",
+                      "size":  16945
+                  },
+                  {
+                      "path":  "loader.js",
+                      "size":  18052
+                  },
+                  {
+                      "path":  "nightstand.js",
+                      "size":  13870
+                  },
+                  {
+                      "path":  "phone-item.js",
+                      "size":  12750
+                  },
+                  {
+                      "path":  "phone.js",
+                      "size":  19536
+                  },
+                  {
+                      "path":  "rdc.js",
+                      "size":  13579
+                  },
+                  {
+                      "path":  "save-data.js",
+                      "size":  24084
+                  },
+                  {
+                      "path":  "settings.html",
+                      "size":  26245
+                  },
+                  {
+                      "path":  "therapist-ai.js",
+                      "size":  51123
+                  },
+                  {
+                      "path":  "therapist-config.js",
+                      "size":  3089
+                  },
+                  {
+                      "path":  "therapist-memory.js",
+                      "size":  31463
+                  },
+                  {
+                      "path":  "vehicle.js",
+                      "size":  13993
+                  },
+                  {
+                      "path":  "work.js",
+                      "size":  51364
+                  },
+                  {
+                      "path":  "worker.js",
+                      "size":  14672
+                  },
+                  {
+                      "path":  "world_base.html",
+                      "size":  43666
+                  },
+                  {
+                      "path":  "audio/intro.mp3",
+                      "size":  1497173
+                  },
+                  {
+                      "path":  "audio/work.mp3",
+                      "size":  4244419
+                  },
+                  {
+                      "path":  "avatars/base of all avatar/base.fbx",
+                      "size":  14213772
+                  },
+                  {
+                      "path":  "avatars/base of all avatar/evelynbase.fbx",
+                      "size":  8552860
+                  },
+                  {
+                      "path":  "avatars/base of all avatar/pluiebase.fbx",
+                      "size":  9765020
+                  },
+                  {
+                      "path":  "avatars/evelyn/evelyn.fbx",
+                      "size":  19078080
+                  },
+                  {
+                      "path":  "avatars/evelyn/Fast Run.fbx",
+                      "size":  242880
+                  },
+                  {
+                      "path":  "avatars/evelyn/idle.fbx",
+                      "size":  623472
+                  },
+                  {
+                      "path":  "avatars/evelyn/Opening-door.fbx",
+                      "size":  530096
+                  },
+                  {
+                      "path":  "avatars/evelyn/sit.fbx",
+                      "size":  800672
+                  },
+                  {
+                      "path":  "avatars/evelyn/sit_talk.fbx",
+                      "size":  2854784
+                  },
+                  {
+                      "path":  "avatars/evelyn/texture_diffuse.png",
+                      "size":  2889694
+                  },
+                  {
+                      "path":  "avatars/evelyn/texture_metallic.png",
+                      "size":  913551
+                  },
+                  {
+                      "path":  "avatars/evelyn/texture_normal.png",
+                      "size":  2723333
+                  },
+                  {
+                      "path":  "avatars/evelyn/texture_roughness.png",
+                      "size":  688332
+                  },
+                  {
+                      "path":  "avatars/evelyn/Walking.fbx",
+                      "size":  286656
+                  },
+                  {
+                      "path":  "avatars/pluie/texture_diffuse.png",
+                      "size":  3355938
+                  },
+                  {
+                      "path":  "avatars/pluie/texture_metallic.png",
+                      "size":  748420
+                  },
+                  {
+                      "path":  "avatars/pluie/texture_normal.png",
+                      "size":  4388981
+                  },
+                  {
+                      "path":  "avatars/pluie/texture_roughness.png",
+                      "size":  960697
+                  },
+                  {
+                      "path":  "images/corridor1.jpg",
+                      "size":  90032
+                  },
+                  {
+                      "path":  "images/corridor2.jpg",
+                      "size":  28961
+                  },
+                  {
+                      "path":  "images/corridor3.jpg",
+                      "size":  128512
+                  },
+                  {
+                      "path":  "images/corridor4.jpg",
+                      "size":  110461
+                  },
+                  {
+                      "path":  "images/corridor5.jpg",
+                      "size":  71284
+                  },
+                  {
+                      "path":  "images/corridor6.jpg",
+                      "size":  85887
+                  },
+                  {
+                      "path":  "images/intro.png",
+                      "size":  79582
+                  },
+                  {
+                      "path":  "images/logo.png",
+                      "size":  325681
+                  },
+                  {
+                      "path":  "images/snowbound_house.png",
+                      "size":  26752
+                  },
+                  {
+                      "path":  "json/book.json",
+                      "size":  68
+                  },
+                  {
+                      "path":  "json/livredetherapeute/book01.json",
+                      "size":  833
+                  },
+                  {
+                      "path":  "json/livredetherapeute/book02.json",
+                      "size":  843
+                  },
+                  {
+                      "path":  "json/therapist/context.txt",
+                      "size":  1042
+                  },
+                  {
+                      "path":  "json/therapist/lines.json",
+                      "size":  400
+                  },
+                  {
+                      "path":  "videos/video1.mp4",
+                      "size":  8041010
+                  }
+              ]
+}
