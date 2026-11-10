@@ -1349,6 +1349,8 @@ if (ctx.driveCamera) {
   });
 }
 
+
+
 // ==========================================
 // 12. UPDATE
 // ==========================================
@@ -1389,10 +1391,11 @@ return {
 
     // Forêt (vent) : seuls les blocs proches du joueur sont dessinés
     forest.update(time, getFocus());
-
+    
     // Autonome (immeuble.js / work.js) : on suit le relief, on contourne les arbres, on conduit
     if (camera) {
       if (truck) truck.update(dt, true);
+      
       if (!(truck && truck.isDriving())) {
         const tc = forest.collide(camera.position.x, camera.position.z, 0.3);
         camera.position.x = tc[0];
@@ -1403,6 +1406,7 @@ return {
         if (ctx.snow) ctx.snow.setBaseY(walkY - 1.7);
       }
     }
+   
 
     // Fenêtres vivantes
     for (const d of dyn) {
