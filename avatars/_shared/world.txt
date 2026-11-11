@@ -1,0 +1,8 @@
+# MONDE COMMUN À TOUS LES AVATARS (facultatif)
+# Ce fichier est lu avant le contexte de chaque avatar. Mets ici ce qui est vrai pour tout le monde dans le jeu.
+# Les lignes qui commencent par # sont tes notes : l'IA ne les voit pas.
+
+LE MONDE
+- Il continue de changer, que tu le suives ou non.
+- Vivre coûte de l'argent.
+- Pour joindre quelqu'un, il y a le téléphone : appeler, laisser un message vocal. Il n'y a pas d'e-mail.

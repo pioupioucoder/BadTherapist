@@ -7,8 +7,9 @@
 //   • SA MÉMOIRE (therapist-memory.js) : elle décide de ce qu'elle retient, oublie, veut, de ses habitudes, de son agenda ;
 //   • si l'IA ne répond pas : on réessaie, puis on le dit au joueur. On n'invente JAMAIS une réplique à sa place.
 //
-// Contexte (qui elle est)  : json/therapist/context.txt  (les lignes qui commencent par # sont ignorées)
-// Dernier recours / textes : json/therapist/lines.json
+// Contexte (qui elle est)  : avatars/<avatar>/brain/context.txt  (les lignes qui commencent par # sont ignorées)
+// Dernier recours / textes : avatars/<avatar>/brain/lines.json
+// Monde commun (facultatif) : avatars/_shared/world.txt
 
 import { THERAPIST_CONFIG } from './therapist-config.js';
 import { Mem } from './therapist-memory.js';
@@ -181,13 +182,16 @@ export function createTherapistTalk(opts) {
         loadPromise = Promise.all([
             fetch(cfg.contextFile).then(function (r) { return r.ok ? r.text() : ''; }).catch(function () { return ''; }),
             fetch(cfg.linesFile).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }),
+            // le monde commun à tous les avatars : facultatif, ignoré s'il n'existe pas
+            cfg.worldFile ? fetch(cfg.worldFile).then(function (r) { return r.ok ? r.text() : ''; }).catch(function () { return ''; }) : Promise.resolve(''),
             // therapist-secret.js : optionnel, jamais poussé sur GitHub (voir therapist-config.js)
             import('./therapist-secret.js').then(function (m) { return m.GROQ_API_KEY || ''; }).catch(function () { return ''; })
         ]).then(function (r) {
             // les lignes qui commencent par # sont tes notes à toi : l'IA ne les voit pas
-            context = (r[0] || '').split(/\r?\n/).filter(function (l) { return l.trim().charAt(0) !== '#'; }).join('\n');
+            const strip = function (t) { return (t || '').split(/\r?\n/).filter(function (l) { return l.trim().charAt(0) !== '#'; }).join('\n'); };
+            context = [strip(r[2]), strip(r[0])].filter(function (t) { return t.trim(); }).join('\n\n');   // monde commun d'abord, puis elle
             lines = r[1] || {};
-            secretKey = r[2] || '';
+            secretKey = r[3] || '';
         });
         return loadPromise;
     }
