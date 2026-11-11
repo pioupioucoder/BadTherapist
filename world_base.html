@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <link rel="icon" type="image/png" href="./images/logo.png">
 <title>Bad Therapist</title>
-
+<script src="loader.js"></script>
 <style>
 * {
   margin: 0;
@@ -468,7 +468,8 @@ camera.rotation.order = 'YXZ';
 // ==========================================
 
 const skyUniforms = {
-  uTime: { value: 0 }
+  uTime: { value: 0 },
+  uDim: { value: 1 }          // 1 = ciel normal ; la rue le baisse (nuit noire dehors, voir immeuble.js)
 };
 
 const skyMaterial = new THREE.ShaderMaterial({
@@ -493,6 +494,7 @@ const skyMaterial = new THREE.ShaderMaterial({
 
     varying vec3 vDirection;
     uniform float uTime;
+    uniform float uDim;
 
     float hash(vec3 p) {
       p = fract(p * 0.3183099 + vec3(0.1));
@@ -561,7 +563,7 @@ const skyMaterial = new THREE.ShaderMaterial({
       // Leger grain contre les bandes dans les degrades sombres
       col += (hash(dir * 1000.0) - 0.5) * 0.012;
 
-      gl_FragColor = vec4(col, 1.0);
+      gl_FragColor = vec4(col * uDim, 1.0);
     }
   `
 });
@@ -579,6 +581,9 @@ skySphere.frustumCulled = false;
 skySphere.renderOrder = -100;
 
 scene.add(skySphere);
+scene.userData.sky = skyUniforms;          // les mondes (immeuble.js) peuvent assombrir le ciel
+window.BTRenderer = renderer;              // pour le diagnostic de performance (?perf)
+window.BTScene = scene;
 // ==========================================
 // 3. GLOBAL LIGHTING
 // ==========================================
@@ -1715,7 +1720,7 @@ function animate() {
 
   requestAnimationFrame(animate);
 
-  const dt = Math.min(clock.getDelta(), 0.05);
+  const dt = Math.min(clock.getDelta(), 0.1);   // (0.05 avant : sous 20 images/s tout passait au ralenti)
 
   // SKY FOLLOWS CAMERA
 

@@ -669,6 +669,18 @@ function createInterior(parent, o) {
   let streetTime = 0;
   console.log('[BT] intérieur créé. Porte (repère rue) :', DOOR);
 
+  // Écran de chargement (loader.js) : on prépare tout de suite la maison (Evelyn + livres) derrière l'écran,
+  // au lieu de le faire en plein jeu (c'est ce qui figeait l'image une ou deux secondes).
+  if (window.BTLoad && window.BTLoad.active()) {
+    window.BTLoad.hold('house');
+    setTimeout(function () {
+      ensureAll().catch(function () { }).then(function () {
+        console.log('[BT] maison prête : entrée instantanée');
+        window.BTLoad.release('house');
+      });
+    }, 30);
+  }
+
   return {
     isInside: function () { return inside || busy; },
     update: function (dt, time) {

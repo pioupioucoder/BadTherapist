@@ -74,7 +74,19 @@ function fixClip(model, clip, label) {
     return bad;
 }
 
+// Tout avatar chargé pendant le démarrage retient automatiquement l'écran de chargement (loader.js) :
+// un nouvel avatar, quel que soit le fichier qui le charge, est donc prêt avant que le jeu s'affiche.
 export async function loadMixamoAvatar(opts) {
+    const key = 'avatar:' + (opts && opts.model);
+    if (window.BTLoad) window.BTLoad.hold(key);
+    try {
+        return await loadMixamoAvatarNow(opts);
+    } finally {
+        if (window.BTLoad) window.BTLoad.release(key);
+    }
+}
+
+async function loadMixamoAvatarNow(opts) {
     opts = opts || {};
     let scale = opts.scale || 0.01;                 // Mixamo exporte en centimètres : ×0.01 pour des mètres (ignoré si height est donné)
     const style = opts.style || 'pbr';              // 'pbr' (réagit aux lumières) ou 'lambert' (plus plat, comme ton décor)

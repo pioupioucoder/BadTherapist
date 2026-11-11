@@ -150,26 +150,29 @@ function patchWind(mat, strength) {
   };
 }
 
-function makeMats(boost) {
+function makeMats(boost, cheap) {
   const T = getTex();
   const b = boost || 0;
+  // « cheap » : éclairage Lambert (calculé aux sommets) au lieu de PBR par pixel. Les arbres ont roughness 1 (aucun reflet),
+  // le rendu est quasi identique mais coûte beaucoup moins : la scène contient une dizaine de lumières.
+  const Mat = cheap ? THREE.MeshLambertMaterial : THREE.MeshStandardMaterial;
 
-  const bark = new THREE.MeshStandardMaterial({
-    map: T.bark, vertexColors: true, roughness: 1,
+  const bark = new Mat({
+    map: T.bark, vertexColors: true,
     emissive: new THREE.Color(0x030202).multiplyScalar(1 + b * 0.8),
     side: THREE.DoubleSide
   });
   patchWind(bark, 1.6);
 
-  const leaf = new THREE.MeshStandardMaterial({
-    map: T.leaf, vertexColors: true, alphaTest: 0.5, roughness: 1,
+  const leaf = new Mat({
+    map: T.leaf, vertexColors: true, alphaTest: 0.5,
     emissive: new THREE.Color(0x030504).multiplyScalar(1 + b * 0.8),
     side: THREE.DoubleSide
   });
   patchWind(leaf, 1.6);
 
-  const bush = new THREE.MeshStandardMaterial({
-    map: T.leaf, vertexColors: true, alphaTest: 0.5, roughness: 1,
+  const bush = new Mat({
+    map: T.leaf, vertexColors: true, alphaTest: 0.5,
     emissive: new THREE.Color(0x030504).multiplyScalar(1 + b * 0.8),
     side: THREE.DoubleSide
   });
@@ -273,10 +276,10 @@ function addClump(b, rnd, c, size, tint, H, center) {
 function makeBushGeo() {
   const rnd = prng(99);
   const leaf = newB();
-  const center = new V3(0, 0.8, 0);
+  const center = new V3(0, 0.5, 0);
   for (let i = 0; i < 6; i++) {
     const a = rnd() * Math.PI * 2, r = rnd() * 0.9;
-    const c = new V3(Math.cos(a) * r, 0.7 + rnd() * 0.7, Math.sin(a) * r);
+    const c = new V3(Math.cos(a) * r, 0.3 + rnd() * 0.6, Math.sin(a) * r);
     addClump(leaf, rnd, c, 1.5 + rnd() * 0.9, [0.9 + rnd() * 0.3, 1.0, 0.85], 3, center);
   }
   return { leaf: toGeo(leaf), H: 3 };
@@ -496,13 +499,14 @@ export function pickSpecies(x, z, R) {
 // ==========================================
 // data : { trees:[{x,y,z,s,r,v}], bushes:[...], rocks:[{x,y,z,s,r,v:'rock1'|'rock2', sy}] }
 
-const CH = 80;
+const CH_DEFAULT = 40;      // taille d'un bloc (m) : plus petit = on dessine moins d'arbres inutiles
 
 export function buildForest(parent, data, opts) {
 
   opts = opts || {};
+  const CH = opts.chunk || CH_DEFAULT;
   const V = getVariants();
-  const M = makeMats(opts.boost || 0);
+  const M = makeMats(opts.boost || 0, opts.cheapLight !== false);
 
   const group = new THREE.Group();
   parent.add(group);
@@ -575,7 +579,7 @@ export function buildForest(parent, data, opts) {
       group.add(im);
       meshes.push({
         mesh: im, x: ax, z: az,
-        cull: c.kind === 'tree' ? (opts.cullTree || 140) : (c.kind === 'bush' ? (opts.cullBush || 80) : (opts.cullRock || 110))
+        cull: c.kind === 'tree' ? (opts.cullTree || 75) : (c.kind === 'bush' ? (opts.cullBush || 45) : (opts.cullRock || 60))
       });
     });
   });

@@ -480,7 +480,14 @@ function buildShared() {
   const bushes = scatterPoints(R, {
     x0: TER.x0 + 40, x1: TER.x1 - 40, z0: TER.z0 + 40, z1: TER.z1 - 40,
     count: 900, tries: 12000, spacing: 3.2, scaleMin: 0.8, scaleMax: 1.5,
-    height: (x, z) => terrainH(x, z) - 0.05,
+    height: (x, z) => {
+      let h = terrainH(x, z);
+      for (let k = 0; k < 6; k++) {                       // le sol sous toute la largeur du buisson (pente)
+        const a = k * Math.PI / 3;
+        h = Math.min(h, terrainH(x + Math.cos(a) * 1.5, z + Math.sin(a) * 1.5));
+      }
+      return h - 0.12;
+    },
     pick: () => 'bush',
     density: (x, z) => {
       if (nearHouse(x, z) < 24 || lakeD(x, z) < LAKE.r * 1.1) return 0;
@@ -1237,18 +1244,19 @@ const offColor = disp(0.03, 0.03, 0.035);
 // Matériaux de la route prolongée (même texture que l'allée devant l'immeuble)
 const roadMat2 = new THREE.MeshStandardMaterial({
   map: makeTex(roadCv, 1, 1, true), color: 0xb0b0b0, roughness: 0.85, emissive: roadEmissive,
-  polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -6
+  polygonOffset: true, polygonOffsetFactor: -8, polygonOffsetUnits: -40
 });
 SH.roads.forEach(r => {
   const m = new THREE.Mesh(r.geo, roadMat2);
   m.frustumCulled = false;
+  m.renderOrder = 1;                       // dessinée après le terrain
   scene.add(m);
 });
 
 // Carrefours : une plaque d'asphalte unie par-dessus les deux routes
 const patchMat = new THREE.MeshStandardMaterial({
   color: 0x39393c, roughness: 0.9, emissive: roadEmissive,
-  polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -10
+  polygonOffset: true, polygonOffsetFactor: -10, polygonOffsetUnits: -60
 });
 SH.patches.forEach(p => {
   const m = new THREE.Mesh(new THREE.CircleGeometry(p.r, 28), patchMat);
@@ -1293,7 +1301,69 @@ SH.lamps.forEach(l => {
 });
 
 // Forêt : grands arbres feuillus, buissons et rochers qui bougent avec le vent (forest.js)
-const forest = buildForest(scene, SH.forestData, { boost: BOOST });
+const forest = buildForest(scene, SH.forestData, { boost: BOOST, chunk: 40, cullTree: 75, cullBush: 45, cullRock: 60 });
+
+// ==========================================
+// NUIT NOIRE DEHORS : brouillard épais + lanterne autour du joueur
+// ==========================================
+// Dehors on ne voit que quelques mètres (la lumière de la lanterne), le reste se perd dans le noir ; seules les
+// fenêtres et les lampadaires éclairent de loin. Dans la chambre (vue par la fenêtre) rien ne change.
+const NIGHT = {
+  walk: 0.085,        // densité du brouillard à pied (plus grand = on voit moins loin)
+  drive: 0.03,        // en voiture / camion
+  dim: 0.07,          // luminosité du ciel et du brouillard (1 = comme avant)
+  lantern: 2.6,       // puissance de la lanterne du joueur
+  lanternRange: 15    // portée (m)
+};
+const lantern = new THREE.PointLight(0xffd6a0, 0, NIGHT.lanternRange, 1.4);
+scene.add(lantern);
+let atm = null;
+const _lf = new THREE.Vector3();
+function rootOf(o) { while (o.parent) o = o.parent; return o; }
+
+function updateAtmosphere(dt, time) {
+  if (!playerCam) return;
+  const rt = rootOf(scene);
+  if (!rt.fog) return;
+  const sky = rt.userData && rt.userData.sky;
+  if (!atm) atm = { den: rt.fog.density, col: rt.fog.color.clone(), d: rt.fog.density, dim: 1, lit: 0, touched: false };
+
+  const lx = playerCam.position.x - scene.position.x, lz = playerCam.position.z - scene.position.z;
+  const outdoors = lx > TER.x0 && lx < TER.x1 && lz > TER.z0 && lz < TER.z1;
+  const riding = !!(taxi && taxi.isRiding());
+  const driving = !!(truck && truck.isDriving());
+  const k = Math.min(1, dt * 1.8);
+
+  const tgtDen = outdoors ? ((riding || driving) ? NIGHT.drive : NIGHT.walk) : atm.den;
+  const tgtDim = outdoors && sky ? NIGHT.dim : 1;
+  const tgtLit = outdoors ? (riding ? NIGHT.lantern * 0.5 : NIGHT.lantern) : 0;
+  atm.d += (tgtDen - atm.d) * k;
+  atm.dim += (tgtDim - atm.dim) * k;
+  atm.lit += (tgtLit - atm.lit) * k;
+
+  const away = Math.abs(atm.d - atm.den) > 1e-5 || Math.abs(atm.dim - 1) > 1e-3;
+  if (away) {
+    atm.touched = true;
+    rt.fog.density = atm.d;
+    if (sky && sky.uDim) {
+      sky.uDim.value = atm.dim;
+      rt.fog.color.copy(atm.col).multiplyScalar(atm.dim);      // le brouillard garde la couleur de l'horizon du ciel
+    }
+  } else if (atm.touched) {
+    atm.touched = false;
+    rt.fog.density = atm.den;
+    rt.fog.color.copy(atm.col);
+    if (sky && sky.uDim) sky.uDim.value = 1;
+  }
+
+  // Lanterne : un peu devant et sous les yeux du joueur, légère vacillation
+  lantern.distance = riding ? 7 : NIGHT.lanternRange;
+  lantern.intensity = atm.lit * (0.94 + 0.06 * Math.sin(time * 11) * Math.sin(time * 3.7));
+  if (atm.lit > 0.01) {
+    _lf.set(0, -0.25, -0.7).applyQuaternion(playerCam.quaternion);
+    lantern.position.set(lx + _lf.x, playerCam.position.y - scene.position.y + _lf.y, lz + _lf.z);
+  }
+}
 
 // Lac gelé
 const ice = new THREE.Mesh(
@@ -1354,6 +1424,7 @@ if (ctx.driveCamera) {
   taxi = createTaxi(scene, {
     origin: org,
     camera: ctx.driveCamera, view: ctx.view, action: ctx.action,
+    renderer: renderer,
     groundH: SH.walkHeight,
     road: SH.main,
     rects: truckRects,
@@ -1400,6 +1471,8 @@ return {
   },
 
   update(dt, time) {
+
+    updateAtmosphere(dt, time);
 
     // Maison de travail (fumée, fenêtre qui vacille)
     work.update(dt, time);

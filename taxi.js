@@ -179,14 +179,7 @@ export function createTaxi(parent, o) {
     wheels.push({ g: wg, front: w[2] });
   });
 
-  // Phares
-  const spot = new THREE.SpotLight(0xffe6c0, 0, 70, 0.6, 0.55, 1.0);
-  spot.position.set(0, 0.9, -2.2);
-  g.add(spot);
-  const spotTarget = new THREE.Object3D();
-  spotTarget.position.set(0, 0.3, -24);
-  g.add(spotTarget);
-  spot.target = spotTarget;
+  // (pas de vraie lumière pour les phares : chaque lumière dynamique alourdit tous les pixels de la scène)
 
   // ==========================================
   // OLIVER (chargé en arrière-plan)
@@ -213,12 +206,36 @@ export function createTaxi(parent, o) {
       ev = a;
       driverSlot.add(a.root);
       a.play(a.actions.sit ? 'sit' : 'default');
+      a.update(0.001);
+      warmUp(a.root);
       console.log('[taxi] Oliver chargé. Animations :', Object.keys(a.actions));
     }).catch(function (e) {
       console.warn('[taxi] Oliver n\'a pas pu être chargé :', e && e.message ? e.message : e);
+    }).then(function () {
+      if (window.BTLoad) window.BTLoad.release('oliver');
     });
   }
-  setTimeout(loadOliver, 800);           // après le démarrage du monde (le FBX pèse ~12 Mo)
+
+  // Envoie textures et shaders au GPU tout de suite (sinon petite saccade à la première apparition d'Oliver)
+  function warmUp(root) {
+    const r = o.renderer;
+    if (!r) return;
+    try {
+      root.traverse(function (m) {
+        const mat = m.material;
+        if (!mat) return;
+        [mat.map, mat.normalMap, mat.roughnessMap, mat.metalnessMap].forEach(function (tx) {
+          if (tx && r.initTexture) r.initTexture(tx);
+        });
+      });
+      let rt = parent;
+      while (rt.parent) rt = rt.parent;           // la vraie scène (c'est elle qui contient toutes les lumières)
+      r.compile(rt, camera);
+    } catch (e) { /* sans importance */ }
+  }
+
+  if (window.BTLoad) window.BTLoad.hold('oliver');     // l'écran de chargement attend Oliver
+  loadOliver();
 
   window.BadTherapistTaxi = {
     group: g,
@@ -387,7 +404,6 @@ export function createTaxi(parent, o) {
     heading = P.H[0];
     speed = 0;
     if (o.view) o.view.set(heading, 0);
-    spot.intensity = 3.5;
     hideAction();
     if (o.action) o.action.hide();
   }
@@ -405,7 +421,6 @@ export function createTaxi(parent, o) {
     mode = 'parked';
     riding = false;
     speed = 0;
-    spot.intensity = 0;
     at = at === 'home' ? 'work' : 'home';
     cool = 2.5;                          // pas de ré-embarquement accidentel juste après être descendu
     const rx = Math.cos(heading), rz = -Math.sin(heading);
@@ -432,6 +447,9 @@ export function createTaxi(parent, o) {
 
   function animate(dt) {
     if (!ev) return;
+    const far = Math.hypot(camera.position.x - origin.x - x, camera.position.z - origin.z - z) > 140;
+    if (ev.root.visible === far) ev.root.visible = !far;          // un personnage animé caché ne coûte rien
+    if (far) return;
     ev.play(mode === 'driving' && speed > 0.5 ? 'drive' : 'sit');
     ev.update(dt);
   }
@@ -466,7 +484,6 @@ export function createTaxi(parent, o) {
     if (arrived) {
       mode = 'arrived';
       arrivedT = 0;
-      spot.intensity = 0;
       wheels.forEach(function (w) { w.g.rotation.y = 0; });
     }
   }
