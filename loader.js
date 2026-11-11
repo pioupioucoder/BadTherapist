@@ -43,9 +43,9 @@
     const SMOOTH_FRAMES = 30, SMOOTH_MS = 40;   // « le jeu est fluide » = 30 images de suite sous 40 ms
     const FALLBACK = [
         'index.html', 'world_base.html', 'immeuble.js', 'bedroom.js', 'corridor.js', 'elevator.js', 'rdc.js', 'forest.js', 'work.js',
-        'vehicle.js', 'taxi.js', 'worker.js', 'nightstand.js', 'journal.js', 'bookreader.js', 'phone.js', 'phone-item.js',
-        'avatar-loader.js', 'audio-manager.js', 'save-data.js', 'therapist-ai.js', 'therapist-config.js',
-        'therapist-memory.js', 'evelyn-brain.js', 'evelyn-life.js', 'evelyn-phone.js'
+        'objects/vehicle.js', 'taxi.js', 'workers/worker.js', 'objects/nightstand.js', 'objects/journal.js', 'objects/bookreader.js', 'objects/phone.js', 'engine/phone-item.js',
+        'avatar-loader.js', 'audio-manager.js', 'save-data.js', 'engine/therapist-ai.js', 'engine/therapist-config.js',
+        'engine/therapist-memory.js', 'workers/evelyn-brain.js', 'engine/evelyn-life.js', 'engine/evelyn-phone.js'
     ];
     const SKIP = /(^|\/)(\.git|node_modules|\.vscode|\.idea|backups?|saves?)(\/|$)|\.(php|ps1|bat|md|psd|blend1?|zip|rar|7z|bak|log|tmp|map|sh|sql|ini)$/i;
     const BIG = /\.(fbx|glb|gltf|png|jpe?g|webp|mp3|ogg|wav|m4a|mp4|webm|hdr|exr)$/i;

@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { loadMixamoAvatar } from './avatar-loader.js';
 import { buildWorld as buildOutside, WORK_SPOT } from './immeuble.js';
-import { createBookReader } from './bookreader.js';
-import { createTherapistTalk } from './therapist-ai.js';
+import { createBookReader } from './objects/bookreader.js';
+import { createTherapistTalk } from './engine/therapist-ai.js';
 
 // ==========================================
 // BAD THERAPIST — LA MAISON DU THÉRAPEUTE (work.js)

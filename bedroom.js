@@ -4,8 +4,8 @@ import { buildWorld as buildOutside } from './immeuble.js';
 import { buildCorridor } from './corridor.js';
 import { buildElevator } from './elevator.js';
 import { buildGroundFloor } from './rdc.js';
-import { buildNightstand } from './nightstand.js';
-import { buildPhone } from './phone.js';
+import { buildNightstand } from './objects/nightstand.js';
+import { buildPhone } from './objects/phone.js';
 
 // bedroom.js – la chambre (copie d'illusion.js) adaptée à world_base.html
 // La fenêtre affiche en temps réel l'extérieur de immeuble.js,

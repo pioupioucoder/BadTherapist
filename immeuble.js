@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { buildWork } from './work.js';
 import { scatterPoints, pickSpecies, buildForest } from './forest.js';
-import { createTruck } from './vehicle.js';
+import { createTruck } from './objects/vehicle.js';
 import { createTaxi } from './taxi.js';
 
 // ==========================================
