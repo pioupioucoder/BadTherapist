@@ -72,7 +72,7 @@ export function createTaxi(parent, o) {
       side: THREE.DoubleSide, depthWrite: false
     }),
     light: new THREE.MeshBasicMaterial({ color: 0xffe9c0 }),
-    tail: new THREE.MeshBasicMaterial({ color: 0x8a1408 }),
+    tail: new THREE.MeshBasicMaterial({ color: 0xff3a1e }),
     snow: new THREE.MeshStandardMaterial({ color: 0xc9d0d4, roughness: 0.92, emissive: 0x161c20 })
   };
 
@@ -179,7 +179,21 @@ export function createTaxi(parent, o) {
     wheels.push({ g: wg, front: w[2] });
   });
 
-  // (pas de vraie lumière pour les phares : chaque lumière dynamique alourdit tous les pixels de la scène)
+  // Phares : une seule vraie lumière partagée avec le camion (o.headlight), prise en montant dans le taxi
+  const spotTarget = new THREE.Object3D();
+  spotTarget.position.set(0, 0.3, -24);
+  g.add(spotTarget);
+  function mountHeadlight() {
+    const h = o.headlight;
+    if (!h) return;
+    h.position.set(0, 0.9, -2.2);
+    g.add(h);
+    h.target = spotTarget;
+    h.intensity = 4.0;
+  }
+  function dimHeadlight() {
+    if (o.headlight && o.headlight.parent === g) o.headlight.intensity = 0;
+  }
 
   // ==========================================
   // OLIVER (chargé en arrière-plan)
@@ -404,6 +418,7 @@ export function createTaxi(parent, o) {
     heading = P.H[0];
     speed = 0;
     if (o.view) o.view.set(heading, 0);
+    mountHeadlight();
     hideAction();
     if (o.action) o.action.hide();
   }
@@ -484,6 +499,7 @@ export function createTaxi(parent, o) {
     if (arrived) {
       mode = 'arrived';
       arrivedT = 0;
+      dimHeadlight();
       wheels.forEach(function (w) { w.g.rotation.y = 0; });
     }
   }

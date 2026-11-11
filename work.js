@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { lightPool } from './lightpool.js';
 import { loadMixamoAvatar } from './avatar-loader.js';
 import { buildWorld as buildOutside, WORK_SPOT } from './immeuble.js';
 import { createBookReader } from './objects/bookreader.js';
@@ -1095,6 +1096,11 @@ export function buildWork(parent, opts) {
   bulb.position.set(1.0, F + 2.22, FZ + 0.19);
   g.add(bulb);
   glowSprite(1.0, F + 2.2, FZ + 0.6, 0xffb870, 3.4, 0.55);
+
+  // Le sol devant la maison est éclairé par le porche et par ses fenêtres (halos au sol : visibles de loin, sans coût)
+  lightPool(g, 0.6, 0, FZ + 3.2, 8.5, 0xffa860, 0.34);
+  lightPool(g, -3.4, 0, FZ + 3.0, 5.5, 0xffc888, 0.16);
+  lightPool(g, 4.6, 0, FZ + 3.0, 5.5, 0xffc888, 0.16);
 
   if (opts.light !== false) {
     const light = new THREE.PointLight(0xffa860, 2.6, 26, 1.7);

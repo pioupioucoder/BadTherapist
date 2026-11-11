@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <link rel="icon" type="image/png" href="./images/logo.png">
 <title>Bad Therapist</title>
-<script src="loader.js"></script>
+
 <style>
 * {
   margin: 0;
@@ -448,9 +448,13 @@ renderer.outputEncoding = THREE.sRGBEncoding;
 
 const scene = new THREE.Scene();
 
-const FOG_DENSITY = 0.0075;   // réglable : plus petit = on voit plus loin (montagnes)
+// NUIT RÉELLE : le ciel, le brouillard et la lumière ambiante sont presque noirs. Seules les vraies sources de
+// lumière (lampadaires, fenêtres, phares, lampe torche) éclairent. Réglages :
+const NIGHT_DIM = 0.09;      // luminosité du ciel / brouillard (1 = ancienne version claire)
+const NIGHT_LIGHT = 0.3;     // lumière ambiante globale (1 = ancienne version) : si la chambre devient trop sombre, monte cette valeur
+const FOG_DENSITY = 0.012;   // réglable : plus petit = on voit plus loin
 scene.fog = new THREE.FogExp2(0x000000, FOG_DENSITY);
-scene.fog.color.setRGB(0.145, 0.157, 0.160); // = couleur de l'horizon du ciel
+scene.fog.color.setRGB(0.145 * NIGHT_DIM, 0.157 * NIGHT_DIM, 0.160 * NIGHT_DIM); // = couleur de l'horizon du ciel
 renderer.setClearColor(scene.fog.color);
 
 const camera = new THREE.PerspectiveCamera(
@@ -469,7 +473,7 @@ camera.rotation.order = 'YXZ';
 
 const skyUniforms = {
   uTime: { value: 0 },
-  uDim: { value: 1 }          // 1 = ciel normal ; la rue le baisse (nuit noire dehors, voir immeuble.js)
+  uDim: { value: NIGHT_DIM }  // luminosité du ciel (même valeur que le brouillard)
 };
 
 const skyMaterial = new THREE.ShaderMaterial({
@@ -581,6 +585,7 @@ skySphere.frustumCulled = false;
 skySphere.renderOrder = -100;
 
 scene.add(skySphere);
+window.BT_NIGHT = { dim: NIGHT_DIM, light: NIGHT_LIGHT, fog: FOG_DENSITY };   // lu par bedroom.js (vue par la fenêtre)
 scene.userData.sky = skyUniforms;          // les mondes (immeuble.js) peuvent assombrir le ciel
 window.BTRenderer = renderer;              // pour le diagnostic de performance (?perf)
 window.BTScene = scene;
@@ -593,7 +598,7 @@ window.BTScene = scene;
 scene.add(
   new THREE.AmbientLight(
     0x8d9aa6,
-    0.055
+    0.055 * NIGHT_LIGHT
   )
 );
 
@@ -602,7 +607,7 @@ scene.add(
 const hemisphere = new THREE.HemisphereLight(
   0x7f909d,
   0x23201e,
-  0.085
+  0.085 * NIGHT_LIGHT
 );
 
 scene.add(hemisphere);
@@ -611,7 +616,7 @@ scene.add(hemisphere);
 
 const daylight = new THREE.DirectionalLight(
   0x8fa0ad,
-  0.035
+  0.035 * NIGHT_LIGHT
 );
 
 daylight.position.set(

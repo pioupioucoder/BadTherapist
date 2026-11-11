@@ -3,6 +3,7 @@ import { buildWork } from './work.js';
 import { scatterPoints, pickSpecies, buildForest } from './forest.js';
 import { createTruck } from './objects/vehicle.js';
 import { createTaxi } from './taxi.js';
+import { lightPool } from './lightpool.js';
 
 // ==========================================
 // TERRAIN, ROUTES ET MONTAGNES (calculés une seule fois, partagés entre toutes les copies)
@@ -538,7 +539,8 @@ const { camera, renderer } = ctx;
 if (ctx.snow) ctx.snow.setEnabled(true);
 
 // Copie de la rue vue depuis bedroom.js : peu de lumières globales, on éclaire un peu le sol
-const BOOST = ctx.nightBoost || 0;
+const BOOST = 0;          // (nightBoost de la chambre ignoré : la vue par la fenêtre doit être identique à la rue)
+const EM = 0.25;          // lueur propre des matériaux de la rue : presque nulle, c'est la lumière qui éclaire
 const SH = getShared();
 
 // ==========================================
@@ -755,7 +757,7 @@ const ground = new THREE.Mesh(
     bumpScale: 1.2,
     roughness: 0.93,
     vertexColors: true,
-    emissive: new THREE.Color(0x0c1114).multiplyScalar(1 + BOOST * 1.6)
+    emissive: new THREE.Color(0x0c1114).multiplyScalar(EM)
   })
 );
 scene.add(ground);
@@ -767,7 +769,7 @@ scene.add(ground);
 function roadCanvas() {
   const S = 256;
   const c = makeCanvas(S, S), g = c.getContext('2d');
-  g.fillStyle = 'rgb(50,51,53)';
+  g.fillStyle = 'rgb(40,47,60)';
   g.fillRect(0, 0, S, S);
 
   // Ornières des roues, plus sombres et humides
@@ -794,7 +796,7 @@ function roadCanvas() {
     const t = y / S * Math.PI * 2;
     const wl = 22 + 10 * Math.sin(t * 3) + 6 * Math.sin(t * 7 + 1);
     const wr = 22 + 10 * Math.sin(t * 4 + 2) + 6 * Math.sin(t * 9);
-    g.fillStyle = 'rgb(206,213,218)';
+    g.fillStyle = 'rgb(150,166,190)';
     g.fillRect(0, y, wl, 2);
     g.fillRect(S - wr, y, wr, 2);
   }
@@ -813,7 +815,7 @@ function roadCanvas() {
 }
 
 const roadCv = roadCanvas();
-const roadEmissive = new THREE.Color(0x14181b).multiplyScalar(0.6 + BOOST);
+const roadEmissive = new THREE.Color(0x14181b).multiplyScalar(EM * 0.6);
 
 // ==========================================
 // 6. IMMEUBLE PRINCIPAL
@@ -1088,6 +1090,10 @@ const entranceLight = new THREE.PointLight(0xffa860, 3.0, 18, 1.8);
 entranceLight.position.set(0, 2.2, -22.4);
 scene.add(entranceLight);
 
+// Le sol devant l'immeuble est éclairé par ses fenêtres et sa porte (halos au sol, sans vraie lumière)
+lightPool(scene, 0, 0, -20.6, 10, 0xffa860, 0.30);
+[-9, -4.5, 4.5, 9].forEach(function (px, i) { lightPool(scene, px, 0, -21.2, 6.5, i % 2 ? 0xffb878 : 0x9fb4d8, 0.17); });
+
 // ---- Toit ----
 
 const roofY = totalH;
@@ -1149,6 +1155,7 @@ makeInstanced(lumpGeo, mats.snow, lumpItems, scene);
 // 9. LAMPADAIRES
 // ==========================================
 
+const REAL_LAMP_LIGHTS = false;     // false = halos au sol seulement (aucune vraie lumière : plus léger)
 function streetLamp(x, z) {
 
   const g = new THREE.Group();
@@ -1175,9 +1182,16 @@ function streetLamp(x, z) {
 
   glowSprite(g, lampX, 5.35, 0, 0xffa860, 4.2, 0.55);
 
-  const light = new THREE.PointLight(0xffa860, 5.5, 30, 1.7);
-  light.position.set(lampX, 5.25, 0);
-  g.add(light);
+  // Lumière vers le bas (cône) : le sol dessous est éclairé, pas le lampadaire lui-même
+  if (REAL_LAMP_LIGHTS) {
+    const light = new THREE.SpotLight(0xffa860, 2.2, 28, 1.2, 0.7, 1.4);
+    light.position.set(lampX, 5.25, 0);
+    light.target.position.set(lampX, 0, 0);
+    light.userData.keep = true;
+    g.add(light);
+    g.add(light.target);
+  }
+  lightPool(g, lampX, 0, 0, 9, 0xff9a50, 0.34);
 }
 
 streetLamp(-7, -4);
@@ -1243,7 +1257,7 @@ const offColor = disp(0.03, 0.03, 0.035);
 
 // Matériaux de la route prolongée (même texture que l'allée devant l'immeuble)
 const roadMat2 = new THREE.MeshStandardMaterial({
-  map: makeTex(roadCv, 1, 1, true), color: 0xb0b0b0, roughness: 0.85, emissive: roadEmissive,
+  map: makeTex(roadCv, 1, 1, true), color: 0xa8b4c8, roughness: 0.85, emissive: roadEmissive,
   polygonOffset: true, polygonOffsetFactor: -8, polygonOffsetUnits: -40
 });
 SH.roads.forEach(r => {
@@ -1255,7 +1269,7 @@ SH.roads.forEach(r => {
 
 // Carrefours : une plaque d'asphalte unie par-dessus les deux routes
 const patchMat = new THREE.MeshStandardMaterial({
-  color: 0x39393c, roughness: 0.9, emissive: roadEmissive,
+  color: 0x2c3342, roughness: 0.9, emissive: roadEmissive,
   polygonOffset: true, polygonOffsetFactor: -10, polygonOffsetUnits: -60
 });
 SH.patches.forEach(p => {
@@ -1301,68 +1315,107 @@ SH.lamps.forEach(l => {
 });
 
 // Forêt : grands arbres feuillus, buissons et rochers qui bougent avec le vent (forest.js)
-const forest = buildForest(scene, SH.forestData, { boost: BOOST, chunk: 40, cullTree: 75, cullBush: 45, cullRock: 60 });
+const forest = buildForest(scene, SH.forestData, { boost: BOOST, cheapLight: false, chunk: 40, cullTree: 75, cullBush: 45, cullRock: 60 });
+
+// Phares : UNE seule vraie lumière, que le camion ou le taxi prend quand on monte dedans
+const headlight = (ctx.driveCamera || ctx.camera) ? new THREE.SpotLight(0xffe6c0, 0, 60, 0.6, 0.5, 1.1) : null;
+if (headlight) {
+  headlight.userData.keep = true;
+  scene.add(headlight);
+}
 
 // ==========================================
-// NUIT NOIRE DEHORS : brouillard épais + lanterne autour du joueur
+// LAMPE TORCHE (objet) : touche F ou bouton 🔦 pour la sortir / la ranger
 // ==========================================
-// Dehors on ne voit que quelques mètres (la lumière de la lanterne), le reste se perd dans le noir ; seules les
-// fenêtres et les lampadaires éclairent de loin. Dans la chambre (vue par la fenêtre) rien ne change.
-const NIGHT = {
-  walk: 0.085,        // densité du brouillard à pied (plus grand = on voit moins loin)
-  drive: 0.03,        // en voiture / camion
-  dim: 0.07,          // luminosité du ciel et du brouillard (1 = comme avant)
-  lantern: 2.6,       // puissance de la lanterne du joueur
-  lanternRange: 15    // portée (m)
-};
-const lantern = new THREE.PointLight(0xffd6a0, 0, NIGHT.lanternRange, 1.4);
-scene.add(lantern);
-let atm = null;
-const _lf = new THREE.Vector3();
-function rootOf(o) { while (o.parent) o = o.parent; return o; }
+// Dehors il fait noir : seules les vraies sources de lumière éclairent (lampadaires, porche, phares, torche).
+const torch = (ctx.driveCamera || ctx.camera) ? new THREE.SpotLight(0xfff0d8, 0, 40, 0.5, 0.45, 1.3) : new THREE.Object3D();
+if (torch.isSpotLight) {
+  torch.userData.keep = true;
+  scene.add(torch);
+  scene.add(torch.target);
+}
 
-function updateAtmosphere(dt, time) {
-  if (!playerCam) return;
-  const rt = rootOf(scene);
-  if (!rt.fog) return;
-  const sky = rt.userData && rt.userData.sky;
-  if (!atm) atm = { den: rt.fog.density, col: rt.fog.color.clone(), d: rt.fog.density, dim: 1, lit: 0, touched: false };
+const torchModel = new THREE.Group();
+(function () {
+  const dark = new THREE.MeshBasicMaterial({ color: 0x1a1c1f });
+  const metal = new THREE.MeshBasicMaterial({ color: 0x3a3f45 });
+  const lens = new THREE.MeshBasicMaterial({ color: 0xfff2d0 });
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.032, 0.2, 10), dark);
+  body.rotation.x = Math.PI / 2;
+  const head = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.034, 0.07, 12), metal);
+  head.rotation.x = Math.PI / 2;
+  head.position.z = -0.135;
+  const glass = new THREE.Mesh(new THREE.CircleGeometry(0.044, 12), lens);
+  glass.position.z = -0.172;
+  glass.rotation.y = Math.PI;
+  torchModel.add(body, head, glass);
+})();
+torchModel.visible = false;
+torchModel.traverse(function (o) { o.frustumCulled = false; });
+scene.add(torchModel);
 
+let torchWanted = false, torchLevel = 0, torchBtn = null;
+const _tq = new THREE.Vector3(), _tf = new THREE.Vector3();
+const TORCH_POWER = 3.0;
+
+function torchAllowed() {
+  if (!playerCam) return false;
   const lx = playerCam.position.x - scene.position.x, lz = playerCam.position.z - scene.position.z;
   const outdoors = lx > TER.x0 && lx < TER.x1 && lz > TER.z0 && lz < TER.z1;
-  const riding = !!(taxi && taxi.isRiding());
-  const driving = !!(truck && truck.isDriving());
-  const k = Math.min(1, dt * 1.8);
+  return outdoors && !(truck && truck.isDriving()) && !(taxi && taxi.isRiding());
+}
 
-  const tgtDen = outdoors ? ((riding || driving) ? NIGHT.drive : NIGHT.walk) : atm.den;
-  const tgtDim = outdoors && sky ? NIGHT.dim : 1;
-  const tgtLit = outdoors ? (riding ? NIGHT.lantern * 0.5 : NIGHT.lantern) : 0;
-  atm.d += (tgtDen - atm.d) * k;
-  atm.dim += (tgtDim - atm.dim) * k;
-  atm.lit += (tgtLit - atm.lit) * k;
+function toggleTorch() {
+  if (!torchAllowed()) return;
+  torchWanted = !torchWanted;
+}
 
-  const away = Math.abs(atm.d - atm.den) > 1e-5 || Math.abs(atm.dim - 1) > 1e-3;
-  if (away) {
-    atm.touched = true;
-    rt.fog.density = atm.d;
-    if (sky && sky.uDim) {
-      sky.uDim.value = atm.dim;
-      rt.fog.color.copy(atm.col).multiplyScalar(atm.dim);      // le brouillard garde la couleur de l'horizon du ciel
-    }
-  } else if (atm.touched) {
-    atm.touched = false;
-    rt.fog.density = atm.den;
-    rt.fog.color.copy(atm.col);
-    if (sky && sky.uDim) sky.uDim.value = 1;
+let torchUi = false;
+function ensureTorchUi() {
+  if (torchUi || !playerCam || typeof document === 'undefined') return;
+  torchUi = true;
+  const css = document.createElement('style');
+  css.textContent = '.bt-torch{position:fixed;right:14px;bottom:42%;width:54px;height:54px;border-radius:50%;' +
+    'border:2px solid rgba(255,220,160,.5);background:rgba(20,18,16,.6);color:#ffe2b0;font-size:24px;line-height:1;' +
+    'z-index:50;touch-action:manipulation;display:none;padding:0}.bt-torch.on{background:rgba(255,200,120,.38)}';
+  document.head.appendChild(css);
+  torchBtn = document.createElement('button');
+  torchBtn.className = 'bt-torch';
+  torchBtn.textContent = '🔦';
+  torchBtn.setAttribute('aria-label', 'Lampe torche');
+  const press = function (e) { e.preventDefault(); e.stopPropagation(); toggleTorch(); };
+  torchBtn.addEventListener('touchstart', press, { passive: false });
+  torchBtn.addEventListener('click', press);
+  document.body.appendChild(torchBtn);
+  addEventListener('keydown', function (e) {
+    const tg = e.target && e.target.tagName;
+    if (tg === 'INPUT' || tg === 'TEXTAREA' || e.repeat) return;
+    if (e.key === 'f' || e.key === 'F') toggleTorch();
+  });
+}
+
+function updateTorch(dt, time) {
+  if (!playerCam) return;
+  ensureTorchUi();
+  const ok = torchAllowed();
+  if (!ok) torchWanted = false;                     // dedans, en voiture : la torche est rangée
+  if (torchBtn) {
+    torchBtn.style.display = ok ? 'block' : 'none';
+    torchBtn.classList.toggle('on', torchWanted);
   }
+  torchLevel += ((torchWanted ? 1 : 0) - torchLevel) * Math.min(1, dt * 14);
+  torchModel.visible = torchWanted;
+  torch.intensity = TORCH_POWER * torchLevel * (0.97 + 0.03 * Math.sin(time * 17) * Math.sin(time * 5.3));
+  if (!torchWanted && torchLevel < 0.01) return;
 
-  // Lanterne : un peu devant et sous les yeux du joueur, légère vacillation
-  lantern.distance = riding ? 7 : NIGHT.lanternRange;
-  lantern.intensity = atm.lit * (0.94 + 0.06 * Math.sin(time * 11) * Math.sin(time * 3.7));
-  if (atm.lit > 0.01) {
-    _lf.set(0, -0.25, -0.7).applyQuaternion(playerCam.quaternion);
-    lantern.position.set(lx + _lf.x, playerCam.position.y - scene.position.y + _lf.y, lz + _lf.z);
-  }
+  const q = playerCam.quaternion;
+  const cx = playerCam.position.x - scene.position.x, cy = playerCam.position.y - scene.position.y, cz = playerCam.position.z - scene.position.z;
+  _tq.set(0.2, -0.2, -0.38).applyQuaternion(q);                 // dans la main droite, un peu en bas
+  _tf.set(0, 0.02, -1).applyQuaternion(q);
+  torch.position.set(cx + _tq.x, cy + _tq.y, cz + _tq.z);
+  torch.target.position.set(cx + _tq.x + _tf.x * 10, cy + _tq.y + _tf.y * 10, cz + _tq.z + _tf.z * 10);
+  torchModel.position.copy(torch.position);
+  torchModel.quaternion.copy(q);
 }
 
 // Lac gelé
@@ -1370,7 +1423,7 @@ const ice = new THREE.Mesh(
   new THREE.CircleGeometry(SH.lake.r * 0.97, 56),
   new THREE.MeshStandardMaterial({
     color: 0x9fb6c4, roughness: 0.28, metalness: 0.15,
-    emissive: new THREE.Color(0x10171c).multiplyScalar(1 + BOOST)
+    emissive: new THREE.Color(0x10171c).multiplyScalar(EM)
   })
 );
 ice.rotation.x = -Math.PI / 2;
@@ -1412,6 +1465,7 @@ if (ctx.driveCamera) {
     x: 3.8, z: -9.5, heading: Math.PI,
     origin: org,
     camera: ctx.driveCamera, input: ctx.input, view: ctx.view, action: ctx.action,
+    headlight: headlight,
     groundH: SH.walkHeight,
     collide: forest.collide,
     rects: truckRects,
@@ -1425,6 +1479,7 @@ if (ctx.driveCamera) {
     origin: org,
     camera: ctx.driveCamera, view: ctx.view, action: ctx.action,
     renderer: renderer,
+    headlight: headlight,
     groundH: SH.walkHeight,
     road: SH.main,
     rects: truckRects,
@@ -1472,7 +1527,7 @@ return {
 
   update(dt, time) {
 
-    updateAtmosphere(dt, time);
+    updateTorch(dt, time);
 
     // Maison de travail (fumée, fenêtre qui vacille)
     work.update(dt, time);
@@ -1480,6 +1535,9 @@ return {
     // Forêt (vent) : seuls les blocs proches du joueur sont dessinés
     forest.update(time, getFocus());
     
+    // Piloté par bedroom.js (pas de ctx.camera) : le taxi se met à jour ici (le camion est appelé par bedroom.js)
+    if (!camera && taxi) taxi.update(dt, true);
+
     // Autonome (immeuble.js / work.js) : on suit le relief, on contourne les arbres, on conduit
     if (camera) {
       const riding = !!(taxi && taxi.isRiding());

@@ -225,10 +225,13 @@ export function buildWorld(scene, opts) {
     const windowView = (function() {
         // Scène extérieure séparée, rendue chaque frame dans une texture
         const outScene = new THREE.Scene();
-        outScene.fog = new THREE.FogExp2(0xb4b8b9, 0.00045);
-        outScene.add(new THREE.AmbientLight(0xc2c5c5, 0.55));
-        outScene.add(new THREE.HemisphereLight(0xd2d8dc, 0x777575, 0.68));
-        const outSun = new THREE.DirectionalLight(0xd5d4cf, 0.38);
+        // Même nuit que la rue réelle (valeurs de world_base.html) : sinon la fenêtre montre un dehors plus clair que la réalité
+        const NIGHT = window.BT_NIGHT || { dim: 1, light: 1, fog: 0.0075 };
+        outScene.fog = new THREE.FogExp2(0x000000, NIGHT.fog);
+        outScene.fog.color.setRGB(0.145 * NIGHT.dim, 0.157 * NIGHT.dim, 0.160 * NIGHT.dim);
+        outScene.add(new THREE.AmbientLight(0x8d9aa6, 0.055 * NIGHT.light));
+        outScene.add(new THREE.HemisphereLight(0x7f909d, 0x23201e, 0.085 * NIGHT.light));
+        const outSun = new THREE.DirectionalLight(0x8fa0ad, 0.035 * NIGHT.light);
         outSun.position.set(-80, 35, -100);
         outScene.add(outSun);
 
@@ -1537,7 +1540,7 @@ export function buildWorld(scene, opts) {
 
         // En conduisant, world_base ne déplace plus le joueur à pied
         isDriving() {
-            return !!(street.truck && street.truck.isDriving());
+            return street.isDriving ? !!street.isDriving() : !!(street.truck && street.truck.isDriving());
         },
 
         // Données de la carte (routes, lac, lieux, camion, position du joueur)
@@ -1554,7 +1557,7 @@ export function buildWorld(scene, opts) {
         // false = ne pas sauvegarder maintenant (dans la cabine d'ascenseur)
         getSaveState() {
             if (elevator.isInsideCab(camera.position.x, camera.position.z)) return false;
-            if (street.truck && street.truck.isDriving()) return false;
+            if (street.isDriving ? street.isDriving() : (street.truck && street.truck.isDriving())) return false;
             if (street.work && street.work.interior && street.work.interior.isInside()) return false;
             return { level: playerLevel, street: camera.position.x > 100 };
         },
@@ -1585,9 +1588,10 @@ export function buildWorld(scene, opts) {
                 window._tvAudioUpdate(dt, ta.gain, ta.cut);
             }
             const truck = street.truck;
-            if (truck && truck.isDriving()) {
-                // Au volant : le camion déplace la caméra, pas de marche à pied
-                truck.update(dt, true);
+            const inVehicle = street.isDriving ? street.isDriving() : !!(truck && truck.isDriving());
+            if (inVehicle) {
+                // Au volant (camion) ou en passager (taxi) : le véhicule déplace la caméra, pas de marche à pied
+                if (truck && truck.isDriving()) truck.update(dt, true);
                 wasDriving = true;
             } else {
                 if (wasDriving) {                       // on vient de descendre du camion

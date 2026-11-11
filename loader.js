@@ -41,12 +41,7 @@
     const HANDOFF_SETTLE = 700;       // ms de calme sans nouveau chargement avant de retirer l'écran
     const HANDOFF_TIMEOUT = 45000;    // sécurité : l'écran part quoi qu'il arrive
     const SMOOTH_FRAMES = 30, SMOOTH_MS = 40;   // « le jeu est fluide » = 30 images de suite sous 40 ms
-    const FALLBACK = [
-        'index.html', 'world_base.html', 'immeuble.js', 'bedroom.js', 'corridor.js', 'elevator.js', 'rdc.js', 'forest.js', 'work.js',
-        'objects/vehicle.js', 'taxi.js', 'workers/worker.js', 'objects/nightstand.js', 'objects/journal.js', 'objects/bookreader.js', 'objects/phone.js', 'engine/phone-item.js',
-        'avatar-loader.js', 'audio-manager.js', 'save-data.js', 'engine/therapist-ai.js', 'engine/therapist-config.js',
-        'engine/therapist-memory.js', 'workers/evelyn-brain.js', 'engine/evelyn-life.js', 'engine/evelyn-phone.js'
-    ];
+    const FALLBACK = ['index.html', 'world_base.html', 'bedroom.js'];   // point de départ : le reste est découvert tout seul (imports, dossiers)
     const SKIP = /(^|\/)(\.git|node_modules|\.vscode|\.idea|backups?|saves?)(\/|$)|\.(php|ps1|bat|md|psd|blend1?|zip|rar|7z|bak|log|tmp|map|sh|sql|ini)$/i;
     const BIG = /\.(fbx|glb|gltf|png|jpe?g|webp|mp3|ogg|wav|m4a|mp4|webm|hdr|exr)$/i;
     const TEXT = /\.(js|mjs|html?|css)$/i;

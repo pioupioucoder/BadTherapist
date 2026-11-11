@@ -139,13 +139,17 @@ export function createTruck(parent, o) {
   });
 
   // Phares
-  const spot = new THREE.SpotLight(0xffe6c0, 0, 70, 0.6, 0.55, 1.0);
-  spot.position.set(0, 1.2, -2.8);
-  g.add(spot);
+  // Phares : si immeuble.js fournit une lumière partagée (o.headlight), le camion la prend en montant dedans
+  const spot = o.headlight || new THREE.SpotLight(0xffe6c0, 0, 70, 0.6, 0.55, 1.0);
   const spotTarget = new THREE.Object3D();
   spotTarget.position.set(0, 0.4, -24);
   g.add(spotTarget);
-  spot.target = spotTarget;
+  function mountHeadlight() {
+    spot.position.set(0, 1.0, -2.8);
+    g.add(spot);
+    spot.target = spotTarget;
+  }
+  mountHeadlight();
 
   // ==========================================
   // ÉTAT
@@ -245,6 +249,7 @@ export function createTruck(parent, o) {
     speed = 0;
     steerCur = 0;
     if (o.view) o.view.set(heading, 0);
+    mountHeadlight();
     spot.intensity = 4.0;
     showExit();
   }
@@ -253,7 +258,7 @@ export function createTruck(parent, o) {
     if (!driving) return;
     driving = false;
     speed = 0;
-    spot.intensity = 0;
+    if (spot.parent === g) spot.intensity = 0;
     const rx = Math.cos(heading), rz = -Math.sin(heading);
     const fx = -Math.sin(heading), fz = -Math.cos(heading);
     const cands = [[-2.5, 0.4], [2.5, 0.4], [-2.5, 3.2], [0, 5.2]];
