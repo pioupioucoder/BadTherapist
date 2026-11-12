@@ -449,7 +449,7 @@ renderer.outputEncoding = THREE.sRGBEncoding;
 const scene = new THREE.Scene();
 
 // NUIT RÉELLE : le ciel, le brouillard et la lumière ambiante sont presque noirs. Seules les vraies sources de
-// lumière (lampadaires, fenêtres, phares, lampe torche) éclairent. Réglages :
+// lumière (lampadaires, fenêtres, phares) éclairent. Réglages :
 const NIGHT_DIM = 0.09;      // luminosité du ciel / brouillard (1 = ancienne version claire)
 const NIGHT_LIGHT = 0.3;     // lumière ambiante globale (1 = ancienne version) : si la chambre devient trop sombre, monte cette valeur
 const FOG_DENSITY = 0.012;   // réglable : plus petit = on voit plus loin
@@ -904,7 +904,23 @@ const params = new URLSearchParams(
   window.location.search
 );
 
+// Nom du monde = clé de sauvegarde (inchangé : les anciennes sauvegardes restent valides).
 const worldFile = params.get('world') || 'bedroom.js';
+
+// Les lieux sont maintenant dans le dossier places/. 'bedroom.js' (monde par défaut) = l'immeuble habité
+// (chambre + couloir + ascenseur + hall + rue) = places/apartment.js. Les anciens liens ?world=xxx.js continuent de marcher.
+const WORLD_FILES = {
+  'bedroom.js':   'places/apartment.js',
+  'apartment.js': 'places/apartment.js',
+  'immeuble.js':  'places/immeuble.js',
+  'outside.js':   'places/outside.js',
+  'corridor.js':  'places/corridor.js',
+  'elevator.js':  'places/elevator.js',
+  'rdc.js':       'places/rdc.js',
+  'work.js':      'places/work.js',
+  'forest.js':    'places/forest.js'
+};
+const worldPath = WORLD_FILES[worldFile] || worldFile;
 
 let camYaw = 0;
 let camPitch = 0;
@@ -914,7 +930,7 @@ let world;
 try {
 
   const worldModule = await import(
-    new URL(worldFile, window.location.href).href
+    new URL(worldPath, window.location.href).href
   );
 
   if (typeof worldModule.buildWorld !== 'function') {
@@ -1328,7 +1344,7 @@ function togglePanel(panelId) {
 
   if (panelId === 'mapPanel') {
     if (isAlreadyOpen) mapPanel.classList.remove('expanded');
-    else mapView.fitted = false;
+    else { mapView.fitted = false; mapView.focusMe = true; }   // à l'ouverture : centrée sur toi
   } else {
     mapPanel.classList.remove('expanded');
   }
@@ -1421,6 +1437,22 @@ function zoomMapAt(factor, sx, sy) {
   mapView.cz = wz - (sy - h / 2) / mapView.scale;
 }
 
+// Icônes des nouveaux lieux (aucun nom : seulement un pictogramme dans une pastille)
+const NEW_POI = new Set(['town', 'gas', 'train', 'city', 'port']);
+function drawBadge(c, type, x, y, u) {
+  c.fillStyle = '#171b20'; c.strokeStyle = '#e8c97a'; c.lineWidth = 2 * u;
+  c.beginPath(); c.arc(x, y, 12 * u, 0, Math.PI * 2); c.fill(); c.stroke();
+  c.save(); c.translate(x, y); c.strokeStyle = '#e8c97a'; c.fillStyle = '#e8c97a'; c.lineWidth = 1.6 * u; c.lineJoin = 'round'; c.lineCap = 'round';
+  const k = u * 0.8;
+  c.beginPath();
+  if (type === 'town') { c.rect(-8 * k, -2 * k, 5 * k, 9 * k); c.rect(-3 * k, -8 * k, 6 * k, 15 * k); c.rect(3 * k, 0, 5 * k, 7 * k); c.stroke(); }
+  else if (type === 'city') { c.rect(-8 * k, -3 * k, 7 * k, 10 * k); c.rect(-1 * k, -8 * k, 8 * k, 15 * k); c.stroke(); }
+  else if (type === 'gas') { c.rect(-6 * k, -8 * k, 9 * k, 15 * k); c.moveTo(3 * k, -3 * k); c.lineTo(7 * k, -3 * k); c.lineTo(7 * k, 4 * k); c.stroke(); c.fillRect(-4 * k, -6 * k, 5 * k, 4 * k); }
+  else if (type === 'train') { c.rect(-5 * k, -8 * k, 10 * k, 12 * k); c.moveTo(-7 * k, 8 * k); c.lineTo(7 * k, 8 * k); c.stroke(); c.fillRect(-3 * k, -5 * k, 6 * k, 4 * k); }
+  else if (type === 'port') { c.arc(0, -5 * k, 2.6 * k, 0, Math.PI * 2); c.moveTo(0, -2.4 * k); c.lineTo(0, 8 * k); c.moveTo(-5 * k, 1 * k); c.lineTo(5 * k, 1 * k); c.moveTo(-7 * k, 3 * k); c.quadraticCurveTo(-5 * k, 9 * k, 0, 8 * k); c.quadraticCurveTo(5 * k, 9 * k, 7 * k, 3 * k); c.stroke(); }
+  c.restore();
+}
+
 function drawMap() {
 
   resizeMapCanvas();
@@ -1441,6 +1473,14 @@ function drawMap() {
 
   const d = world.getMapData();
   if (!mapView.fitted) fitMap(d);
+  if (mapView.focusMe) {                      // carte ouverte : on affiche l'endroit où tu es
+    mapView.focusMe = false;
+    const me = d.player || d.truck;
+    if (me) {
+      mapView.cx = me.x; mapView.cz = me.z;
+      mapView.scale = clampScale(Math.max(mapView.fitScale * 2.6, 1.2 * mapDpr));
+    }
+  }
 
   const S = mapView.scale;
   const X = x => W / 2 + (x - mapView.cx) * S;
@@ -1450,6 +1490,10 @@ function drawMap() {
   if (d.bounds) {
     c.fillStyle = '#141a1d';
     c.fillRect(X(d.bounds.x0), Y(d.bounds.z0), (d.bounds.x1 - d.bounds.x0) * S, (d.bounds.z1 - d.bounds.z0) * S);
+    if (d.sea) {                              // la mer, au sud
+      c.fillStyle = '#10242e';
+      c.fillRect(X(d.bounds.x0), Y(d.sea.z0), (d.bounds.x1 - d.bounds.x0) * S, (d.bounds.z1 - d.sea.z0) * S);
+    }
   }
 
   // Quadrillage de 100 m
@@ -1484,9 +1528,12 @@ function drawMap() {
     (d.roads || []).forEach(r => {
       c.beginPath();
       r.pts.forEach((p, i) => { if (i === 0) c.moveTo(X(p[0]), Y(p[1])); else c.lineTo(X(p[0]), Y(p[1])); });
-      c.lineWidth = Math.max(2 * mapDpr, r.w * S) + extra;
-      c.strokeStyle = color;
+      const rail = r.w < 0;                    // largeur négative = voie ferrée : pointillés
+      c.lineWidth = rail ? Math.max(2 * mapDpr, 3 * S) + (extra ? 1 * mapDpr : 0) : Math.max(2 * mapDpr, r.w * S) + extra;
+      c.strokeStyle = rail && !extra ? '#8d8f99' : color;
+      c.setLineDash(rail ? [7 * mapDpr, 6 * mapDpr] : []);
       c.stroke();
+      c.setLineDash([]);
     });
   };
   drawRoads(3 * mapDpr, '#2a2f33');
@@ -1496,7 +1543,9 @@ function drawMap() {
   const u = mapDpr;
   (d.pois || []).forEach(p => {
     const x = X(p.x), y = Y(p.z);
-    if (p.type === 'work') {
+    if (NEW_POI.has(p.type)) {
+      drawBadge(c, p.type, x, y, u);
+    } else if (p.type === 'work') {
       c.fillStyle = '#ffcf6b';
       c.strokeStyle = '#2a2f33';
       c.lineWidth = 2 * u;

@@ -8,10 +8,10 @@ import { loadMixamoAvatar } from './avatar-loader.js';
 //   - voiture à l'arrêt  -> animation « sit »   (Sitting.fbx)
 //   - voiture qui roule  -> animation « drive » (Driving.fbx)
 //
-// Trajet automatique :
-//   ENTER près du taxi -> Oliver roule très vite jusqu'à la maison d'Evelyn, s'arrête, reste là.
-//   Tu descends (EXIT), tu vas chez Evelyn, tu ressors, tu remontes dans le taxi (ENTER)
-//   -> il te ramène à l'immeuble. Et ainsi de suite.
+// Trajet :
+//   ENTER près du taxi -> une carte s'ouvre, tu choisis où aller (icônes, pas de noms).
+//   Oliver roule jusqu'à l'endroit choisi par les routes, s'arrête, et le taxi RESTE LÀ.
+//   Tu descends (EXIT) ; tant que tu ne remontes pas dedans (ENTER), il ne bouge pas.
 //
 // Repère : comme le camion (vehicle.js). Avant du taxi = -z local ; cap h -> direction (-sin h, -cos h).
 //
@@ -279,9 +279,107 @@ export function createTaxi(parent, o) {
     return out;
   }
 
-  const RS = road.samples.filter(function (p) { return p.s <= road.len - STOP_BEFORE_END; });
-  const endS = RS[RS.length - 1];
-  const WORK_PARK = { x: endS.x - LANE * endS.tz, z: endS.z + LANE * endS.tx };
+  // ----- Réseau routier : toutes les routes de immeuble.js reliées entre elles (jonctions) -----
+  const allRoads = (o.roads || [road]).filter(function (r) { return r.kind !== 'rail'; });
+  const stops = o.stops || [];
+  const nodes = [], adj = [];
+  const base = {};
+  allRoads.forEach(function (r) {
+    base[r.name] = nodes.length;
+    r.samples.forEach(function (p, i) { nodes.push({ x: p.x, z: p.z, road: r.name, i: i }); adj.push([]); });
+  });
+  allRoads.forEach(function (r) {
+    for (let i = 0; i < r.samples.length - 1; i++) {
+      const a = base[r.name] + i, b = a + 1;
+      const d = Math.hypot(nodes[a].x - nodes[b].x, nodes[a].z - nodes[b].z);
+      adj[a].push({ to: b, c: d }); adj[b].push({ to: a, c: d });
+    }
+  });
+  (function () {                                  // jonctions : points de routes différentes à moins de 6,5 m
+    const cell = 8, grid = new Map();
+    nodes.forEach(function (n, id) {
+      const k = Math.floor(n.x / cell) + ',' + Math.floor(n.z / cell);
+      if (!grid.has(k)) grid.set(k, []);
+      grid.get(k).push(id);
+    });
+    nodes.forEach(function (n, id) {
+      const cx = Math.floor(n.x / cell), cz = Math.floor(n.z / cell);
+      for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) {
+        const arr = grid.get((cx + a) + ',' + (cz + b));
+        if (!arr) continue;
+        arr.forEach(function (j) {
+          if (j <= id || nodes[j].road === n.road) return;
+          const d = Math.hypot(nodes[j].x - n.x, nodes[j].z - n.z);
+          if (d < 6.5) { adj[id].push({ to: j, c: d + 25 }); adj[j].push({ to: id, c: d + 25 }); }
+        });
+      }
+    });
+  })();
+
+  function nearestNode(px, pz) {
+    let b = -1, bd = 1e18;
+    for (let i = 0; i < nodes.length; i++) {
+      const d = (nodes[i].x - px) * (nodes[i].x - px) + (nodes[i].z - pz) * (nodes[i].z - pz);
+      if (d < bd) { bd = d; b = i; }
+    }
+    return bd < 40 * 40 ? b : -1;
+  }
+
+  function dijkstra(src, dst) {
+    const n = nodes.length, dist = new Float64Array(n).fill(1e18), prev = new Int32Array(n).fill(-1), done = new Uint8Array(n);
+    dist[src] = 0;
+    for (let it = 0; it < n; it++) {
+      let u = -1, bd = 1e18;
+      for (let i = 0; i < n; i++) if (!done[i] && dist[i] < bd) { bd = dist[i]; u = i; }
+      if (u < 0 || u === dst) break;
+      done[u] = 1;
+      adj[u].forEach(function (e) { if (dist[u] + e.c < dist[e.to]) { dist[e.to] = dist[u] + e.c; prev[e.to] = u; } });
+    }
+    if (prev[dst] < 0 && src !== dst) return null;
+    const out = [];
+    for (let v = dst; v >= 0; v = prev[v]) out.push(v);
+    return out.reverse();
+  }
+
+  // Itinéraire depuis la position actuelle du taxi (où qu'il soit garé) jusqu'à une destination
+  function routeTo(stop) {
+    const src = nearestNode(x, z);
+    const dst = base[stop.road] + stop.idx;
+    if (src < 0) return null;
+    const ids = dijkstra(src, dst);
+    if (!ids) return null;
+    // positions de l'axe, espacées d'au moins 3,5 m
+    const c = [];
+    ids.forEach(function (id, k) {
+      const n = nodes[id];
+      if (!c.length || k === ids.length - 1 || Math.hypot(n.x - c[c.length - 1][0], n.z - c[c.length - 1][1]) >= 3.5) c.push([n.x, n.z]);
+    });
+    if (c.length < 2) return null;
+    // voie de droite (sens de la marche)
+    const lane = c.map(function (q, i) {
+      const a = c[Math.max(0, i - 1)], b = c[Math.min(c.length - 1, i + 1)];
+      let dx = b[0] - a[0], dz = b[1] - a[1];
+      const l = Math.hypot(dx, dz) || 1; dx /= l; dz /= l;
+      return [q[0] - LANE * dz, q[1] + LANE * dx, dx, dz];
+    });
+    const fx = -Math.sin(heading), fz = -Math.cos(heading);
+    const pts = [[x, z]];
+    let cur = [x, z], cf = [fx, fz];
+    // demi-tour si la route part dans l'autre sens
+    if (lane[0][2] * fx + lane[0][3] * fz < -0.2 || (lane.length > 2 && lane[1][2] * fx + lane[1][3] * fz < -0.2)) {
+      const R = 2.4, rx = Math.cos(heading), rz = -Math.sin(heading);
+      for (let i = 1; i <= 8; i++) {
+        const t = Math.PI * i / 8;
+        pts.push([x + fx * R * Math.sin(t) - rx * R * (1 - Math.cos(t)), z + fz * R * Math.sin(t) - rz * R * (1 - Math.cos(t))]);
+      }
+      cur = pts[pts.length - 1]; cf = [-fx, -fz];
+    }
+    // on saute les points de route qui sont derrière le taxi
+    let k0 = 0;
+    while (k0 < lane.length - 2 && (lane[k0][0] - cur[0]) * cf[0] + (lane[k0][1] - cur[1]) * cf[1] < 3) k0++;
+    for (let k = k0; k < lane.length; k++) pts.push([lane[k][0], lane[k][1]]);
+    return pts;
+  }
 
   function makePath(pts) {
     const curve = new THREE.CatmullRomCurve3(pts.map(function (p) { return new THREE.Vector3(p[0], 0, p[1]); }), false, 'centripetal');
@@ -336,35 +434,11 @@ export function createTaxi(parent, o) {
     };
   }
 
-  // Immeuble -> maison d'Evelyn : tout droit vers la route (voie de droite)
-  function pathToWork() {
-    const pts = [[HOME_PARK.x, HOME_PARK.z], [HOME_PARK.x, 0], [HOME_PARK.x, 22]];
-    RS.forEach(function (p) { pts.push([p.x - LANE * p.tz, p.z + LANE * p.tx]); });
-    return makePath(pts);
-  }
-
-  // Maison d'Evelyn -> immeuble : demi-tour sur la route, voie de droite en sens inverse, puis il se gare près du camion
-  function pathToHome() {
-    const pts = arc(WORK_PARK.x + 4, WORK_PARK.z, 4, Math.PI, 0, 6);
-    const back = RS.filter(function (p) { return p.s <= road.len - STOP_BEFORE_END - 16; });
-    for (let i = back.length - 1; i >= 0; i--) {
-      const p = back[i];
-      pts.push([p.x + LANE * p.tz, p.z - LANE * p.tx]);
-    }
-    // sur la place : il passe à l'ouest, fait demi-tour (rayon 5,5) et se gare nez vers la route
-    // (le grand chêne en x -9.5, z 2 est contourné par l'ouest)
-    pts.push([1.8, 30], [-3, 22], [-7, 16], [-11.5, 9], [-13.2, 2], [-13.2, -6]);
-    arc(HOME_PARK.x - 5.5, HOME_PARK.z - 1.5, 5.5, Math.PI, 2 * Math.PI, 8).forEach(function (q) { pts.push(q); });
-    pts.push([HOME_PARK.x, HOME_PARK.z]);        // dernier mètre en ligne droite : il s'arrête bien droit
-    return makePath(pts);
-  }
-
   // ==========================================
   // ÉTAT
   // ==========================================
 
-  let at = 'home';                       // où le taxi est garé : 'home' | 'work'
-  let mode = 'parked';                   // 'parked' | 'driving' | 'arrived' (le joueur est dedans, voiture arrêtée)
+  let mode = 'parked';                   // 'parked' | 'choosing' (carte ouverte) | 'driving' | 'arrived' (le joueur est dedans, voiture arrêtée)
   let riding = false;
   let P = null, s = 0;
   let x = HOME_PARK.x, z = HOME_PARK.z, heading = Math.PI;
@@ -408,9 +482,124 @@ export function createTaxi(parent, o) {
   // ENTRER / SORTIR
   // ==========================================
 
-  function enter() {
-    if (mode !== 'parked') return;
-    P = at === 'home' ? pathToWork() : pathToHome();
+  // ----- Carte de destinations (icônes, aucun nom) -----
+  let ui = null;
+
+  function icon(c, type, cx, cy, r, col) {
+    c.save(); c.translate(cx, cy); c.strokeStyle = col; c.fillStyle = col; c.lineWidth = Math.max(1.5, r * 0.12); c.lineJoin = 'round'; c.lineCap = 'round';
+    const u = r / 10;
+    c.beginPath();
+    if (type === 'home') { c.rect(-5 * u, -8 * u, 10 * u, 16 * u); c.stroke(); for (let k = 0; k < 3; k++) c.fillRect(-2.5 * u, (-5 + k * 5) * u, 5 * u, 2.4 * u); }
+    else if (type === 'work') { c.moveTo(-8 * u, -1 * u); c.lineTo(0, -8 * u); c.lineTo(8 * u, -1 * u); c.moveTo(-6 * u, -1 * u); c.lineTo(-6 * u, 7 * u); c.lineTo(6 * u, 7 * u); c.lineTo(6 * u, -1 * u); c.stroke(); }
+    else if (type === 'town') { c.rect(-9 * u, -2 * u, 6 * u, 9 * u); c.rect(-3 * u, -8 * u, 6 * u, 15 * u); c.rect(3 * u, 0, 6 * u, 7 * u); c.stroke(); }
+    else if (type === 'gas') { c.rect(-6 * u, -8 * u, 9 * u, 15 * u); c.moveTo(3 * u, -3 * u); c.lineTo(7 * u, -3 * u); c.lineTo(7 * u, 4 * u); c.stroke(); c.fillRect(-4 * u, -6 * u, 5 * u, 4 * u); }
+    else if (type === 'train') { c.rect(-5 * u, -8 * u, 10 * u, 12 * u); c.moveTo(-7 * u, 8 * u); c.lineTo(7 * u, 8 * u); c.stroke(); c.fillRect(-3 * u, -5 * u, 6 * u, 4 * u); }
+    else if (type === 'city') { c.rect(-8 * u, -3 * u, 7 * u, 10 * u); c.rect(-1 * u, -8 * u, 9 * u, 15 * u); c.stroke(); }
+    else if (type === 'port') { c.arc(0, -5 * u, 2.6 * u, 0, 6.3); c.moveTo(0, -2.4 * u); c.lineTo(0, 8 * u); c.moveTo(-5 * u, 1 * u); c.lineTo(5 * u, 1 * u); c.moveTo(-7 * u, 3 * u); c.quadraticCurveTo(-5 * u, 9 * u, 0, 8 * u); c.quadraticCurveTo(5 * u, 9 * u, 7 * u, 3 * u); c.stroke(); }
+    else { c.arc(0, 0, 6 * u, 0, 6.3); c.stroke(); }
+    c.restore();
+  }
+
+  function buildUI() {
+    const root = document.createElement('div');
+    root.style.cssText = 'position:fixed;left:0;top:0;width:100%;height:100%;z-index:9500;background:rgba(5,7,10,0.94);display:none;flex-direction:column;align-items:center;justify-content:center;font-family:Arial,sans-serif;color:#e8d6a8;touch-action:manipulation;';
+    const bar = document.createElement('div');
+    bar.style.cssText = 'width:min(96vw,760px);display:flex;justify-content:space-between;align-items:center;padding:6px 4px;letter-spacing:3px;font-size:13px;';
+    bar.textContent = 'DESTINATION';
+    const close = document.createElement('button');
+    close.textContent = '✕';
+    close.style.cssText = 'background:#1a1d22;border:1px solid #5a5340;color:#e8d6a8;border-radius:8px;width:44px;height:40px;font-size:20px;';
+    bar.appendChild(close);
+    const cv = document.createElement('canvas');
+    cv.style.cssText = 'width:min(96vw,760px);height:min(62vh,700px);background:#0b0e12;border:1px solid #3a3526;border-radius:10px;';
+    const row = document.createElement('div');
+    row.style.cssText = 'width:min(96vw,760px);display:flex;flex-wrap:wrap;gap:10px;justify-content:center;padding:12px 4px;';
+    root.appendChild(bar); root.appendChild(cv); root.appendChild(row);
+    document.body.appendChild(root);
+    ui = { root: root, cv: cv, row: row, hit: [], close: close, md: null };
+    close.addEventListener('click', closeMenu);
+    cv.addEventListener('click', function (e) {
+      const r = cv.getBoundingClientRect();
+      const px = (e.clientX - r.left) * cv.width / r.width, py = (e.clientY - r.top) * cv.height / r.height;
+      let best = null, bd = 1e9;
+      ui.hit.forEach(function (h) { const d = Math.hypot(px - h.x, py - h.y); if (d < h.r && d < bd) { bd = d; best = h; } });
+      if (best && !best.here) pick(best.stop);
+    });
+    window.addEventListener('keydown', function (e) { if (e.key === 'Escape' && mode === 'choosing') closeMenu(); });
+  }
+
+  function hereStop() {
+    let best = null, bd = 30;
+    stops.forEach(function (st) { const d = Math.hypot(st.x - x, st.z - z); if (d < bd) { bd = d; best = st; } });
+    return best;
+  }
+
+  function drawMenu() {
+    const md = o.getMapData ? o.getMapData() : null;
+    const cv = ui.cv, W = cv.clientWidth || 700, H = cv.clientHeight || 500, dpr = Math.min(2, window.devicePixelRatio || 1);
+    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+    const c = cv.getContext('2d');
+    c.fillStyle = '#0b0e12'; c.fillRect(0, 0, cv.width, cv.height);
+    const b = md ? md.bounds : { x0: -290, x1: 1060, z0: -320, z1: 2200 };
+    const mg = 30 * dpr;
+    const k = Math.min((cv.width - 2 * mg) / (b.x1 - b.x0), (cv.height - 2 * mg) / (b.z1 - b.z0));
+    const ox = (cv.width - (b.x1 - b.x0) * k) / 2, oz = (cv.height - (b.z1 - b.z0) * k) / 2;
+    const X = function (v) { return ox + (v - b.x0) * k; }, Z = function (v) { return oz + (v - b.z0) * k; };
+    if (md && md.sea) { c.fillStyle = '#0d2230'; c.fillRect(X(b.x0), Z(md.sea.z0), (b.x1 - b.x0) * k, (b.z1 - md.sea.z0) * k); }
+    if (md) {
+      (md.lakes || []).forEach(function (l) { c.fillStyle = '#14303d'; c.beginPath(); c.arc(X(l.x), Z(l.z), l.r * k, 0, 6.3); c.fill(); });
+      (md.roads || []).forEach(function (r) {
+        const rail = r.w < 0;
+        c.strokeStyle = rail ? '#6a6a72' : '#8f8a78'; c.lineWidth = Math.max(1.5 * dpr, (rail ? 3 : Math.abs(r.w)) * k * 1.4);
+        c.setLineDash(rail ? [6 * dpr, 5 * dpr] : []);
+        c.beginPath();
+        r.pts.forEach(function (p, i) { if (i) c.lineTo(X(p[0] != null ? p[0] : p.x), Z(p[1] != null ? p[1] : p.z)); else c.moveTo(X(p[0] != null ? p[0] : p.x), Z(p[1] != null ? p[1] : p.z)); });
+        c.stroke();
+      });
+      c.setLineDash([]);
+    }
+    const here = hereStop();
+    ui.hit = [];
+    ui.row.innerHTML = '';
+    stops.forEach(function (st) {
+      const isHere = here && here.id === st.id;
+      const R = 22 * dpr;
+      const col = isHere ? '#6c6c6c' : '#f0d9a0';
+      c.fillStyle = '#12161b'; c.strokeStyle = col; c.lineWidth = 2 * dpr;
+      c.beginPath(); c.arc(X(st.x), Z(st.z), R, 0, 6.3); c.fill(); c.stroke();
+      icon(c, st.type, X(st.x), Z(st.z), R * 0.7, col);
+      ui.hit.push({ x: X(st.x), y: Z(st.z), r: R * 1.25, stop: st, here: isHere });
+      const btn = document.createElement('button');
+      btn.style.cssText = 'width:64px;height:56px;background:#14181d;border:1px solid ' + (isHere ? '#3a3a3a' : '#7a6e4c') + ';border-radius:10px;opacity:' + (isHere ? 0.4 : 1) + ';';
+      const ic = document.createElement('canvas'); ic.width = 80; ic.height = 70; ic.style.cssText = 'width:40px;height:35px;';
+      icon(ic.getContext('2d'), st.type, 40, 35, 26, col);
+      btn.appendChild(ic);
+      if (!isHere) btn.addEventListener('click', function () { pick(st); });
+      ui.row.appendChild(btn);
+    });
+    // le taxi
+    c.fillStyle = '#ffd23a'; c.beginPath(); c.arc(X(x), Z(z), 6 * dpr, 0, 6.3); c.fill();
+    c.strokeStyle = '#ffd23a'; c.lineWidth = 2 * dpr; c.beginPath(); c.arc(X(x), Z(z), 11 * dpr, 0, 6.3); c.stroke();
+  }
+
+  function openMenu() {
+    if (!ui) buildUI();
+    mode = 'choosing';
+    hideAction();
+    if (document.exitPointerLock) { try { document.exitPointerLock(); } catch (e) { /* rien */ } }
+    ui.root.style.display = 'flex';
+    drawMenu();
+  }
+  function closeMenu() {
+    if (ui) ui.root.style.display = 'none';
+    if (mode === 'choosing') mode = 'parked';
+    cool = 0.8;
+  }
+  function pick(stop) {
+    const pts = routeTo(stop);
+    if (ui) ui.root.style.display = 'none';
+    if (!pts) { mode = 'parked'; cool = 0.8; return; }
+    P = makePath(pts);
     s = 0;
     riding = true;
     mode = 'driving';
@@ -421,6 +610,12 @@ export function createTaxi(parent, o) {
     mountHeadlight();
     hideAction();
     if (o.action) o.action.hide();
+  }
+
+  function enter() {
+    if (mode !== 'parked') return;
+    if (!stops.length) return;
+    openMenu();
   }
 
   function insideRect(px, pz) {
@@ -436,7 +631,6 @@ export function createTaxi(parent, o) {
     mode = 'parked';
     riding = false;
     speed = 0;
-    at = at === 'home' ? 'work' : 'home';
     cool = 2.5;                          // pas de ré-embarquement accidentel juste après être descendu
     const rx = Math.cos(heading), rz = -Math.sin(heading);
     const fx = -Math.sin(heading), fz = -Math.cos(heading);
@@ -514,6 +708,8 @@ export function createTaxi(parent, o) {
 
     animate(dt);
 
+    if (mode === 'choosing') return;
+
     if (mode === 'arrived') {
       arrivedT += dt;
       if (AUTO_EXIT && arrivedT > 0.6) { exit(); return; }
@@ -560,6 +756,12 @@ export function createTaxi(parent, o) {
     enter: enter,
     exit: exit,
     update: function (dt, active) { tick(active !== false); },
+    // Aller directement à une destination (id de layout.js : 'home', 'work', 'town', 'gas', 'station', 'port')
+    goTo: function (id) {
+      const st = stops.filter(function (q) { return q.id === id; })[0];
+      if (st && (mode === 'parked' || mode === 'choosing')) pick(st);
+    },
+    getMode: function () { return mode; },
     getPose: function () { return { x: x, z: z, heading: heading, speed: speed }; }
   };
 }
