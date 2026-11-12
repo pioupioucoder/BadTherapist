@@ -334,6 +334,7 @@ export function buildWorld(scene, opts) {
                 updatePlayerPhysics(dt);
                 if (truck) truck.update(dt, playerLevel === 0 && camera.position.x > 100);
             }
+            if (window.BadTherapistSociety) BadTherapistSociety.reportPlayer({ level: playerLevel, inCab: elevator.isInsideCab(camera.position.x, camera.position.z), roomZ: camera.position.z, street: camera.position.x > 100 ? { x: camera.position.x - STREET_DX, z: camera.position.z - STREET_Z } : null });
             street.update(dt, time);
             street.setEntrance(rdc.door.amount());
             corridor.update(dt, time);

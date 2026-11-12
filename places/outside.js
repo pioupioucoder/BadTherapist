@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { buildWork } from './work.js';
+import { buildWork } from './therapist-house.js'
 import { buildForest } from './forest.js';
 import { createTruck } from '../objects/vehicle.js';
 import { createTaxi } from '../taxi.js';
@@ -8,6 +8,8 @@ import { buildPlaces } from './index.js';
 import { createKit } from './common.js';
 import { getShared, WORK_SPOT, HOUSE_POS, TER, FAR_Y } from './map.js';
 import { buildImmeuble } from './immeuble.js';
+import { society } from '../engine/society.js';
+import { createBodies } from '../engine/avatar-body.js';
 
 // ==========================================
 // BAD THERAPIST — LA RUE COMPLÈTE (places/outside.js)
@@ -269,6 +271,7 @@ let walkY = null;
 // Construits seulement dans le vrai monde (pas dans la copie vue de la fenêtre).
 let truck = null;
 let taxi = null;
+let bodies = null;
 let places = null;
 if (playerCam) {
   const org0 = { x: scene.position.x, y: scene.position.y, z: scene.position.z };
@@ -315,6 +318,8 @@ if (ctx.driveCamera) {
     origin: org,
     camera: ctx.driveCamera, view: ctx.view, action: ctx.action,
     renderer: renderer,
+    freeDriver: true,                // Oliver est un avatar libre (engine/avatar-body.js), plus collé au taxi
+    onRideRequest: function (stop, finish) { society.onPlayerRide(stop, finish); },   // c'est Oliver qui accepte ou refuse
     headlight: headlight,
     groundH: SH.walkHeight,
     road: SH.main,
@@ -326,6 +331,10 @@ if (ctx.driveCamera) {
     snow: ctx.snow,
     onExit: function () { walkY = null; if (ctx.onTruckExit) ctx.onTruckExit(); }
   });
+
+  // Les corps d'Oliver (au volant du taxi) et de Pluie, pilotés par la société des avatars
+  society.attachTaxi(taxi);
+  bodies = createBodies(scene, { camera: ctx.driveCamera, groundH: SH.walkHeight, taxi: taxi });
 }
 
 
@@ -405,6 +414,9 @@ return {
       }
     }
    
+
+    // Avatars libres (Oliver, Pluie)
+    if (bodies) bodies.update(dt);
 
     // Immeuble : fenêtres vivantes et balise rouge (immeuble.js)
     imm.update(dt, time);

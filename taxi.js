@@ -42,10 +42,14 @@ const LANE = 2.2;         // décalage de la voie par rapport à l'axe de la rou
 const STOP_BEFORE_END = 8;   // il s'arrête 8 m avant le bout de la route (devant la maison)
 const BOARD_RANGE = 6;       // distance pour voir le bouton ENTER
 const AUTO_EXIT = false;     // true : le joueur descend tout seul à l'arrivée (sinon bouton EXIT)
+const RIDE_WAIT_MS = 25000;  // le conducteur (avatar libre) a 25 s pour répondre à une demande de course ; sans réponse il accepte
 
 const HOME_PARK = { x: -LANE, z: -11 };    // près du camion (camion en x 3.8, z -9.5) ; le taxi regarde vers la route (+z)
 
 export function createTaxi(parent, o) {
+
+  // freeDriver = true : Oliver n'est plus chargé ici, c'est un avatar libre (engine/avatar-brain.js) qui s'assoit au volant quand il le veut
+  const FREE_DRIVER = !!o.freeDriver;
 
   const origin = o.origin || { x: 0, y: 0, z: 0 };
   const camera = o.camera;
@@ -248,8 +252,10 @@ export function createTaxi(parent, o) {
     } catch (e) { /* sans importance */ }
   }
 
-  if (window.BTLoad) window.BTLoad.hold('oliver');     // l'écran de chargement attend Oliver
-  loadOliver();
+  if (!FREE_DRIVER) {
+    if (window.BTLoad) window.BTLoad.hold('oliver');     // l'écran de chargement attend Oliver
+    loadOliver();
+  }
 
   window.BadTherapistTaxi = {
     group: g,
@@ -444,6 +450,8 @@ export function createTaxi(parent, o) {
   let x = HOME_PARK.x, z = HOME_PARK.z, heading = Math.PI;
   let speed = 0, pitch = 0, roll = 0, bodyY = groundH(x, z), wheelRot = 0, steer = 0;
   let owned = false, actionShown = false, arrivedT = 0, cool = 0;
+  let auto = false;                       // true : le taxi roule tout seul (conduit par son avatar), sans le joueur
+  let driverIn = !FREE_DRIVER;            // un conducteur est au volant (sinon pas de bouton ENTER)
   const SEAT = new THREE.Vector3(0.5, SEAT_TOP + 0.72, 0.95);        // le joueur : banquette arrière, côté droit
 
   function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
@@ -523,7 +531,7 @@ export function createTaxi(parent, o) {
       const px = (e.clientX - r.left) * cv.width / r.width, py = (e.clientY - r.top) * cv.height / r.height;
       let best = null, bd = 1e9;
       ui.hit.forEach(function (h) { const d = Math.hypot(px - h.x, py - h.y); if (d < h.r && d < bd) { bd = d; best = h; } });
-      if (best && !best.here) pick(best.stop);
+      if (best && !best.here) requestRide(best.stop);
     });
     window.addEventListener('keydown', function (e) { if (e.key === 'Escape' && mode === 'choosing') closeMenu(); });
   }
@@ -574,7 +582,7 @@ export function createTaxi(parent, o) {
       const ic = document.createElement('canvas'); ic.width = 80; ic.height = 70; ic.style.cssText = 'width:40px;height:35px;';
       icon(ic.getContext('2d'), st.type, 40, 35, 26, col);
       btn.appendChild(ic);
-      if (!isHere) btn.addEventListener('click', function () { pick(st); });
+      if (!isHere) btn.addEventListener('click', function () { requestRide(st); });
       ui.row.appendChild(btn);
     });
     // le taxi
@@ -595,26 +603,45 @@ export function createTaxi(parent, o) {
     if (mode === 'choosing') mode = 'parked';
     cool = 0.8;
   }
-  function pick(stop) {
+  function pick(stop, isAuto) {
     const pts = routeTo(stop);
     if (ui) ui.root.style.display = 'none';
-    if (!pts) { mode = 'parked'; cool = 0.8; return; }
+    if (!pts) { mode = 'parked'; cool = 0.8; return false; }
     P = makePath(pts);
     s = 0;
-    riding = true;
+    auto = !!isAuto;
+    riding = !auto;
     mode = 'driving';
     owned = false;
     heading = P.H[0];
     speed = 0;
-    if (o.view) o.view.set(heading, 0);
+    if (!auto && o.view) o.view.set(heading, 0);
     mountHeadlight();
     hideAction();
-    if (o.action) o.action.hide();
+    if (!auto && o.action) o.action.hide();
+    return true;
+  }
+
+  // Le joueur a choisi une destination. Si le conducteur est un avatar libre (o.onRideRequest), c'est LUI qui décide d'accepter ou de refuser.
+  function requestRide(stop) {
+    if (!o.onRideRequest) { pick(stop, false); return; }
+    if (ui) ui.root.style.display = 'none';
+    mode = 'asking';
+    hideAction();
+    let done = false;
+    const finish = function (ok) {
+      if (done) return;
+      done = true;
+      if (mode !== 'asking') return;
+      if (ok) pick(stop, false); else { mode = 'parked'; cool = 1.5; }
+    };
+    setTimeout(function () { finish(true); }, RIDE_WAIT_MS);
+    try { o.onRideRequest(stop, finish); } catch (e) { finish(true); }
   }
 
   function enter() {
     if (mode !== 'parked') return;
-    if (!stops.length) return;
+    if (!stops.length || !driverIn) return;
     openMenu();
   }
 
@@ -681,20 +708,29 @@ export function createTaxi(parent, o) {
       w.g.rotation.y = w.front ? steer : 0;
     });
 
-    // Caméra : banquette arrière (le joueur peut regarder autour de lui)
-    const eye = SEAT.clone().applyEuler(g.rotation).add(g.position);
-    camera.position.set(origin.x + eye.x, origin.y + eye.y, origin.z + eye.z);
-    if (o.view) {
-      const v = o.view.get();
-      o.view.set(v.yaw + (heading - prevHeading), v.pitch);
+    // Caméra : banquette arrière (le joueur peut regarder autour de lui) — seulement s'il est à bord
+    if (!auto) {
+      const eye = SEAT.clone().applyEuler(g.rotation).add(g.position);
+      camera.position.set(origin.x + eye.x, origin.y + eye.y, origin.z + eye.z);
+      if (o.view) {
+        const v = o.view.get();
+        o.view.set(v.yaw + (heading - prevHeading), v.pitch);
+      }
+      if (o.snow) o.snow.setBaseY(origin.y + bodyY);
     }
-    if (o.snow) o.snow.setBaseY(origin.y + bodyY);
 
     if (arrived) {
-      mode = 'arrived';
-      arrivedT = 0;
       dimHeadlight();
       wheels.forEach(function (w) { w.g.rotation.y = 0; });
+      if (auto) {                                    // le conducteur est arrivé seul : le taxi reste garé là
+        auto = false;
+        mode = 'parked';
+        cool = 1;
+        if (o.onArrive) o.onArrive({ x: x, z: z });
+      } else {
+        mode = 'arrived';
+        arrivedT = 0;
+      }
     }
   }
 
@@ -708,7 +744,7 @@ export function createTaxi(parent, o) {
 
     animate(dt);
 
-    if (mode === 'choosing') return;
+    if (mode === 'choosing' || mode === 'asking') return;
 
     if (mode === 'arrived') {
       arrivedT += dt;
@@ -727,7 +763,7 @@ export function createTaxi(parent, o) {
     const truckBusy = !!(tr && tr.isDriving());
     let dTr = 1e9;
     if (tr) { const tp = tr.getPose(); dTr = Math.hypot(px - tp.x, pz - tp.z); }
-    const wins = active && !truckBusy && dT < BOARD_RANGE && dT <= dTr;
+    const wins = active && driverIn && !truckBusy && dT < BOARD_RANGE && dT <= dTr;
     if (wins) {
       showAction('ENTER', enter);
       owned = true;
@@ -762,6 +798,34 @@ export function createTaxi(parent, o) {
       if (st && (mode === 'parked' || mode === 'choosing')) pick(st);
     },
     getMode: function () { return mode; },
-    getPose: function () { return { x: x, z: z, heading: heading, speed: speed }; }
+    getPose: function () { return { x: x, z: z, heading: heading, speed: speed }; },
+
+    // ----- pour un conducteur libre (avatar-brain.js : def.vehicle = taxi) -----
+    slot: driverSlot,                                              // groupe où s'assoit l'avatar
+    isMoving: function () { return mode === 'driving'; },
+    isRiding: function () { return riding; },
+    setDriverPresent: function (v) { driverIn = !!v; },
+    // rouler seul jusqu'à l'arrêt le plus proche de (px, pz) ; renvoie false si impossible
+    driveTo: function (px, pz) {
+      if (mode !== 'parked' || !stops.length) return false;
+      let best = null, bd = 1e18;
+      stops.forEach(function (st) { const d = Math.hypot(st.x - px, st.z - pz); if (d < bd) { bd = d; best = st; } });
+      if (!best) return false;
+      const here = hereStop();
+      if (here && here.id === best.id) return false;
+      return pick(best, true);
+    },
+    // un endroit libre à côté de la portière, pour que le conducteur descende
+    doorSpot: function () {
+      const rx = Math.cos(heading), rz = -Math.sin(heading);
+      const fx = -Math.sin(heading), fz = -Math.cos(heading);
+      const cands = [[2.6, 0.9], [-2.6, 0.9], [2.6, -2.2], [-2.6, -2.2], [0, -4.6]];
+      for (let i = 0; i < cands.length; i++) {
+        const px = x + rx * cands[i][0] + fx * cands[i][1];
+        const pz = z + rz * cands[i][0] + fz * cands[i][1];
+        if (!insideRect(px, pz)) return [px, pz];
+      }
+      return [x + rx * 2.6, z + rz * 2.6];
+    }
   };
 }
