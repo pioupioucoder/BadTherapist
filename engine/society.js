@@ -199,6 +199,8 @@ function create() {
         id: 'text', desc: 'send a text message from your phone to anyone, by name or number', args: '{"to":"name or number","text":"..."}',
         run: function (actor, a) {
             const t = R.findActor(a.to);
+            if (!t) return 'Unknown person.';
+            if (!R.knowsPerson(actor, t.id)) return 'You do not have this person\'s number. You only get to know people by meeting them (being in the same place).';
             if (actor.id === 'evelyn' && t && t.isPlayer) return 'You talk to the player by calling or leaving voicemails, not by text.';
             const r = M.send(actor.id, a.to, a.text);
             return r.ok ? 'Message sent to ' + r.to.name + '.' : r.error;
@@ -342,6 +344,26 @@ function create() {
     R.addActor({ id: 'pluie', name: 'Pluie', number: '555-0103', loc: 'building' });
     R.actors().forEach(function (a) { brains.add(a); });
 
+    // Evelyn a un corps fixe dans sa maison : elle y est toujours (une vieille sauvegarde la mettait « dans l'immeuble »)
+    const evelynActor = R.actor('evelyn');
+    if (evelynActor && evelynActor.noBody) evelynActor.loc = 'therapist_house';
+
+    // ─── Rencontres : deux personnages au même endroit se connaissent (ils échangent leur numéro) ───
+    //     'building' (tout l'immeuble) et 'road' (n'importe où sur les routes) ne comptent pas comme « au même endroit ».
+    setInterval(function () {
+        const here = {};
+        R.actors().forEach(function (a) {
+            if (a.loc === 'building' || a.loc === 'road' || a.busyUntil > Date.now()) return;
+            (here[a.loc] = here[a.loc] || []).push(a);
+        });
+        Object.keys(here).forEach(function (loc) {
+            const g = here[loc];
+            for (let i = 0; i < g.length; i++) for (let j = i + 1; j < g.length; j++) {
+                if (R.meet(g[i], g[j])) { brains.wake(g[i].id); brains.wake(g[j].id); }
+            }
+        });
+    }, 2000);
+
     // ─── Messages ───
     R.on('message', function (m) {
         const from = R.actor(m.from), to = R.actor(m.to);
@@ -351,6 +373,7 @@ function create() {
             const t = m.text.toLowerCase();
             if (t.indexOf(p.id.toLowerCase()) !== -1 || t.indexOf(String(p.name).toLowerCase()) !== -1) R.learn(to, p.id, 'told by ' + from.name);
         });
+        R.addContact(to, from.id);
         if (to.isPlayer) toast(from.name + ': ' + m.text);
         else if (!(to.external && from.isPlayer)) brains.wake(to.id);       // Evelyn répond au joueur par son propre circuit
     });
@@ -358,12 +381,13 @@ function create() {
     // Ce qu'Evelyn « sait du moment présent » pendant ses séances et ses appels (therapist-ai.js : getWorld)
     api.evelynLines = function () {
         const L = [];
+        const me = R.actor('evelyn');
         R.actors().forEach(function (a) {
-            if (a.id === 'evelyn' || a.isPlayer) return;
+            if (a.id === 'evelyn' || a.isPlayer || !R.knowsPerson(me, a.id)) return;
             const p = R.place(a.loc);
             L.push(a.name + ' (téléphone ' + a.number + ') se trouve : ' + (p ? p.name : a.loc) + '.');
         });
-        M.all().filter(function (m) { const f = R.actor(m.from); return m.to === 'evelyn' && f && !f.isPlayer && Date.now() - m.at < 3 * 3600 * 1000; })
+        M.all().filter(function (m) { const f = R.actor(m.from); return m.to === 'evelyn' && f && !f.isPlayer && R.knowsPerson(me, f.id) && Date.now() - m.at < 3 * 3600 * 1000; })
             .slice(-3).forEach(function (m) { L.push(R.actor(m.from).name + " t'a envoyé un SMS : « " + m.text + ' »'); });
         return L;
     };

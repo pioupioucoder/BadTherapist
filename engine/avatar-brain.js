@@ -19,17 +19,27 @@ async function fetchText(path) {
     return t;
 }
 
-// Appel par défaut : même requête que le cerveau d'Evelyn (system, messages, model) -> { text }.
+// Appel par défaut : EXACTEMENT le même format que le cerveau d'Evelyn (therapist-ai.js : callLLM),
+// car c'est ce que le Worker comprend : messages = [{ role, text }], maxOutputTokens, reasoningEffort -> { text }.
+// (Avant : { content } et max_tokens -> le Worker lisait un message VIDE : l'avatar ne savait ni où il était ni quoi faire.)
 // Remplaçable : society.setLLM(async ({ system, user, id }) => '...texte...')
 async function defaultLLM(o) {
     const cfg = THERAPIST_CONFIG || {};
-    if (!cfg.proxyUrl) throw new Error('pas de proxyUrl');
-    const body = { system: o.system, messages: [{ role: 'user', content: o.user }], max_tokens: 400, temperature: 0.9, avatar: o.id };
+    if (!cfg.proxyUrl) throw new Error('pas de proxyUrl dans therapist-config.js');
+    const body = {
+        system: o.system,
+        messages: [{ role: 'user', text: o.user }],
+        temperature: 0.9,
+        maxOutputTokens: 1000,                 // gpt-oss compte sa réflexion dedans : ne pas descendre
+        reasoningEffort: cfg.reasoningEffort || 'low',
+        avatar: o.id
+    };
     if (cfg.model) body.model = cfg.model;
     const r = await fetch(cfg.proxyUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    if (!r.ok) throw new Error('worker ' + r.status);
+    if (!r.ok) throw new Error('worker ' + r.status + ' ' + (await r.text()).slice(0, 200));   // le Worker dit pourquoi
     const j = await r.json();
-    return String(j.text || '');
+    if (!j || !j.text) throw new Error('worker sans texte : ' + JSON.stringify(j).slice(0, 200));
+    return String(j.text);
 }
 
 export function parsePlan(raw) {
@@ -45,11 +55,11 @@ export function parsePlan(raw) {
 
 export function createBrainSystem(R, M, opts) {
     opts = opts || {};
-    const cfg = Object.assign({ avatarThinkSec: 120, avatarMinGapSec: 12, avatarsEnabled: true }, THERAPIST_CONFIG || {});
+    const cfg = Object.assign({ avatarThinkSec: 120, avatarMinGapSec: 12, avatarWakeGapSec: 45, avatarsEnabled: true }, THERAPIST_CONFIG || {});
     let llm = opts.llm || defaultLLM;
     let enabled = cfg.avatarsEnabled !== false;
     let running = false;                 // un seul appel à la fois
-    let lastCall = 0, failures = 0, backoffUntil = 0;
+    let lastCall = 0, failures = 0, backoffUntil = 0, lastError = '', lastPlan = {};
     const brains = [];
     const providers = {};      // texte en plus pour un avatar (ex. les notes privées d'Evelyn sur le joueur)
     const gameTime = function () { try { return window.BadTherapistGameTime ? String(window.BadTherapistGameTime() || '') : ''; } catch (e) { return ''; } };
@@ -62,10 +72,10 @@ export function createBrainSystem(R, M, opts) {
         let extra = '';
         try { extra = providers[actor.id] ? String(providers[actor.id]() || '') : ''; } catch (e) { extra = ''; }
         const caps = R.capabilities(actor).map(function (c) { return '- ' + c.id + (c.args ? ' ' + c.args : '') + ' : ' + c.desc; }).join('\n');
-        const dir = R.directory().filter(function (d) { return d.id !== actor.id; }).map(function (d) {
+        const dir = R.directory(actor).map(function (d) {
             const a = R.actor(d.id);
             return '- ' + d.name + ' : ' + d.number + (a && a.external ? ' (answers only when she feels like it)' : '');
-        }).join('\n');
+        }).join('\n') || '(nobody: you have nobody\'s number yet. You get to know people by meeting them, in person.)';
         return [
             shared.trim(),
             own.trim(),
@@ -112,7 +122,9 @@ export function createBrainSystem(R, M, opts) {
         const user = buildPerception(actor);
         const raw = await llm({ system: system, user: user, id: actor.id });
         const plan = parsePlan(raw);
-        if (!plan) throw new Error('réponse illisible');
+        if (!plan) throw new Error('réponse illisible : ' + String(raw).slice(0, 160));
+        lastPlan[actor.id] = { at: Date.now(), thought: plan.thought, actions: plan.actions };
+        console.log('[avatar ' + actor.id + '] pense : ' + (plan.thought || '(rien)'), plan.actions);
         if (plan.thought) actor.memory.push('(thought) ' + plan.thought);
         for (let i = 0; i < plan.actions.length; i++) {
             const a = plan.actions[i];
@@ -127,7 +139,7 @@ export function createBrainSystem(R, M, opts) {
     function due(b, now) {
         const a = b.actor;
         if (a.busyUntil > now) return false;
-        if (b.wake && now - b.lastRun > 15000) return true;
+        if (b.wake && now - b.lastRun > cfg.avatarWakeGapSec * 1000) return true;      // un SMS ou une rencontre le réveille, mais pas en boucle
         return now - b.lastRun > (cfg.avatarThinkSec * 1000) * (0.75 + b.jitter * 0.5);
     }
 
@@ -141,6 +153,7 @@ export function createBrainSystem(R, M, opts) {
         try { await think(ready.actor); failures = 0; }
         catch (e) {
             failures++;
+            lastError = ready.actor.id + ' : ' + (e && e.message || e);
             backoffUntil = Date.now() + Math.min(600000, 20000 * Math.pow(2, failures - 1));
             console.warn('[avatar ' + ready.actor.id + ']', e && e.message || e);
         }
@@ -159,6 +172,15 @@ export function createBrainSystem(R, M, opts) {
         setEnabled: function (v) { enabled = !!v; },
         isEnabled: function () { return enabled; },
         thinkNow: function (actorId) { const a = R.actor(actorId); return a ? think(a) : Promise.reject(new Error('inconnu')); },
+        // F12 : BadTherapistSociety.brains.debug()  ->  pourquoi un avatar ne réfléchit pas
+        debug: function () {
+            const now = Date.now();
+            return {
+                enabled: enabled, running: running, pageHidden: document.hidden, failures: failures, lastError: lastError,
+                waitMs: Math.max(0, backoffUntil - now), lastPlan: lastPlan,
+                avatars: brains.map(function (b) { return { id: b.actor.id, nextInSec: Math.round(Math.max(0, (cfg.avatarThinkSec * 1000 * (0.75 + b.jitter * 0.5)) - (now - b.lastRun)) / 1000), busy: b.actor.busyUntil > now }; })
+            };
+        },
         buildSystem: buildSystem, buildPerception: buildPerception
     };
     return api;

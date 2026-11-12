@@ -96,11 +96,12 @@ export function createRegistry() {
         const s = (saved.actors && saved.actors[a.id]) || {};
         const actor = Object.assign({
             name: a.id, number: '', isPlayer: false, external: false, thinks: false, noBody: false, canDrive: false,
-            loc: 'building', home: 'building', known: [], job: null, memory: [],
+            loc: 'building', home: 'building', known: [], contacts: [], job: null, memory: [],
             busyUntil: 0, dest: null, lastThink: 0
         }, a);
         ['loc', 'home', 'job'].forEach(function (k) { if (s[k] !== undefined && s[k] !== null) actor[k] = s[k]; });
         if (Array.isArray(s.known)) actor.known = s.known.slice();
+        if (Array.isArray(s.contacts)) actor.contacts = s.contacts.slice();
         if (Array.isArray(s.memory)) actor.memory = s.memory.slice(-12);
         actors[a.id] = actor;
         R.emit('actor', actor);
@@ -120,7 +121,24 @@ export function createRegistry() {
         return null;
     };
     R.actorsAt = function (placeId, exceptId) { return R.actors().filter(function (a) { return a.loc === placeId && a.id !== exceptId; }); };
-    R.directory = function () { return R.actors().map(function (a) { return { id: a.id, name: a.name, number: a.number }; }); };
+    // Annuaire. Sans argument : tout le monde (le téléphone du joueur). Avec un personnage : SEULEMENT les gens dont il a le numéro
+    // (ceux qu'il a rencontrés ou qui lui ont écrit) : personne ne connaît personne au départ.
+    R.directory = function (actor) {
+        return R.actors().filter(function (a) { return !actor || (a.id !== actor.id && R.knowsPerson(actor, a.id)); })
+            .map(function (a) { return { id: a.id, name: a.name, number: a.number }; });
+    };
+    R.knowsPerson = function (actor, otherId) { return !!actor && (actor.isPlayer || actor.contacts.indexOf(otherId) !== -1); };
+    R.addContact = function (actor, otherId) {
+        if (!actor || actor.isPlayer || actor.id === otherId || actor.contacts.indexOf(otherId) !== -1) return false;
+        actor.contacts.push(otherId); R.save(); return true;
+    };
+    // Deux personnages se rencontrent (même endroit) : chacun a désormais le numéro de l'autre
+    R.meet = function (a, b) {
+        if (!a || !b || a.id === b.id) return false;
+        const n1 = R.addContact(a, b.id), n2 = R.addContact(b, a.id);
+        if (n1 || n2) { R.note(a.name + ' and ' + b.name + ' met.'); R.emit('meet', { a: a, b: b }); }
+        return n1 || n2;
+    };
     R.setHome = function (actorId, placeId) { const a = actors[actorId]; if (a) { a.home = placeId; R.save(); } };
 
     // ─── Découverte des lieux cachés ───
@@ -152,7 +170,7 @@ export function createRegistry() {
         clearTimeout(saveTimer);
         saveTimer = setTimeout(function () {
             const out = { actors: {} };
-            R.actors().forEach(function (a) { out.actors[a.id] = { loc: a.loc, home: a.home, job: a.job, known: a.known, memory: a.memory.slice(-12) }; });
+            R.actors().forEach(function (a) { out.actors[a.id] = { loc: a.loc, home: a.home, job: a.job, known: a.known, contacts: a.contacts, memory: a.memory.slice(-12) }; });
             lsSet(SAVE_KEY, out);
         }, 400);
     };
