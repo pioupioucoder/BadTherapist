@@ -1,11 +1,12 @@
-// avatar-body.js – les CORPS 3D d'Oliver et de Pluie dans la rue (avatars Mixamo déjà dans avatars/).
+// avatar-body.js – les CORPS 3D d'Oliver, de Pluie et d'Evelyn dans la rue (avatars Mixamo déjà dans avatars/).
 //
 // Ils lisent l'état de society.js (où est l'avatar, est-il en train de marcher, est-il au volant) et le montrent :
 //   • Oliver au volant du vrai taxi (taxi.js, option freeDriver) : assis à l'arrêt, « driving » quand ça roule ;
 //     s'il descend (stop_job) il apparaît à côté de la portière et peut marcher ;
 //   • marche en ligne droite entre deux lieux (animation walk), repos (idle) près du lieu, regarde le joueur s'il est proche ;
 //   • invisibles quand ils sont dans l'immeuble ou passagers du taxi.
-// Evelyn n'est PAS ici : son corps reste dans therapist-house.js.
+// Evelyn est ici comme les autres : chez elle on ne la voit pas dehors (son corps assis est dans therapist-house.js) ;
+// dès qu'elle sort, son corps de rue apparaît à la porte et marche.
 //
 // Brancher : dans outside.js, après createTaxi (voir notes/INTEGRATION-3.md ; outside.js corrigé fourni).
 // Réglage : BadTherapistBodies.list() ; si un modèle flotte / s'enfonce, changer height / yOffset dans DEFS.
@@ -13,6 +14,7 @@
 import * as THREE from 'three';
 import { loadMixamoAvatar } from '../avatar-loader.js';
 import { society } from './society.js';
+import { Bubbles } from './speech-bubbles.js';
 
 const DEFS = {
     oliver: {
@@ -22,17 +24,66 @@ const DEFS = {
     pluie: {
         dir: 'avatars/pluie/', model: 'pluie.fbx', height: 1.68,
         anims: { idle: 'happy_idle.fbx', walk: 'walking.fbx', run: 'run.fbx', sit: 'sit.fbx', talk: 'talk.fbx' }
+    },
+    evelyn: {
+        dir: 'avatars/evelyn/', model: 'evelyn.fbx', height: 1.7, insideAt: 'therapist_house',   // insideAt : « chez elle » = dans la maison (invisible dehors)
+        anims: { idle: 'idle.fbx', walk: 'Female Start Walking.fbx', run: 'Fast Run.fbx', sit: 'sit.fbx' }
     }
 };
 const WALK_CHASE = 1.8;       // m/s : quand il a un nouveau point de repos à rejoindre
 const SEE_PLAYER = 10;        // il se tourne vers toi à moins de 10 m
 const FAR_NO_ANIM = 160;      // au-delà, on ne calcule plus l'animation
+const BUBBLE_RANGE = 25;      // la bulle de parole n'apparaît qu'à moins de 25 m
+const CLICK_RANGE = 12;       // on peut cliquer sur un avatar pour lui parler à moins de 12 m
 
 export function createBodies(scene, o) {
     const camera = o.camera, groundH = o.groundH || function () { return 0; }, taxi = o.taxi || null;
     const R = society.registry;
     const bodies = {};
     let tSync = 0;
+    const headV = new THREE.Vector3();
+
+    // Bulle de parole : position écran de la tête (elle suit l'avatar). visible = false -> bulle cachée
+    const feetV = new THREE.Vector3();
+    function canvasEl() { return o.canvas || (o.renderer && o.renderer.domElement) || document.querySelector('canvas'); }
+    function bubbleAt(b, visible) {
+        b.scr = null;
+        if (!visible || !b.a) { Bubbles.place(b.id, 0, 0, false); return; }
+        b.a.root.getWorldPosition(feetV);
+        headV.copy(feetV);
+        headV.y += b.def.height + 0.28;
+        const dist = headV.distanceTo(camera.position);
+        if (dist > BUBBLE_RANGE) { Bubbles.place(b.id, 0, 0, false); return; }
+        headV.project(camera);
+        feetV.project(camera);
+        const cv = canvasEl();
+        const r = cv ? cv.getBoundingClientRect() : { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
+        const on = headV.z < 1 && Math.abs(headV.x) < 1.1 && headV.y > -1.1 && headV.y < 1.2;
+        const hx = r.left + (headV.x * 0.5 + 0.5) * r.width, hy = r.top + (-headV.y * 0.5 + 0.5) * r.height;
+        const fy = r.top + (-feetV.y * 0.5 + 0.5) * r.height;
+        if (on) b.scr = { x: hx, y: hy, fy: fy, dist: dist };
+        Bubbles.place(b.id, hx, hy, on);
+    }
+
+    // Clic sur un avatar (ou, si la souris est verrouillée, avatar au centre de l'écran) : la boîte de réponse s'ouvre
+    function onClick(ev) {
+        const t = ev.target;
+        if (t && t.closest && t.closest('.bt-say, .bt-reply')) return;
+        const cv = canvasEl();
+        if (!cv || (!document.pointerLockElement && t !== cv)) return;
+        const r = cv.getBoundingClientRect();
+        let cx = ev.clientX, cy = ev.clientY;
+        if (document.pointerLockElement) { cx = r.left + r.width / 2; cy = r.top + r.height / 2; }
+        let best = null, bd = 1e9;
+        Object.keys(bodies).forEach(function (id) {
+            const b = bodies[id], s = b.scr;
+            if (!s || s.dist > CLICK_RANGE) return;
+            const h = Math.max(40, s.fy - s.y);
+            if (Math.abs(cx - s.x) < h * 0.5 && cy > s.y - 30 && cy < s.fy + 12 && s.dist < bd) { best = b; bd = s.dist; }
+        });
+        if (best) { const ac = R.actor(best.id); Bubbles.talkTo(best.id, ac ? ac.name : ''); }
+    }
+    window.addEventListener('click', onClick);
 
     function load(id, def) {
         const b = { id: id, def: def, a: null, grp: new THREE.Group(), cur: '', seated: null, x: null, z: null, heading: 0 };
@@ -101,12 +152,13 @@ export function createBodies(scene, o) {
             if (wantSeat) {
                 play(b, taxi.isMoving && taxi.isMoving() ? 'drive' : 'sit');
                 a.update(dt);
+                bubbleAt(b, true);
                 return;
             }
 
             // 2. passager d'un véhicule : invisible
             const tr = actor.travel;
-            if (actor.ride || (tr && tr.mode === 'vehicle')) { b.grp.visible = false; return; }
+            if (actor.ride || (tr && tr.mode === 'vehicle')) { b.grp.visible = false; bubbleAt(b, false); return; }
 
             // 3. position
             const place = R.place(actor.loc);
@@ -121,7 +173,7 @@ export function createBodies(scene, o) {
                 vis = tr.vis !== false;
             } else if (place) {
                 const t = society.spot(actor, actor.loc);
-                vis = !place.indoor;
+                vis = !place.indoor && !(b.def.insideAt && b.def.insideAt === actor.loc);   // chez elle : dans la maison, pas dehors
                 if (b.x === null || Math.hypot(t.x - b.x, t.z - b.z) > 40) { b.x = t.x; b.z = t.z; }
                 else {
                     const dx = t.x - b.x, dz = t.z - b.z, d = Math.hypot(dx, dz);
@@ -134,7 +186,7 @@ export function createBodies(scene, o) {
                 }
             }
             b.grp.visible = vis;
-            if (!vis) return;
+            if (!vis) { bubbleAt(b, false); return; }
 
             // 4. le regard : vers le joueur s'il est tout proche et que l'avatar est à l'arrêt
             const dpx = cam.x - b.x, dpz = cam.z - b.z, dp = Math.hypot(dpx, dpz);
@@ -152,6 +204,7 @@ export function createBodies(scene, o) {
                 play(b, moving ? 'walk' : (actor.speakingUntil > now ? 'talk' : 'idle'));
                 a.update(dt);
             }
+            bubbleAt(b, true);
         });
     }
 

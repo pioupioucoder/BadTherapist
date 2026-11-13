@@ -1,14 +1,17 @@
-// phone-app.js (ancien phone-item.js) – le TÉLÉPHONE PORTABLE du joueur (un item).
-// Onglet MSGS : SMS avec tout le monde (Oliver, Pluie...) par le registre commun (messaging.js).
+// phone-app.js (ancien phone-item.js) – le TÉLÉPHONE PORTABLE de Chippy (un item). Même téléphone pour tout le monde.
 //
-// Il montre : le numéro d'Evelyn, l'heure réelle ET l'heure du jeu, depuis quand elle t'a vu, si le répondeur marche,
-// un bouton pour l'APPELER, un champ pour lui LAISSER UN MESSAGE, ses messages vocaux (à écouter) et le journal d'appels.
+//   PHONE      : ton numéro, l'heure, la liste des contacts. Un contact -> APPELER ou ÉCRIRE.
+//                Appel : ça sonne ; s'il ne décroche pas, tu peux laisser un message vocal ou écrire.
+//   MSGS       : les SMS (et ce qui s'est dit en direct) avec chaque contact.
+//   VOICEMAIL  : les messages vocaux que les autres t'ont laissés.
+//   CALLS      : le journal d'appels.
+// Quand quelqu'un t'appelle, le téléphone s'ouvre : DÉCROCHER ou REFUSER.
 //
-//     const item = createPhoneItem({ talk, life, phone, getGameTime });
-//     item.toggle();                      // à brancher sur ton item « téléphone » (inventaire, touche...)
-//     phone.onDial(() => item.callNow()); // cliquer le téléphone de la table de chevet l'appelle aussi
+//     const item = createPhoneItem({ getGameTime });
+//     item.toggle();                  // à brancher sur ton item « téléphone »
+//     phone.onDial(() => item.callNow());   // le téléphone de la table de chevet ouvre la liste de contacts
 //
-// Tous les textes d'Evelyn sont insérés avec textContent (jamais innerHTML) : rien de ce qu'elle écrit ne peut casser la page.
+// Tout texte venant d'un avatar est inséré avec textContent (jamais innerHTML) : rien de ce qu'il écrit ne peut casser la page.
 
 import { THERAPIST_CONFIG } from './therapist-config.js';
 import { Mem } from './therapist-memory.js';
@@ -42,12 +45,12 @@ const CSS = `
 export function createPhoneItem(opts) {
     opts = opts || {};
     const cfg = Object.assign({}, THERAPIST_CONFIG, opts.config || {});
-    const talk = opts.talk, life = opts.life;
     const getPhone = function () { return opts.phone || window.BadTherapistPhone || null; };
-    let root = null, body = null, tabs = {}, clockEl = null, msgInput = null;
-    let tab = 'home', note = '', calling = false, isOn = false, clockTimer = null;
+    let root = null, body = null, tabs = {}, clockEl = null;
+    let tab = 'home', isOn = false, clockTimer = null, styled = false;
+    let sel = null;                 // contact ouvert (écran du contact)
     let chatWith = null, chatInput = null;
-    let styled = false;
+    let callId = null, vmInput = null, vmNote = '';
 
     const el = function (tag, cls, text) {
         const n = document.createElement(tag);
@@ -55,14 +58,18 @@ export function createPhoneItem(opts) {
         if (text != null) n.textContent = text;
         return n;
     };
-
+    function button(label, fn, cls) {
+        const b = el('button', cls || 'bpi-btn', label);
+        b.type = 'button';
+        b.addEventListener('click', fn);
+        return b;
+    }
     function ensureStyle() {
         if (styled) return;
         styled = true;
         if (!document.getElementById('bt-pixel-font')) {
             const l = document.createElement('link');
-            l.id = 'bt-pixel-font';
-            l.rel = 'stylesheet';
+            l.id = 'bt-pixel-font'; l.rel = 'stylesheet';
             l.href = 'https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap';
             document.head.appendChild(l);
         }
@@ -70,141 +77,187 @@ export function createPhoneItem(opts) {
         st.textContent = CSS;
         document.head.appendChild(st);
     }
-
-    function fmt(at) {
-        const d = new Date(at);
-        return d.toLocaleString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
-    }
+    function fmt(at) { return new Date(at).toLocaleString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }); }
     function ago(at) { return Mem.humanize(Date.now() - at); }
+    function gameTime() { try { return opts.getGameTime ? String(opts.getGameTime() || '') : ''; } catch (e) { return ''; } }
+    function tickClock() { if (clockEl) clockEl.textContent = new Date().toLocaleString('en-GB', { weekday: 'long', hour: '2-digit', minute: '2-digit' }); }
+    function society() { return window.BadTherapistSociety || null; }
+    function me() { const S = society(); return S ? S.registry.actor('player') : null; }
 
-    function gameTime() {
-        try { return opts.getGameTime ? String(opts.getGameTime() || '') : ''; } catch (e) { return ''; }
+    // ─── Appel entrant : visible sur tous les onglets ───
+    function renderIncoming() {
+        const S = society();
+        if (!S || callId) return;
+        S.calls.incoming('player').forEach(function (c) {
+            const who = S.registry.actor(c.from);
+            const box = el('div', 'bpi-item new');
+            box.appendChild(el('div', 'd', (who ? who.name.toUpperCase() : '?') + ' IS CALLING YOU'));
+            box.appendChild(button('ANSWER', function () { S.calls.answer('player'); callId = c.id; tab = 'home'; sel = c.from; render(); }));
+            box.appendChild(button('DECLINE', function () { S.calls.hangUp('player'); render(); }, 'bpi-play'));
+            body.appendChild(box);
+        });
     }
 
-    function tickClock() {
-        if (clockEl) clockEl.textContent = new Date().toLocaleString('en-GB', { weekday: 'long', hour: '2-digit', minute: '2-digit' });
-    }
-
-    // ─── Onglets ─────────────────────────────────────────────────────
+    // ─── Onglet PHONE : contacts, puis le contact, puis l'appel ───
     function renderHome() {
-        const m = Mem.get();
-        body.appendChild(el('div', 'bpi-line', 'EVELYN'));
-        body.appendChild(el('div', 'bpi-num', cfg.evelynNumber || '???'));
-
+        const S = society();
+        if (!S) { body.appendChild(el('div', 'bpi-empty', 'The phone is not loaded.')); return; }
+        if (callId) { renderCall(S); return; }
+        const R = S.registry, M = S.messaging;
+        if (sel) {
+            const who = R.actor(sel);
+            body.appendChild(button('< BACK', function () { sel = null; render(); }, 'bpi-play'));
+            body.appendChild(el('div', 'bpi-num', who ? who.name : '?'));
+            body.appendChild(el('div', 'bpi-line', who ? who.number : ''));
+            body.appendChild(button('CALL', function () { startCall(sel); }));
+            body.appendChild(button('SEND A MESSAGE', function () { chatWith = sel; tab = 'msgs'; render(); }));
+            return;
+        }
+        body.appendChild(el('div', 'bpi-line', 'MY NUMBER'));
+        body.appendChild(el('div', 'bpi-num', me() ? me().number : '???'));
         const real = el('div', 'bpi-line');
         real.appendChild(document.createTextNode('REAL TIME: '));
         clockEl = el('b', null, '');
         real.appendChild(clockEl);
         body.appendChild(real);
         tickClock();
-
         const g = gameTime();
         if (g) { const l = el('div', 'bpi-line'); l.appendChild(document.createTextNode('GAME TIME: ')); l.appendChild(el('b', null, g)); body.appendChild(l); }
-
-        const seen = el('div', 'bpi-line');
-        seen.appendChild(document.createTextNode('YOU LAST CALLED: '));
-        const lastOut = m.callLog.filter(function (c) { return c.dir === 'out'; }).pop();
-        seen.appendChild(el('b', null, lastOut ? ago(lastOut.at) + ' ago' : 'never'));
-        body.appendChild(seen);
-
-        const vm = el('div', 'bpi-line');
-        vm.appendChild(document.createTextNode('VOICEMAIL: '));
-        vm.appendChild(el('b', null, cfg.lifeEnabled && life && life.isOnline() ? 'ON, she can leave messages' : 'OFF (no signal)'));
-        body.appendChild(vm);
-
-        const call = el('button', 'bpi-btn', calling ? 'CALLING...' : 'CALL EVELYN');
-        call.type = 'button';
-        call.disabled = calling;
-        call.addEventListener('click', callNow);
-        body.appendChild(call);
-
-        msgInput = el('input', 'bpi-in');
-        msgInput.type = 'text';
-        msgInput.maxLength = 300;
-        msgInput.placeholder = 'Leave her a message...';
-        msgInput.autocomplete = 'off';
-        msgInput.spellcheck = false;
-        msgInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); sendMessage(); } });
-        body.appendChild(msgInput);
-
-        const send = el('button', 'bpi-btn', 'LEAVE MESSAGE');
-        send.type = 'button';
-        send.addEventListener('click', sendMessage);
-        body.appendChild(send);
-
-        body.appendChild(el('div', 'bpi-note', note));
+        body.appendChild(el('div', 'bpi-line', ' '));
+        body.appendChild(el('div', 'bpi-line', 'CONTACTS'));
+        const dir = R.directory().filter(function (d) { return d.id !== 'player'; });
+        if (!dir.length) body.appendChild(el('div', 'bpi-empty', 'Nobody yet.'));
+        dir.forEach(function (d) {
+            const n = M.unread('player').filter(function (m) { return m.from === d.id; }).length;
+            body.appendChild(button(d.name.toUpperCase() + '  ' + d.number + (n ? '  (' + n + ' NEW)' : ''), function () { sel = d.id; render(); }));
+        });
     }
 
-    function renderVoicemail() {
-        const list = Mem.get().voicemails.slice().reverse();
-        if (!list.length) { body.appendChild(el('div', 'bpi-empty', 'No messages.')); return; }
-        list.forEach(function (v) {
-            const box = el('div', 'bpi-item' + (v.heard ? '' : ' new'));
-            box.appendChild(el('div', 'd', (v.heard ? '' : '* NEW  ') + fmt(v.at) + '  (' + ago(v.at) + ' ago)'));
-            box.appendChild(el('div', null, v.text));
-            const play = el('button', 'bpi-play', 'PLAY');
-            play.type = 'button';
-            play.addEventListener('click', function () {
-                Mem.markHeard(v.id);
-                const ph = getPhone();
-                if (ph && ph.say) ph.say(v.text);
-                render();
+    function startCall(id) {
+        const S = society();
+        const r = S.calls.start('player', id);
+        if (!r.ok) { vmNote = r.error; callId = null; render(); return; }
+        callId = r.call.id; vmNote = ''; render();
+    }
+
+    function renderCall(S) {
+        const R = S.registry, M = S.messaging;
+        const c = S.calls.get(callId);
+        if (!c) { callId = null; render(); return; }
+        const other = R.actor(c.from === 'player' ? c.to : c.from);
+        const name = other ? other.name : '?';
+        body.appendChild(el('div', 'bpi-num', name));
+        if (c.status === 'ringing') {
+            body.appendChild(el('div', 'bpi-line', 'CALLING... it rings.'));
+            body.appendChild(button('HANG UP', function () { S.calls.hangUp('player'); callId = null; sel = null; render(); }));
+            return;
+        }
+        if (c.status === 'active') {
+            body.appendChild(el('div', 'bpi-line', 'ON THE PHONE'));
+            M.markRead('player', other.id);
+            M.thread('player', other.id, 40).filter(function (m) { return m.kind === 'call' && m.at >= (c.answeredAt || c.at); }).forEach(function (m) {
+                const mine = m.from === 'player';
+                const box = el('div', 'bpi-item' + (mine ? '' : ' new'));
+                box.appendChild(el('div', 'd', mine ? 'YOU' : name.toUpperCase()));
+                box.appendChild(el('div', null, m.text));
+                body.appendChild(box);
             });
-            box.appendChild(play);
+            chatInput = el('input', 'bpi-in');
+            chatInput.type = 'text'; chatInput.maxLength = 300; chatInput.autocomplete = 'off'; chatInput.spellcheck = false;
+            chatInput.placeholder = 'Say something...';
+            chatInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); sendCall(other.id); } });
+            body.appendChild(chatInput);
+            body.appendChild(button('SAY', function () { sendCall(other.id); }));
+            body.appendChild(button('HANG UP', function () { S.calls.hangUp('player'); callId = null; sel = null; render(); }, 'bpi-play'));
+            return;
+        }
+        if (c.status === 'ended') { body.appendChild(el('div', 'bpi-line', 'THE CALL IS OVER.')); body.appendChild(button('OK', function () { callId = null; sel = null; render(); })); return; }
+        // manqué : pas de réponse -> message vocal ou écrire
+        body.appendChild(el('div', 'bpi-line', name.toUpperCase() + ' DID NOT PICK UP.'));
+        vmInput = el('input', 'bpi-in');
+        vmInput.type = 'text'; vmInput.maxLength = 300; vmInput.autocomplete = 'off'; vmInput.spellcheck = false;
+        vmInput.placeholder = 'Leave a voice message...';
+        vmInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); sendVoicemail(other.id); } });
+        body.appendChild(vmInput);
+        body.appendChild(button('LEAVE VOICE MESSAGE', function () { sendVoicemail(other.id); }));
+        body.appendChild(button('CALL AGAIN', function () { startCall(other.id); }, 'bpi-play'));
+        body.appendChild(button('CLOSE', function () { callId = null; sel = null; render(); }, 'bpi-play'));
+        body.appendChild(el('div', 'bpi-note', vmNote));
+    }
+    function sendCall(otherId) {
+        const v = chatInput ? chatInput.value.trim() : '';
+        if (!v) return;
+        chatInput.value = '';
+        society().messaging.send('player', otherId, v, { kind: 'call' });
+        render();
+        if (chatInput) chatInput.focus();
+    }
+    function sendVoicemail(otherId) {
+        const v = vmInput ? vmInput.value.trim() : '';
+        if (!v) return;
+        const r = society().messaging.send('player', otherId, v, { kind: 'voicemail' });
+        vmNote = r.ok ? 'Voice message left.' : r.error;
+        render();
+    }
+
+    // ─── MESSAGES vocaux reçus (de tout le monde) + anciens messages d'Evelyn ───
+    function renderVoicemail() {
+        const S = society();
+        const items = [];
+        if (S) S.messaging.all().filter(function (m) { return m.to === 'player' && m.kind === 'voicemail'; }).forEach(function (m) {
+            const f = S.registry.actor(m.from);
+            items.push({ at: m.at, who: f ? f.name : m.from, text: m.text, heard: m.read, play: function () { S.messaging.markRead('player', m.from); } });
+        });
+        Mem.get().voicemails.forEach(function (v) {
+            items.push({ at: v.at, who: 'Evelyn', text: v.text, heard: v.heard, play: function () { Mem.markHeard(v.id); } });
+        });
+        items.sort(function (a, b) { return b.at - a.at; });
+        if (!items.length) { body.appendChild(el('div', 'bpi-empty', 'No voice messages.')); return; }
+        items.forEach(function (v) {
+            const box = el('div', 'bpi-item' + (v.heard ? '' : ' new'));
+            box.appendChild(el('div', 'd', (v.heard ? '' : '* NEW  ') + v.who.toUpperCase() + '  ' + fmt(v.at) + '  (' + ago(v.at) + ' ago)'));
+            box.appendChild(el('div', null, v.text));
+            box.appendChild(button('PLAY', function () { v.play(); const ph = getPhone(); if (ph && ph.say) ph.say(v.text); render(); }, 'bpi-play'));
             body.appendChild(box);
         });
     }
 
     function renderCalls() {
-        const list = Mem.get().callLog.slice().reverse();
+        const S = society();
+        const list = S ? S.calls.list().filter(function (c) { return c.from === 'player' || c.to === 'player'; }).reverse() : [];
         if (!list.length) { body.appendChild(el('div', 'bpi-empty', 'No calls yet.')); return; }
         list.forEach(function (c) {
-            const who = c.dir === 'in' ? 'EVELYN CALLED' : 'YOU CALLED';
+            const out = c.from === 'player';
+            const o = S.registry.actor(out ? c.to : c.from);
             const box = el('div', 'bpi-item');
             box.appendChild(el('div', 'd', fmt(c.at) + '  (' + ago(c.at) + ' ago)'));
-            box.appendChild(el('div', null, who + ' - ' + (c.res || '')));
+            const res = c.status === 'missed' ? (out ? 'NO ANSWER' : 'MISSED') : c.status === 'active' || c.status === 'ended' ? 'ANSWERED' : 'RINGING';
+            box.appendChild(el('div', null, (out ? 'YOU CALLED ' : 'CALLED YOU: ') + (o ? o.name.toUpperCase() : '?') + ' - ' + res));
             body.appendChild(box);
         });
-        const lm = Mem.get().leftMsgs.slice().reverse();
-        if (lm.length) {
-            body.appendChild(el('div', 'bpi-line', 'YOUR MESSAGES TO HER'));
-            lm.forEach(function (x) {
-                const box = el('div', 'bpi-item');
-                box.appendChild(el('div', 'd', fmt(x.at) + (x.read ? '  (she read it)' : '  (not read yet)')));
-                box.appendChild(el('div', null, x.text));
-                body.appendChild(box);
-            });
-        }
     }
 
-    // ─── Messages avec tout le monde (registre commun) ───
-    function society() { return window.BadTherapistSociety || null; }
+    // ─── Messages (SMS et paroles) avec chaque contact ───
     function renderMsgs() {
         const S = society();
         if (!S) { body.appendChild(el('div', 'bpi-empty', 'Messaging is not loaded.')); return; }
         const R = S.registry, M = S.messaging;
-        body.appendChild(el('div', 'bpi-line', 'MY NUMBER: ' + (R.actor('player').number)));
         if (!chatWith) {
             R.directory().filter(function (d) { return d.id !== 'player'; }).forEach(function (d) {
-                const n = M.unread('player').filter(function (m) { return m.from === d.id; }).length;
-                const b = el('button', 'bpi-btn', d.name.toUpperCase() + '  ' + d.number + (n ? '  (' + n + ' NEW)' : ''));
-                b.type = 'button';
-                b.addEventListener('click', function () { chatWith = d.id; render(); });
-                body.appendChild(b);
+                const n = M.unread('player').filter(function (m) { return m.from === d.id && m.kind !== 'voicemail'; }).length;
+                body.appendChild(button(d.name.toUpperCase() + '  ' + d.number + (n ? '  (' + n + ' NEW)' : ''), function () { chatWith = d.id; render(); }));
             });
             return;
         }
         const who = R.actor(chatWith);
-        const back = el('button', 'bpi-play', '< BACK');
-        back.type = 'button';
-        back.addEventListener('click', function () { chatWith = null; render(); });
-        body.appendChild(back);
+        body.appendChild(button('< BACK', function () { chatWith = null; render(); }, 'bpi-play'));
         body.appendChild(el('div', 'bpi-num', who ? who.name : '?'));
         M.markRead('player', chatWith);
         M.thread('player', chatWith, 14).forEach(function (m) {
             const mine = m.from === 'player';
+            const tag = m.kind === 'voicemail' ? ' (voice message)' : m.kind === 'call' ? ' (phone)' : m.kind === 'say' ? ' (in person)' : '';
             const box = el('div', 'bpi-item' + (mine ? '' : ' new'));
-            box.appendChild(el('div', 'd', (mine ? 'YOU' : who.name.toUpperCase()) + '  ' + fmt(m.at)));
+            box.appendChild(el('div', 'd', (mine ? 'YOU' : who.name.toUpperCase()) + tag + '  ' + fmt(m.at)));
             box.appendChild(el('div', null, m.text));
             body.appendChild(box);
         });
@@ -213,18 +266,13 @@ export function createPhoneItem(opts) {
         chatInput.placeholder = 'Write to ' + (who ? who.name : '') + '...';
         chatInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); sendChat(); } });
         body.appendChild(chatInput);
-        const send = el('button', 'bpi-btn', 'SEND');
-        send.type = 'button';
-        send.addEventListener('click', sendChat);
-        body.appendChild(send);
-        if (who && who.external) body.appendChild(el('div', 'bpi-note', 'Evelyn answers when she feels like it. For a call or a voicemail, use the PHONE tab.'));
+        body.appendChild(button('SEND', sendChat));
+        body.appendChild(button('CALL', function () { sel = chatWith; tab = 'home'; startCall(chatWith); }, 'bpi-play'));
     }
     function sendChat() {
         const S = society(), v = chatInput ? chatInput.value.trim() : '';
         if (!S || !v || !chatWith) return;
         chatInput.value = '';
-        const dest = S.registry.actor(chatWith);
-        if (dest && dest.id === 'evelyn' && life) life.leaveMessage(v);        // Evelyn la lit aussi par son circuit habituel
         S.messaging.send('player', chatWith, v);
         render();
         if (chatInput) chatInput.focus();
@@ -232,68 +280,43 @@ export function createPhoneItem(opts) {
 
     function render() {
         if (!root) return;
-        const keep = msgInput ? msgInput.value : '';
         const keepChat = chatInput ? chatInput.value : '';
-        chatInput = null;
+        chatInput = null; vmInput = null;
         body.textContent = '';
         clockEl = null;
-        msgInput = null;
-        const unheard = Mem.get().voicemails.filter(function (v) { return !v.heard; }).length;
+        const S = society();
+        const unheard = S ? S.messaging.all().filter(function (m) { return m.to === 'player' && m.kind === 'voicemail' && !m.read; }).length + Mem.get().voicemails.filter(function (v) { return !v.heard; }).length : 0;
+        const newMsgs = S ? S.messaging.unread('player').filter(function (m) { return m.kind !== 'voicemail' && m.kind !== 'call'; }).length : 0;
         tabs.home.textContent = 'PHONE';
         tabs.vm.textContent = 'VOICEMAIL' + (unheard ? ' (' + unheard + ')' : '');
         tabs.calls.textContent = 'CALLS';
-        const S0 = society(), newMsgs = S0 ? S0.messaging.unread('player').length : 0;
         tabs.msgs.textContent = 'MSGS' + (newMsgs ? ' (' + newMsgs + ')' : '');
         Object.keys(tabs).forEach(function (k) { tabs[k].classList.toggle('on', k === tab); });
-        if (tab === 'msgs') { renderMsgs(); if (chatInput && keepChat) chatInput.value = keepChat; }
+        renderIncoming();
+        if (tab === 'msgs') renderMsgs();
         else if (tab === 'vm') renderVoicemail();
         else if (tab === 'calls') renderCalls();
-        else { renderHome(); if (keep && msgInput) msgInput.value = keep; }
+        else renderHome();
+        if (chatInput && keepChat) chatInput.value = keepChat;
     }
 
-    // ─── Actions ─────────────────────────────────────────────────────
-    async function callNow() {
-        if (calling || !talk || (talk.isOpen && talk.isOpen())) return null;
-        calling = true;
-        if (opts.onCallStart) opts.onCallStart();
-        note = '';
+    // ─── Ouverture / fermeture ───
+    // callNow() sans argument : ouvre la liste de contacts (ancien « appeler Evelyn » : plus de contact privilégié) ; avec un id : appelle ce contact.
+    function callNow(id) {
         tab = 'home';
-        show();
-        render();
-        let r = { answered: false };
-        try { r = await talk.openDial(); } catch (e) { r = { answered: false }; }
-        calling = false;
-        if (opts.onCallResult) opts.onCallResult(r);
-        if (r && r.answered) { hide(); return r; }
-        note = r && r.busy ? '' : 'It rings... nobody picks up. Leave a message?';
-        show();
-        render();
-        if (msgInput) msgInput.focus();
-        return r;
+        show(); render();
+        if (typeof id === 'string' && society()) startCall(id);
+        return null;
     }
 
-    async function sendMessage() {
-        const v = msgInput ? msgInput.value.trim() : '';
-        if (!v) return;
-        msgInput.value = '';
-        const ok = life ? await life.leaveMessage(v) : (Mem.leaveMessage(v), true);
-        note = ok ? 'Message left. She will hear it.' : 'Could not leave the message.';
-        render();
-    }
-
-    // ─── Ouverture / fermeture ───────────────────────────────────────
     function build() {
         if (root) return;
         ensureStyle();
         root = el('div', 'bpi');
         const top = el('div', 'bpi-top');
         top.appendChild(el('span', null, 'MY PHONE'));
-        const x = el('button', 'bpi-x', 'X');
-        x.type = 'button';
-        x.addEventListener('click', hide);
-        top.appendChild(x);
+        top.appendChild(button('X', hide, 'bpi-x'));
         root.appendChild(top);
-
         const bar = el('div', 'bpi-tabs');
         [['home', 'PHONE'], ['msgs', 'MSGS'], ['vm', 'VOICEMAIL'], ['calls', 'CALLS']].forEach(function (t) {
             const b = el('button', 'bpi-tab', t[1]);
@@ -303,20 +326,21 @@ export function createPhoneItem(opts) {
             bar.appendChild(b);
         });
         root.appendChild(bar);
-
         body = el('div');
         root.appendChild(body);
         document.body.appendChild(root);
-
-        // les touches tapées ici ne doivent pas faire marcher le joueur
-        root.addEventListener('keydown', function (e) {
+        root.addEventListener('keydown', function (e) {           // les touches tapées ici ne font pas marcher Chippy
             e.stopPropagation();
             if (e.key === 'Escape') { e.preventDefault(); hide(); }
         });
-        if (life && life.onChange) life.onChange(function () { if (isOn) render(); });
         window.addEventListener('badtherapist:message', function () { if (isOn) render(); });
+        window.addEventListener('badtherapist:call', function (ev) {
+            const d = ev.detail || {};
+            if (d.to === 'player' && d.state === 'ringing') { tab = 'home'; show(); }      // on t'appelle : le téléphone s'ouvre
+            if ((d.from === 'player' || d.to === 'player') && d.state === 'active') { callId = d.id; }
+            if (isOn) render();
+        });
     }
-
     function show() {
         build();
         if (isOn) return;
@@ -325,15 +349,8 @@ export function createPhoneItem(opts) {
         clearInterval(clockTimer);
         clockTimer = setInterval(tickClock, 15000);
     }
-
-    function hide() {
-        isOn = false;
-        clearInterval(clockTimer);
-        if (root) root.classList.remove('on');
-    }
-
+    function hide() { isOn = false; clearInterval(clockTimer); if (root) root.classList.remove('on'); }
     function open() { show(); render(); }
     function toggle() { if (isOn) hide(); else open(); }
-
     return { open: open, close: hide, toggle: toggle, callNow: callNow, isOpen: function () { return isOn; } };
 }

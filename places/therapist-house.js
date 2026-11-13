@@ -467,6 +467,14 @@ function createInterior(parent, o) {
   // ------------------------------------------
   let inside = false, busy = false, shown = false, seated = false;
 
+  // Evelyn est-elle chez elle ? (elle peut sortir : society.js / avatar-body.js). Sans société chargée : toujours là.
+  function evelynHome() {
+    try {
+      const s = window.BadTherapistSociety, a = s && s.registry && s.registry.actor('evelyn');
+      return !a || a.loc === 'therapist_house';
+    } catch (e) { return true; }
+  }
+
   function teleport(lx, lz, yaw) {
     camera.position.x = origin.x + lx;
     camera.position.z = origin.z + lz;
@@ -512,7 +520,7 @@ function createInterior(parent, o) {
     extDoor.setOpen(false);
     busy = false;
     if (!ready) await hideOverlay(); else await fadeBlack(false);
-    talk.greetStanding();                                    // bulle : « asseyez-vous »
+    if (evelynHome()) talk.greetStanding();                  // bulle : « asseyez-vous » (seulement si elle est là)
   }
 
   async function leaveHouse() {
@@ -538,6 +546,7 @@ function createInterior(parent, o) {
   // ------------------------------------------
   function sitDown() {
     if (seated) return;
+    if (!evelynHome()) return;                               // pas de séance si elle est sortie
     seated = true;
     camera.position.x = origin.x + SEAT.x;
     camera.position.z = origin.z + SEAT.z - 0.02;
@@ -694,6 +703,7 @@ function createInterior(parent, o) {
       innerPivot.rotation.y = 1.45 * ie;
 
       if (inside) {
+        if (avatar) avatar.visible = evelynHome();                 // absente : sa chaise est vide
         if (mixer) mixer.update(dt);
 
         // Livres : brillent quand on les survole

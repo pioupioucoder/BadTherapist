@@ -1,4 +1,4 @@
-// society.js – la SOCIÉTÉ du jeu : toi (joueur), Evelyn, Oliver, Pluie ont les mêmes capacités.
+// society.js – la SOCIÉTÉ du jeu : toi (Chippy), Evelyn, Oliver, Pluie ont les mêmes capacités, le même téléphone, la même mémoire.
 //
 // Ce fichier s'auto-branche : il suffit qu'il soit importé (phone-service.js et outside.js l'importent).
 //   • registre commun (world-registry.js), SMS (messaging.js), cerveau commun (avatar-brain.js)
@@ -18,7 +18,10 @@ import { registry as R } from './world-registry.js';
 import { createMessaging } from './messaging.js';
 import { createBrainSystem } from './avatar-brain.js';
 import { THERAPIST_CONFIG } from './therapist-config.js';
+import { Mind } from './avatar-mind.js';
+import { Mem } from './therapist-memory.js';
 
+const PLAYER_NAME = 'Chippy';      // le prénom de ton personnage : change-le ici, nulle part ailleurs
 const hasDom = typeof document !== 'undefined';
 const clamp = function (v, a, b) { return Math.max(a, Math.min(b, v)); };
 const sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
@@ -39,6 +42,33 @@ function create() {
     const M = createMessaging(R);
     const brains = createBrainSystem(R, M);
     const rides = [];
+
+    // ─── BLOCAGE (pareil pour tout le monde) : le bloqué le SAIT, celui qui bloque aussi ───
+    const BLK_KEY = 'bt_blocks_v1';
+    let blk = {};
+    try { blk = JSON.parse(localStorage.getItem(BLK_KEY) || '{}') || {}; } catch (e) { blk = {}; }
+    function saveBlk() { try { localStorage.setItem(BLK_KEY, JSON.stringify(blk)); } catch (e) { /* tant pis */ } }
+    function isBlocking(by, who) { return !!(blk[by] && blk[by][who]); }
+    function blockError(from, to) {
+        if (isBlocking(to.id, from.id)) return to.name + ' has blocked you: your calls and texts do not reach them.';
+        if (isBlocking(from.id, to.id)) return 'You blocked ' + to.name + '. Unblock them first if you want to reach them.';
+        return '';
+    }
+    // le téléphone du joueur est chez lui : il n'entend les appels que s'il y est (changeable : phoneRooms dans therapist-config.js)
+    function nearPhone() { const p = R.actor('player'); return !!p && (cfg.phoneRooms || ['bedroom']).indexOf(p.loc) !== -1; }
+    const rawSend = M.send;
+    M.send = function (fromId, toKey, text, o) {
+        const f = R.actor(fromId), t = R.findActor(toKey);
+        if (f && t && !(o && o.kind === 'say')) { const e = blockError(f, t); if (e) return { ok: false, error: e }; }   // parler en face à face n'est jamais bloqué
+        return rawSend.apply(M, arguments);
+    };
+    // combien de messages d'affilée sans réponse (pour qu'un avatar n'enchaîne pas les SMS)
+    function unanswered(fromId, toId) {
+        const L = M.all().filter(function (m) { return m.kind !== 'say' && m.kind !== 'call' && ((m.from === fromId && m.to === toId) || (m.from === toId && m.to === fromId)); });
+        let n = 0;
+        for (let i = L.length - 1; i >= 0; i--) { if (L[i].from === fromId) n++; else break; }
+        return n;
+    }
     let rideId = 1;
     let taxiAt = 'street_front';
     const api = {};
@@ -180,17 +210,30 @@ function create() {
     });
 
     R.registerCapability({
-        id: 'say', needsBody: true, desc: 'speak out loud to someone who is in the same place (leave "to" empty to speak to everyone here)', args: '{"to":"name","text":"..."}',
+        id: 'say', desc: 'speak: out loud to someone in the same place (leave "to" empty to speak to everyone here), or into the phone when you are on a call', args: '{"to":"name","text":"..."}',
         run: function (actor, a) {
+            const text = String(a.text || '').trim();
+            if (!text) return 'You have nothing to say.';
+            // au téléphone : la parole va à l'interlocuteur, où qu'il soit
+            const call = callOf(actor.id);
+            if (call && call.status === 'active') {
+                const other = R.actor(call.from === actor.id ? call.to : call.from);
+                if (other && (!a.to || R.findActor(a.to) === other) && other.loc !== actor.loc) {
+                    M.send(actor.id, other.id, text, { kind: 'call' });
+                    return 'You said it on the phone.';
+                }
+            }
+            if (!a.to && !R.actorsAt(actor.loc, actor.id).length) return 'There is nobody here to hear you.';
             let targets = R.actorsAt(actor.loc, actor.id);
             if (a.to) {
                 const t = R.findActor(a.to);
-                if (!t || t.loc !== actor.loc) return a.to + ' is not here. Send a text instead.';
+                if (!t || t.loc !== actor.loc) return (a.to) + ' is not here. Call or text instead.';
                 targets = [t];
             }
             if (!targets.length) return 'There is nobody here to hear you.';
             actor.speakingUntil = Date.now() + 4000;
-            targets.forEach(function (t) { M.send(actor.id, t.id, a.text, { kind: 'say' }); });
+            R.emit('speech', { actor: actor, text: text, to: targets.map(function (t) { return t.id; }) });
+            targets.forEach(function (t) { M.send(actor.id, t.id, text, { kind: 'say' }); });
             return 'You said it.';
         }
     });
@@ -201,12 +244,100 @@ function create() {
             const t = R.findActor(a.to);
             if (!t) return 'Unknown person.';
             if (!R.knowsPerson(actor, t.id)) return 'You do not have this person\'s number. You only get to know people by meeting them (being in the same place).';
-            if (actor.id === 'evelyn' && t && t.isPlayer) return 'You talk to the player by calling or leaving voicemails, not by text.';
+            if (!actor.isPlayer && t.loc === actor.loc && !t.travel) return t.name + ' is right here with you: speak with say instead of texting.';
+            if (!actor.isPlayer && unanswered(actor.id, t.id) >= 2) return 'You already wrote to ' + t.name + ' twice and got no answer. Wait for a reply before writing again.';
             const r = M.send(actor.id, a.to, a.text);
             return r.ok ? 'Message sent to ' + r.to.name + '.' : r.error;
         }
     });
 
+    // ─── TÉLÉPHONE (pareil pour tout le monde) : appeler -> décrocher ou non -> sinon répondeur / SMS ───
+    const calls = [];                      // { id, from, to, status: ringing | active | missed | ended, at }
+    let callId = 1;
+    const RING_MS = (cfg.ringSeconds || 25) * 1000;
+    function callOf(actorId) { return calls.filter(function (c) { return (c.status === 'ringing' || c.status === 'active') && (c.from === actorId || c.to === actorId); })[0] || null; }
+    api.calls = {
+        incoming: function (id) { return calls.filter(function (c) { return c.status === 'ringing' && c.to === id; }); },
+        active: function (id) { return calls.filter(function (c) { return c.status === 'active' && (c.from === id || c.to === id); })[0] || null; },
+        missedFor: function (id) { const l = calls.filter(function (c) { return c.status === 'missed' && c.from === id && !c.told; }); l.forEach(function (c) { c.told = true; }); return l; },
+        get: function (cid) { return calls.filter(function (c) { return c.id === cid; })[0] || null; },
+        list: function () { return calls.slice(-60); },
+        start: function (fromId, toKey) {
+            const from = R.actor(fromId), to = R.findActor(toKey);
+            if (!from || !to || to.id === from.id) return { ok: false, error: 'Nobody to call.' };
+            if (!R.knowsPerson(from, to.id)) return { ok: false, error: 'You do not have this person\'s number. You only get to know people by meeting them.' };
+            const be = blockError(from, to); if (be) return { ok: false, error: be };
+            if (!from.isPlayer && calls.some(function (x) { return x.from === from.id && x.to === to.id && x.status === 'missed' && Date.now() - x.at < 10 * 60000; })) return { ok: false, error: 'You already tried to call them a moment ago. Text them, or try again much later.' };
+            if (callOf(from.id)) return { ok: false, error: 'You are already on a call.' };
+            if (callOf(to.id)) { const bc = { id: callId++, from: from.id, to: to.id, status: 'ringing', at: Date.now() }; calls.push(bc); return { ok: true, call: finishCall(bc, 'missed'), busy: true }; }   // occupé : comme un appel manqué
+            const c = { id: callId++, from: from.id, to: to.id, status: 'ringing', at: Date.now() };
+            calls.push(c);
+            Mind.noteCall(from.id, to.id, to.name, 'call_out');
+            Mind.noteCall(to.id, from.id, from.name, 'call_in');
+            R.note(from.name + ' is calling ' + to.name + '.');
+            const rings = !to.isPlayer || nearPhone();                 // le joueur n'entend son téléphone que chez lui : sinon appel manqué
+            c.silent = !rings;
+            if (rings) {
+                R.emit('call', { call: c, state: 'ringing' });
+                try { window.dispatchEvent(new CustomEvent('badtherapist:call', { detail: { id: c.id, from: c.from, to: c.to, state: 'ringing' } })); } catch (e) { /* rien */ }
+            }
+            if (!to.isPlayer) brains.wake(to.id, true);
+            setTimeout(function () { if (c.status === 'ringing') finishCall(c, 'missed'); }, RING_MS);        // sans réponse : appel manqué
+            return { ok: true, call: c };
+        },
+        answer: function (actorId) {
+            const c = api.calls.incoming(actorId)[0];
+            if (!c) return false;
+            if (R.actor(actorId) && R.actor(actorId).isPlayer && !nearPhone()) return false;
+            c.status = 'active'; c.answeredAt = Date.now();
+            R.emit('call', { call: c, state: 'active' });
+            try { window.dispatchEvent(new CustomEvent('badtherapist:call', { detail: { id: c.id, from: c.from, to: c.to, state: 'active' } })); } catch (e) { /* rien */ }
+            const f = R.actor(c.from); if (f && !f.isPlayer) brains.wake(f.id, true);
+            return true;
+        },
+        hangUp: function (actorId) {
+            const c = callOf(actorId);
+            if (!c) return false;
+            finishCall(c, c.status === 'ringing' && c.to === actorId ? 'missed' : 'ended');
+            return true;
+        }
+    };
+    function finishCall(c, status) {
+        c.status = status;
+        if (status === 'missed') {
+            const to = R.actor(c.to);
+            Mind.noteCall(c.to, c.from, (R.actor(c.from) || {}).name, 'missed');
+            if (!(R.actor(c.from) && R.actor(c.from).isPlayer)) brains.wake(c.from);
+        } else {
+            if (c.answeredAt) {                         // la mémoire des deux : l'appel a eu lieu
+                Mind.noteCall(c.from, c.to, (R.actor(c.to) || {}).name, 'call_done');
+                Mind.noteCall(c.to, c.from, (R.actor(c.from) || {}).name, 'call_done');
+            }
+            const o = R.actor(c.from);
+            if (o && !o.isPlayer) brains.wake(o.id);
+        }
+        R.emit('call', { call: c, state: status });
+        try { window.dispatchEvent(new CustomEvent('badtherapist:call', { detail: { id: c.id, from: c.from, to: c.to, state: status } })); } catch (e) { /* rien */ }
+        return c;
+    }
+    brains.setCalls(api.calls);
+
+    R.registerCapability({
+        id: 'call', desc: 'phone someone you have the number of (they may not answer)', args: '{"to":"name or number"}',
+        run: function (actor, a) {
+            const r = api.calls.start(actor.id, a.to);
+            if (!r.ok) return r.error;
+            return r.busy ? 'The line is busy.' : 'It rings...';
+        }
+    });
+    R.registerCapability({
+        id: 'answer_call', desc: 'pick up your ringing phone', args: '',
+        run: function (actor) { return api.calls.answer(actor.id) ? 'You pick up. You can speak with say.' : 'Your phone is not ringing.'; }
+    });
+    R.registerCapability({
+        id: 'hang_up', desc: 'end the call, or refuse a ringing call', args: '',
+        run: function (actor) { return api.calls.hangUp(actor.id) ? 'You hang up.' : 'You are not on a call.'; }
+    });
     // ─── Taxi ───
     R.registerCapability({
         id: 'start_job', needsBody: true, desc: 'sit at the wheel of the taxi (it must be where you are) and start your shift: people can then request rides', args: '',
@@ -267,7 +398,7 @@ function create() {
         const driver = R.actors().filter(function (x) { return x.job === 'taxi'; })[0];
         const dest = STOP_TO_PLACE[stop && stop.id];
         if (!driver || !dest) { finish(true); return; }
-        addRide({ from: 'player', fromName: 'Player', driver: driver.id, pickup: player().loc, to: dest, finish: finish }, 20);
+        addRide({ from: 'player', fromName: player().name, driver: driver.id, pickup: player().loc, to: dest, finish: finish }, 20);
     };
 
     async function runRide(ride) {
@@ -310,7 +441,7 @@ function create() {
 
     // ─── Lieux et objets (repère de la rue / immeuble.js) ───
     R.addPlace({ id: 'building', name: 'the apartment building', kind: 'building', indoor: true, x: 0, z: -29, desc: 'where everyone lives' });
-    R.addPlace({ id: 'bedroom', name: "the player's bedroom", kind: 'room', indoor: true, parent: 'building', floor: 6, x: 0, z: -29, public: false, discoverable: false, desc: 'private' });
+    R.addPlace({ id: 'bedroom', name: "Chippy's bedroom", kind: 'room', indoor: true, parent: 'building', floor: 6, x: 0, z: -29, public: false, discoverable: false, desc: 'private' });
     R.addPlace({ id: 'corridor', name: 'the 6th floor corridor', kind: 'room', indoor: true, parent: 'building', floor: 6, x: 0, z: -29 });
     R.addPlace({ id: 'elevator', name: 'the elevator', kind: 'room', indoor: true, parent: 'building', x: 0, z: -29 });
     R.addPlace({ id: 'lobby', name: 'the lobby', kind: 'room', indoor: true, parent: 'building', floor: 0, x: 0, z: -29, desc: 'ground floor, mailboxes, glass front door' });
@@ -336,17 +467,17 @@ function create() {
     }).catch(function () { /* valeurs par défaut */ });
 
     // ─── Les personnages (chacun a un téléphone). Evelyn : corps = therapist-house.js, cerveau de séance = therapist-ai.js,
-    //     mais elle lit et écrit aussi des SMS avec Oliver et Pluie (thinks:true, noBody:true).
+    //     mais elle sort, marche, lit et écrit des SMS comme Oliver et Pluie (thinks:true).
     const evelynNumber = (THERAPIST_CONFIG && THERAPIST_CONFIG.evelynNumber) || '555-0101';
-    R.addActor({ id: 'player', name: 'Player', number: '555-0100', isPlayer: true, loc: 'bedroom', home: 'bedroom' });
-    R.addActor({ id: 'evelyn', name: 'Evelyn', number: evelynNumber, external: true, thinks: true, noBody: true, loc: 'therapist_house' });
+    R.addActor({ id: 'player', name: PLAYER_NAME, number: '555-0100', isPlayer: true, loc: 'bedroom', home: 'bedroom' });   // isPlayer = seulement « quel corps répond au clavier » : aucune décision d'avatar n'en dépend
+    R.addActor({ id: 'evelyn', name: 'Evelyn', number: evelynNumber, thinks: true, loc: 'therapist_house' });   // comme Oliver et Pluie : corps de rue (avatar-body.js), téléphone, cerveau, mémoire
     R.addActor({ id: 'oliver', name: 'Oliver', number: '555-0102', canDrive: true, loc: 'street_front', job: 'taxi' });
     R.addActor({ id: 'pluie', name: 'Pluie', number: '555-0103', loc: 'building' });
     R.actors().forEach(function (a) { brains.add(a); });
 
-    // Evelyn a un corps fixe dans sa maison : elle y est toujours (une vieille sauvegarde la mettait « dans l'immeuble »)
+    // Une vieille sauvegarde pouvait la mettre « dans l'immeuble » ou nulle part : elle repart de chez elle
     const evelynActor = R.actor('evelyn');
-    if (evelynActor && evelynActor.noBody) evelynActor.loc = 'therapist_house';
+    if (evelynActor && (!R.place(evelynActor.loc) || evelynActor.loc === 'building')) evelynActor.loc = 'therapist_house';
 
     // ─── Rencontres : deux personnages au même endroit se connaissent (ils échangent leur numéro) ───
     //     'building' (tout l'immeuble) et 'road' (n'importe où sur les routes) ne comptent pas comme « au même endroit ».
@@ -374,8 +505,8 @@ function create() {
             if (t.indexOf(p.id.toLowerCase()) !== -1 || t.indexOf(String(p.name).toLowerCase()) !== -1) R.learn(to, p.id, 'told by ' + from.name);
         });
         R.addContact(to, from.id);
-        if (to.isPlayer) toast(from.name + ': ' + m.text);
-        else if (!(to.external && from.isPlayer)) brains.wake(to.id);       // Evelyn répond au joueur par son propre circuit
+        if (m.kind === 'call') R.emit('speech', { actor: from, text: m.text, to: [to.id], phone: true });
+        else brains.wake(to.id, m.kind === 'say' || m.kind === 'call');       // même règle pour tout le monde ; une conversation en direct réveille vite
     });
 
     // Ce qu'Evelyn « sait du moment présent » pendant ses séances et ses appels (therapist-ai.js : getWorld)
@@ -410,6 +541,31 @@ function create() {
         p.pos = pose.street ? { x: pose.street.x, z: pose.street.z } : null;
     };
 
+    // L'ancienne mémoire d'Evelyn (therapist-memory.js) reste lisible par son cerveau tant que tout n'est pas migré
+    Mind.addLegacy('evelyn', function (hint) { return Mem.promptBlock(hint); });
+    // Les bulles de parole : une par avatar qui parle (elles suivent les corps 3D)
+    import('./speech-bubbles.js').then(function (m) {
+        R.on('speech', function (e) {
+            if (!e || !e.actor || e.actor.isPlayer) return;
+            if (e.phone) {                                                   // au téléphone : même dialogue (bip, lettre par lettre, on répond), mais dans la boîte d'appel
+                if (e.to && e.to.indexOf(player().id) !== -1) m.Bubbles.phone(e.actor.id, e.actor.name, e.text);
+                return;
+            }
+            m.Bubbles.say(e.actor.id, e.actor.name, e.text);                 // face à face : la bulle au-dessus de la tête
+        });
+        R.on('call', function (e) {
+            const c = e && e.call; if (!c) return;
+            const pid = player().id;
+            if (c.from !== pid && c.to !== pid) return;
+            const o = R.actor(c.from === pid ? c.to : c.from);
+            if (e.state === 'active') m.Bubbles.phoneOpen(o.id, o.name);
+            else if (e.state === 'ended' || e.state === 'missed') m.Bubbles.phoneClose(o.id);
+        });
+        m.Bubbles.setHangUp(function () { api.calls.hangUp(player().id); });
+        // Tu réponds (bulle, clic, ENTRÉE) : c'est la même action « say » que pour n'importe qui, adressée à cet avatar
+        m.Bubbles.setReply(function (toId, text) { return api.act(player().id, 'say', { to: toId, text: text }); });
+    }).catch(function () { /* pas de bulles */ });
+
     Object.assign(api, {
         registry: R, messaging: M, brains: brains, toast: toast,
         spot: spot, placePos: placePos,
@@ -426,6 +582,39 @@ function create() {
         status: function () {
             return R.actors().map(function (a) { return { id: a.id, number: a.number, at: a.loc, job: a.job, moving: a.busyUntil > Date.now(), known: a.known.length }; });
         }
+    });
+    api.blocks = {
+        block: function (byId, whoKey) {
+            const by = R.actor(byId), who = R.findActor(whoKey);
+            if (!by || !who || by.id === who.id) return { ok: false, error: 'Nobody to block.' };
+            (blk[by.id] = blk[by.id] || {})[who.id] = Date.now(); saveBlk();
+            const c = callOf(by.id);
+            if (c && (c.from === who.id || c.to === who.id)) finishCall(c, 'ended');
+            Mind.noteCall(by.id, who.id, who.name, 'blocked');
+            Mind.noteCall(who.id, by.id, by.name, 'blocked_by');
+            return { ok: true };
+        },
+        unblock: function (byId, whoKey) {
+            const by = R.actor(byId), who = R.findActor(whoKey);
+            if (!by || !who || !isBlocking(by.id, who.id)) return { ok: false, error: 'That person is not blocked.' };
+            delete blk[by.id][who.id]; saveBlk();
+            return { ok: true };
+        },
+        isBlocking: function (byId, whoId) { return isBlocking(byId, whoId); },          // byId a-t-il bloqué whoId ?
+        blockedBy: function (id) { return Object.keys(blk).filter(function (k) { return isBlocking(k, id); }); },
+        list: function (byId) { return Object.keys(blk[byId] || {}); }
+    };
+    brains.setBlocks(function (id) {
+        const nm = function (k) { const a = R.actor(k); return a ? a.name : k; };
+        return { blocking: api.blocks.list(id).map(nm), blockedBy: api.blocks.blockedBy(id).map(nm) };
+    });
+    R.registerCapability({
+        id: 'block', desc: 'block someone on your phone: they can no longer text or call you, and they are told they are blocked', args: '{"to":"name"}',
+        run: function (actor, a) { const r = api.blocks.block(actor.id, a.to); return r.ok ? 'You blocked them.' : r.error; }
+    });
+    R.registerCapability({
+        id: 'unblock', desc: 'unblock someone you blocked', args: '{"to":"name"}',
+        run: function (actor, a) { const r = api.blocks.unblock(actor.id, a.to); return r.ok ? 'You unblocked them.' : r.error; }
     });
     brains.start();
     return api;

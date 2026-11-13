@@ -31,48 +31,101 @@ let keyIndex = 0;
 
 // ─── Groq (rotation des clés) ──────────────────────────────────────
 function groqKeys(env) {
-  const keys = [];
-  for (let i = 1; i <= 11; i++) {
-    const k = env['GROQ_KEY_' + i];
-    if (k && String(k).trim() !== '') keys.push(String(k).trim());
+  // Toutes les variables GROQ_KEY_<numéro> (pas de limite à 11), dans l'ordre des numéros.
+  return Object.keys(env)
+    .map((n) => { const m = /^GROQ_KEY_(\d+)$/.exec(n); return m ? { n: Number(m[1]), v: String(env[n] || '').trim() } : null; })
+    .filter((x) => x && x.v !== '')
+    .sort((a, b) => a.n - b.n)
+    .map((x) => x.v);
+}
+
+// Clés en pause (mémoire de l'instance du Worker) : clé -> timestamp de reprise.
+const cooldown = new Map();
+const kid = (k) => k.slice(-8);
+const KEY_DEAD = /organization|restricted|blocked|disabled|deactivated|suspended|billing|credit|invalid api key/i;
+
+function retryAfterMs(r, text) {
+  const h = Number(r.headers.get('retry-after'));
+  if (h > 0) return Math.min(h, 3600) * 1000;
+  const m = /try again in\s*(?:(\d+)h)?(?:(\d+)m)?(?:([\d.]+)s)?/i.exec(text || '');
+  if (m && (m[1] || m[2] || m[3])) {
+    return Math.min(3600, (Number(m[1]) || 0) * 3600 + (Number(m[2]) || 0) * 60 + (Number(m[3]) || 0)) * 1000 + 500;
   }
-  return keys;
+  return 60000;
+}
+
+function errMsg(text) {
+  try { const j = JSON.parse(text); if (j && j.error && j.error.message) return String(j.error.message); } catch (e) { /* texte brut */ }
+  return String(text || '');
+}
+
+function fail(message, status, detail, retryAfter) {
+  const e = new Error(message);
+  e.status = status; e.detail = detail || ''; e.retryAfter = retryAfter || 0;
+  return e;
 }
 
 async function groq(env, payload, opts) {
   opts = opts || {};
   const keys = groqKeys(env);
   if (!keys.length) throw new Error('Aucune clé Groq configurée dans les variables.');
-  const start = keyIndex % keys.length;
-  keyIndex++;
-  const tries = Math.min(keys.length, opts.maxTries || keys.length);
-  let lastError = '';
+  const now = Date.now();
+  const alive = [];
+  keys.forEach((k, i) => { if ((cooldown.get(kid(k)) || 0) <= now) alive.push(i); });
+  if (!alive.length) {
+    // Toutes les clés sont en pause : on répond tout de suite, sans rien appeler.
+    const soon = Math.min(...keys.map((k) => cooldown.get(kid(k)) || 0));
+    throw fail('Toutes les clés sont en pause (quota)', 429, keys.length + ' clés en pause', Math.max(1, Math.ceil((soon - now) / 1000)));
+  }
+  const start = (keyIndex++) % alive.length;
+  const tries = Math.min(alive.length, opts.maxTries || 3);
+  const errors = [];
   for (let i = 0; i < tries; i++) {
-    const idx = (start + i) % keys.length;
+    const idx = alive[(start + i) % alive.length];
+    const key = keys[idx];
+    const label = 'Clé ' + (idx + 1);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), opts.timeoutMs || 15000);
+    let r, text = '';
     try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), opts.timeoutMs || 4500);
-      const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + keys[idx] },
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
         body: JSON.stringify(payload),
         signal: controller.signal
       });
-      clearTimeout(timer);
-      if (r.ok) {
-        const d = await r.json();
-        const text = d && d.choices && d.choices[0] && d.choices[0].message ? d.choices[0].message.content : '';
-        if (text) return String(text).trim();
-      } else {
-        lastError = 'Clé ' + (idx + 1) + ' : groq ' + r.status;
-      }
+      text = await r.text();
     } catch (e) {
-      lastError = 'Clé ' + (idx + 1) + ' : ' + (e && e.name === 'AbortError' ? 'Timeout (trop lente)' : 'Erreur réseau');
+      clearTimeout(timer);
+      // Un timeout n'est PAS une raison de changer de clé : l'autre sera aussi lente, et chaque essai consomme du quota.
+      throw fail(e && e.name === 'AbortError' ? 'Timeout (trop lente)' : 'Erreur réseau', 504, errors.concat(label + ' : ' + (e && e.name)).join(' | '));
+    }
+    clearTimeout(timer);
+
+    if (r.ok) {
+      let d = null;
+      try { d = JSON.parse(text); } catch (e) { /* rien */ }
+      const c = d && d.choices && d.choices[0];
+      const out = c && c.message ? c.message.content : '';
+      if (out && String(out).trim()) return String(out).trim();
+      // Réponse vide (souvent : la « réflexion » a mangé tous les max_tokens). Changer de clé ne sert à rien.
+      throw fail('Réponse vide', 502, label + ' : vide (finish_reason ' + (c && c.finish_reason) + ')');
+    }
+
+    const msg = errMsg(text).slice(0, 240);
+    errors.push(label + ' : groq ' + r.status + ' ' + msg);
+    if (r.status === 429) {
+      cooldown.set(kid(key), Date.now() + retryAfterMs(r, text));       // on saute cette clé tant qu'elle est épuisée
+    } else if (r.status === 401 || r.status === 403 || (r.status === 400 && KEY_DEAD.test(msg))) {
+      cooldown.set(kid(key), Date.now() + 30 * 60000);                  // clé morte / compte restreint
+    } else if (r.status >= 500) {
+      cooldown.set(kid(key), Date.now() + 5000);                        // panne Groq : on essaie la suivante
+    } else {
+      // 400, 413, 422… : c'est NOTRE requête qui est refusée. La renvoyer à d'autres clés ne sert à rien, on s'arrête.
+      throw fail('Requête refusée par Groq', r.status === 413 ? 413 : 400, errors.join(' | '));
     }
   }
-  const err = new Error('Toutes les clés ont échoué');
-  err.detail = lastError;
-  throw err;
+  throw fail('Toutes les clés ont échoué', 502, errors.join(' | '));
 }
 
 // ─── Petits outils ─────────────────────────────────────────────────
@@ -265,7 +318,7 @@ export default {
 
     // proxy Groq (comme avant)
     const model = MODELS.includes(body.model) ? body.model : MODELS[0];
-    const turns = (Array.isArray(body.messages) ? body.messages : []).slice(-40);
+    const turns = (Array.isArray(body.messages) ? body.messages : []).slice(-40).filter((m) => m && String(m.text || '').trim());
     const messages = [{ role: 'system', content: String(body.system || '').slice(0, 20000) }].concat(
       turns.map((m) => m.role === 'user'
         ? { role: 'user', content: String(m.text || '').slice(0, 2000) }
@@ -282,7 +335,10 @@ export default {
       return reply({ text: await groq(env, payload) }, 200, cors);
     } catch (e) {
       const noKey = /Aucune clé/.test(e.message);
-      return reply(noKey ? { error: e.message } : { error: e.message, detail: e.detail || '' }, noKey ? 500 : 502, cors);
+      if (noKey) return reply({ error: e.message }, 500, cors);
+      const status = e.status === 429 ? 429 : (e.status === 400 || e.status === 413) ? e.status : e.status === 504 ? 504 : 502;
+      const h = e.retryAfter ? { ...cors, 'Retry-After': String(e.retryAfter) } : cors;
+      return reply({ error: e.message, detail: e.detail || '', retryAfter: e.retryAfter || 0 }, status, h);
     }
   },
 

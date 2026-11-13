@@ -60,8 +60,8 @@ const FORM_RULES = [
     `{"say":"ce que tu dis à voix haute","memory":${MEMORY_FORM},"end":false,"session_minutes":null,"next_call_hours":null,"next_call_note":null,"agreed_price":null,"voicemail":null}`,
     `- "say" : ce que tu dis à voix haute, sans markdown ni didascalies entre astérisques, @@LANG@@.`,
     `- "memory" : ce que tu fais de TA mémoire. Omets-le ou laisse-le vide pour ne rien changer.`,
-    `    remember : ce que tu choisis de garder (phrases courtes, sans « [f1] » ni date).`,
-    `    forget : ids de tes notes ("f3", "p2") ou bout de texte à effacer.`,
+    `    remember : ce que tu choisis de garder (phrases courtes, sans « [n1] » ni date).`,
+    `    forget : ids de tes notes ("n3", "p2") ou bout de texte à effacer.`,
     `    private : tes pensées à toi, secrètes.`,
     `    will : la liste COMPLÈTE de ce que tu veux (elle remplace l'ancienne), ou null pour ne pas y toucher.`,
     `    habits : la liste COMPLÈTE de tes habitudes, en vraies phrases (elle remplace l'ancienne), ou null.`,
@@ -345,7 +345,7 @@ export function createTherapistTalk(opts) {
     // Vraie première rencontre ? Dès qu'il reste une trace du passé (séance, appel, prénom, notes, résumé), NON.
     function firstMeeting() {
         const m = Mem.get();
-        if (m.sessions > 0 || m.calls > 0 || m.playerName || m.price || m.summary || m.lastSession || (m.facts && m.facts.length)) return false;
+        if (m.sessions > 0 || m.calls > 0 || m.playerName || m.price || m.summary || m.lastSession || Mem.hasNotes()) return false;
         return !!Mem.isFirstMeeting();
     }
 
@@ -381,7 +381,7 @@ export function createTherapistTalk(opts) {
     function systemPrompt(kind, extra) {
         const parts = [context || '', worldText()];
         if (kind === 'session') parts.push(timeBlock());
-        parts.push(priceLine(), timeAware(), Mem.promptBlock(recentHint()), relationBlock());
+        parts.push(priceLine(), timeAware(), Mem.fullPrompt(recentHint()), relationBlock());
         if (kind === 'session') parts.push(FORM_RULES + '\n' + POSSIBILITIES + '\n' + SESSION_RULES);
         else if (kind === 'call') parts.push(FORM_RULES, POSSIBILITIES, CALL_RULES, contactRules());
         else if (kind === 'dial') parts.push(FORM_RULES, POSSIBILITIES, DIAL_RULES, contactRules());
@@ -500,17 +500,25 @@ export function createTherapistTalk(opts) {
 
     // Accueil écrit par l'IA : première rencontre (prénom, présentation) ou retrouvailles
     async function greetBrain(first) {
-        const known = Mem.get().playerName;
-        const situation = mode === 'call'
-            ? 'La personne vient de décrocher le téléphone. ' +
-              (Mem.get().nextCall && Mem.get().nextCall.note ? 'Raison de ton appel : ' + Mem.get().nextCall.note + '.' : '')
-            : 'La personne vient de s\'asseoir en face de toi. ' +
-              (first
-                  ? 'Vous ne vous connaissez pas : c\'est votre toute première rencontre.'
-                  : 'Vous vous connaissez déjà (voir tes notes). Conversations déjà eues : ' + Mem.get().sessions + '. ' +
-                    (known ? 'Son prénom est ' + known + '. ' : 'Tu ne connais pas encore son prénom. ') +
-                    (Mem.get().lastSession ? 'La dernière fois : ' + Mem.get().lastSession : ''));
-        const sys = systemPrompt(mode === 'call' ? 'call' : 'session', situation);
+        const m = Mem.get(), known = m.playerName;
+        const talked = (m.sessions || 0) + (m.calls || 0);
+        const knowsThem = !first && (talked > 0 || known || m.lastSession || m.summary || Mem.hasNotes());
+        const S = [];
+        if (mode === 'call') {
+            S.push('Quelqu\'un vient de décrocher le téléphone.');
+            if (m.nextCall && m.nextCall.note) S.push('Raison de ton appel : ' + m.nextCall.note + '.');
+        } else {
+            S.push('Quelqu\'un vient de s\'asseoir en face de toi.');
+        }
+        if (!knowsThem) {
+            S.push('Vous ne vous connaissez pas : c\'est votre toute première rencontre.');
+        } else {
+            // Même rappel des FAITS au téléphone et en face à face (avant, l'appel n'en recevait aucun : d'où le « bonjour » de première fois)
+            S.push('Vous vous êtes déjà parlé : ' + (m.sessions || 0) + ' séance(s) et ' + (m.calls || 0) + ' appel(s) jusqu\'ici (voir tes notes).');
+            S.push(known ? 'Son prénom est ' + known + '.' : 'Tu ne connais pas encore son prénom.');
+            if (m.lastSession) S.push('La dernière fois : ' + m.lastSession);
+        }
+        const sys = systemPrompt(mode === 'call' ? 'call' : 'session', S.join(' '));
         const r = parseReply(await ask(sys, [{ role: 'user', text: mode === 'call' ? '[Il décroche.]' : '[La personne s\'assoit.]' }]));
         applyControls(r);
         return r.say;
@@ -588,7 +596,7 @@ export function createTherapistTalk(opts) {
         el.in.disabled = true;
         el.send.disabled = true;
         history.push({ role: 'user', text: msg });
-        Mem.noteTurn('user', msg);                    // séance ET appel : tout est gardé
+        Mem.noteTurn('user', msg, mode);                    // séance ET appel : tout est gardé
         learnName(msg);
 
         const stopDots = thinking();
@@ -618,7 +626,7 @@ export function createTherapistTalk(opts) {
             else if (closing) closingTurns++;
         }
         history.push({ role: 'model', text: r.say });
-        if (r.say.trim()) Mem.noteTurn('model', r.say);
+        if (r.say.trim()) Mem.noteTurn('model', r.say, mode);
         if (!isOpenFlag) { busy = false; return; }
 
         const afterSay = function () {
@@ -879,7 +887,7 @@ export function createTherapistTalk(opts) {
         plannedMin = cfg.sessionMinutes || 30;
         Mem.startSession();
         history.push({ role: 'model', text: greet });
-        Mem.noteTurn('model', greet);
+        Mem.noteTurn('model', greet, mode);
         say(greet, finishTurn);
     }
 
@@ -908,7 +916,7 @@ export function createTherapistTalk(opts) {
             return;
         }
         history.push({ role: 'model', text: greet });
-        Mem.noteTurn('model', greet);
+        Mem.noteTurn('model', greet, mode);
         Mem.noteCallAttempt();
         say(greet, finishTurn);
     }
@@ -944,7 +952,7 @@ export function createTherapistTalk(opts) {
         history = [];
         showBox();
         history.push({ role: 'model', text: r.say });
-        if (r.say.trim()) Mem.noteTurn('model', r.say);
+        if (r.say.trim()) Mem.noteTurn('model', r.say, mode);
         say(r.say, function () {
             if (r.end) { setTimeout(hangUp, 1800); busy = false; return; }
             finishTurn();
@@ -955,7 +963,7 @@ export function createTherapistTalk(opts) {
     // Ce que le Worker doit connaître d'Evelyn pour la faire penser quand le jeu est fermé
     async function getSyncPayload() {
         await load();
-        return { context: context || '', memory: Mem.promptBlock(), playerName: Mem.get().playerName || '' };
+        return { context: context || '', memory: Mem.fullPrompt(), playerName: Mem.get().playerName || '' };
     }
 
     // Le patient n'a pas décroché : à appeler depuis le code du téléphone quand une sonnerie reste sans réponse
