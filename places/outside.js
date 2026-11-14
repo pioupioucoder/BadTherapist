@@ -3,6 +3,9 @@ import { buildWork } from './therapist-house.js'
 import { buildForest } from './forest.js';
 import { createTruck } from '../objects/vehicle.js';
 import { createTaxi } from '../taxi.js';
+import { createRoadNet } from '../objects/roadnet.js';
+import { createBus } from '../objects/bus.js';
+import { attachBusLine } from '../engine/bus-line.js';
 import { SEA } from './layout.js';
 import { buildPlaces } from './index.js';
 import { createKit } from './common.js';
@@ -316,7 +319,7 @@ const work = buildWork(scene, {
   origin: { x: scene.position.x, y: scene.position.y, z: scene.position.z },
   action: ctx.action, view: ctx.view, snow: ctx.snow,
   onTeleport: function () { walkY = null; if (ctx.onTeleport) ctx.onTeleport(); },
-  isBusy: function () { return !!(truck && truck.isDriving()) || !!(taxi && taxi.isRiding()); }
+  isBusy: function () { return !!(truck && truck.isDriving()) || !!(taxi && taxi.isRiding()) || !!(bus && bus.isRiding()); }
 });
 
 // Hauteur du joueur sur les collines (seulement si le monde nous donne la caméra)
@@ -326,6 +329,8 @@ let walkY = null;
 // Construits seulement dans le vrai monde (pas dans la copie vue de la fenêtre).
 let truck = null;
 let taxi = null;
+let bus = null;
+let busLine = null;
 let bodies = null;
 let places = null;
 if (playerCam) {
@@ -387,9 +392,36 @@ if (ctx.driveCamera) {
     onExit: function () { walkY = null; if (ctx.onTruckExit) ctx.onTruckExit(); }
   });
 
-  // Les corps d'Oliver (au volant du taxi) et de Pluie, pilotés par la société des avatars
+  // Le bus de Violet : ligne 1, un panneau à chaque arrêt, portes automatiques (objects/bus.js + engine/bus-line.js)
+  const busNet = createRoadNet(SH.roads, { lane: 2.3 });
+  bus = createBus(scene, {
+    origin: org,
+    camera: ctx.driveCamera, view: ctx.view, action: ctx.action, snow: ctx.snow,
+    groundH: SH.walkHeight,
+    net: busNet,
+    signals: places && places.signals ? places.signals : null,     // feux rouges (si places/ les expose : voir notes)
+    obstacles: function () {                                        // le bus s'arrête devant le camion et le taxi
+      const out = [];
+      [truck, taxi].forEach(function (v) {
+        if (v && v.getPose) { const q = v.getPose(); if (q && q.x != null) out.push({ x: q.x, z: q.z, r: 1.7 }); }
+      });
+      return out;
+    },
+    truck: truck, taxi: taxi,
+    onExit: function () { walkY = null; if (ctx.onTruckExit) ctx.onTruckExit(); }
+  });
+  const siteBus = SH.X.sites;
+  busLine = attachBusLine({
+    society: society, bus: bus, net: busNet, scene: scene, groundH: SH.walkHeight,
+    stops: SH.X.stops,
+    sites: { home: { x: 0, z: -29 }, work: WORK_SPOT, town: siteBus.town, gas: siteBus.gas, station: siteBus.station, port: siteBus.port },   // si SH.X.stops n'a pas la bonne forme
+    lake: SH.lake
+  });
+  if (!busLine) bus.group.visible = false;                          // ligne impossible : on ne laisse pas un bus planté à l'origine
+
+  // Les corps d'Oliver (taxi), de Violet (bus) et de Pluie, pilotés par la société des avatars
   society.attachTaxi(taxi);
-  bodies = createBodies(scene, { camera: ctx.driveCamera, groundH: SH.walkHeight, taxi: taxi });
+  bodies = createBodies(scene, { camera: ctx.driveCamera, groundH: SH.walkHeight, taxi: taxi, bus: bus });
 }
 
 
@@ -411,7 +443,8 @@ function mapData() {
       { type: 'port', x: S.port.x, z: S.port.z }
     ],
     sea: { z0: SEA.z0 },
-    truck: truck ? truck.getPose() : null
+    truck: truck ? truck.getPose() : null,
+    bus: bus ? bus.getPose() : null
   };
 }
 
@@ -435,7 +468,8 @@ return {
   setEntrance: imm.setEntrance,
   truck: truck,
   taxi: taxi,
-  isDriving: function () { return !!(truck && truck.isDriving()) || !!(taxi && taxi.isRiding()); },
+  bus: bus,
+  isDriving: function () { return !!(truck && truck.isDriving()) || !!(taxi && taxi.isRiding()) || !!(bus && bus.isRiding()); },
   getMapData: function () { return mapData(); },
 
   update(dt, time) {
@@ -444,19 +478,21 @@ return {
     work.update(dt, time);
 
     // Nouveaux lieux : portes, feux de circulation, train, lumière des intérieurs
-    if (places) places.update(dt, !(truck && truck.isDriving()) && !(taxi && taxi.isRiding()));
+    if (places) places.update(dt, !(truck && truck.isDriving()) && !(taxi && taxi.isRiding()) && !(bus && bus.isRiding()));
 
     // Forêt (vent) : seuls les blocs proches du joueur sont dessinés
     forest.update(time, getFocus());
     
     // Piloté par bedroom.js (pas de ctx.camera) : le taxi se met à jour ici (le camion est appelé par bedroom.js)
     if (!camera && taxi) taxi.update(dt, true);
+    if (!camera && bus) bus.update(dt, true);
 
     // Autonome (immeuble.js / work.js) : on suit le relief, on contourne les arbres, on conduit
     if (camera) {
-      const riding = !!(taxi && taxi.isRiding());
+      const riding = !!(taxi && taxi.isRiding()) || !!(bus && bus.isRiding());     // dans le taxi OU dans le bus : on ne marche pas
       if (truck) truck.update(dt, !riding);
       if (taxi) taxi.update(dt, true);
+      if (bus) bus.update(dt, true);
       
       if (!(truck && truck.isDriving()) && !riding) {
         const tc = collideAll(camera.position.x, camera.position.z, 0.3);
@@ -470,7 +506,7 @@ return {
     }
    
 
-    // Avatars libres (Oliver, Pluie)
+    // Avatars libres (Oliver, Violet, Pluie, Evelyn)
     if (bodies) bodies.update(dt);
 
     // Immeuble : fenêtres vivantes et balise rouge (immeuble.js)

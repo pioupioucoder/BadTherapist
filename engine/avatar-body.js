@@ -3,6 +3,7 @@
 // Ils lisent l'état de society.js (où est l'avatar, est-il en train de marcher, est-il au volant) et le montrent :
 //   • Oliver au volant du vrai taxi (taxi.js, option freeDriver) : assis à l'arrêt, « driving » quand ça roule ;
 //     s'il descend (stop_job) il apparaît à côté de la portière et peut marcher ;
+//   • Violet au volant du bus (objects/bus.js, piloté par engine/bus-line.js) : même principe, métier 'bus' ;
 //   • marche en ligne droite entre deux lieux (animation walk), repos (idle) près du lieu, regarde le joueur s'il est proche ;
 //   • invisibles quand ils sont dans l'immeuble ou passagers du taxi.
 // Evelyn est ici comme les autres : chez elle on ne la voit pas dehors (son corps assis est dans therapist-house.js) ;
@@ -18,8 +19,12 @@ import { Bubbles } from './speech-bubbles.js';
 
 const DEFS = {
     oliver: {
-        dir: 'avatars/oliver/', model: 'oliver.fbx', height: 1.78, driver: true,
+        dir: 'avatars/oliver/', model: 'oliver.fbx', height: 1.78, driver: true, vehicle: 'taxi',
         anims: { walk: 'Walking.fbx', run: 'Running.fbx', sit: 'Sitting.fbx', drive: 'Driving.fbx' }
+    },
+    violet: {
+        dir: 'avatars/violet/', model: 'violet.fbx', height: 1.66, driver: true, vehicle: 'bus',
+        anims: { walk: 'Walking.fbx', sit: 'Sitting.fbx', drive: 'Driving.fbx' }   // son dossier n'a ni Running ni Talking : « talk » retombe sur idle
     },
     pluie: {
         dir: 'avatars/pluie/', model: 'pluie.fbx', height: 1.68,
@@ -38,9 +43,10 @@ const CLICK_RANGE = 12;       // on peut cliquer sur un avatar pour lui parler �
 
 export function createBodies(scene, o) {
     const camera = o.camera, groundH = o.groundH || function () { return 0; }, taxi = o.taxi || null;
+    const vehicles = { taxi: taxi, bus: o.bus || null };      // véhicule conduit par chaque métier (def.vehicle = nom du métier)
     const R = society.registry;
     const bodies = {};
-    let tSync = 0;
+    let tSync = 0, tEnsure = 0;
     const headV = new THREE.Vector3();
 
     // Bulle de parole : position écran de la tête (elle suit l'avatar). visible = false -> bulle cachée
@@ -106,7 +112,8 @@ export function createBodies(scene, o) {
         }).catch(function (e) {
             console.warn('[body] ' + id + " n'a pas pu être chargé :", e && e.message ? e.message : e);
             // Oliver absent : le taxi reste utilisable comme avant (conducteur « virtuel »)
-            if (def.driver && taxi && taxi.setDriverPresent) taxi.setDriverPresent(true);
+            const V = def.vehicle ? vehicles[def.vehicle] : null;
+            if (def.driver && V && V.setDriverPresent) V.setDriverPresent(true);
         });
     }
 
@@ -119,9 +126,10 @@ export function createBodies(scene, o) {
     }
 
     function seat(b, yes) {
-        if (!b.a || !taxi) return;
+        const V = b.def.vehicle ? vehicles[b.def.vehicle] : null;
+        if (!b.a || !V) return;
         if (yes) {
-            taxi.slot.add(b.a.root);
+            V.slot.add(b.a.root);
             b.a.root.position.set(0, 0, 0);
             b.a.root.rotation.set(0, 0, 0);
             b.grp.visible = false;
@@ -130,11 +138,11 @@ export function createBodies(scene, o) {
             b.grp.add(b.a.root);
             b.a.root.position.set(0, 0, 0);
             b.a.root.rotation.set(0, 0, 0);
-            const ds = taxi.doorSpot ? taxi.doorSpot() : [0, 0];
+            const ds = V.doorSpot ? V.doorSpot() : [0, 0];
             b.x = ds[0]; b.z = ds[1];
             b.cur = '';
         }
-        if (b.def.driver && taxi.setDriverPresent) taxi.setDriverPresent(!!yes);
+        if (b.def.driver && V.setDriverPresent) V.setDriverPresent(!!yes);
         b.seated = !!yes;
     }
 
@@ -142,16 +150,18 @@ export function createBodies(scene, o) {
         const now = Date.now();
         if (taxi) { tSync += dt; if (tSync > 0.4) { tSync = 0; society.syncTaxi(); } }
         const cam = scene.worldToLocal(camera.position.clone());
+        tEnsure += dt; if (tEnsure > 1) { tEnsure = 0; ensure(); }     // un avatar créé après nous (ex. Violet, par bus-line.js) est chargé à son apparition
 
         Object.keys(bodies).forEach(function (id) {
             const b = bodies[id], a = b.a, actor = R.actor(id);
             if (!a || !actor) return;
 
-            // 1. au volant ?
-            const wantSeat = !!(b.def.driver && taxi && taxi.slot && actor.job === 'taxi');
+            // 1. au volant ? (taxi pour Oliver, bus pour Violet)
+            const V = b.def.vehicle ? vehicles[b.def.vehicle] : null;
+            const wantSeat = !!(b.def.driver && V && V.slot && actor.job === b.def.vehicle);
             if (b.seated !== wantSeat) seat(b, wantSeat);
             if (wantSeat) {
-                play(b, taxi.isMoving && taxi.isMoving() ? 'drive' : 'sit');
+                play(b, V.isMoving && V.isMoving() ? 'drive' : 'sit');
                 a.update(dt);
                 bubbleAt(b, true);
                 return;
@@ -209,7 +219,8 @@ export function createBodies(scene, o) {
         });
     }
 
-    Object.keys(DEFS).forEach(function (id) { if (R.actor(id)) load(id, DEFS[id]); });
+    function ensure() { Object.keys(DEFS).forEach(function (id) { if (!bodies[id] && R.actor(id)) load(id, DEFS[id]); }); }
+    ensure();
 
     const api = {
         update: step,
