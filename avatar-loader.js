@@ -146,7 +146,9 @@ async function loadMixamoAvatarNow(opts) {
     });
     const names = Object.keys(opts.animations || {});
     for (let i = 0; i < names.length; i++) {
-        const f = await loadFBX(opts.animations[names[i]]);
+        let f = null;
+        try { f = await loadFBX(opts.animations[names[i]]); }
+        catch (e) { console.warn('[avatar] animation « ' + names[i] + ' » ignorée (fichier introuvable) :', opts.animations[names[i]]); continue; }   // une animation manquante ne casse plus tout l'avatar
         if (f.animations && f.animations[0]) {
             const clip = f.animations[0].clone();
             clip.name = names[i];

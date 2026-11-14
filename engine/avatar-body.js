@@ -19,15 +19,15 @@ import { Bubbles } from './speech-bubbles.js';
 const DEFS = {
     oliver: {
         dir: 'avatars/oliver/', model: 'oliver.fbx', height: 1.78, driver: true,
-        anims: { idle: 'Happy Idle.fbx', walk: 'Walking.fbx', run: 'Running.fbx', sit: 'Sitting.fbx', drive: 'Driving.fbx' }
+        anims: { walk: 'Walking.fbx', run: 'Running.fbx', sit: 'Sitting.fbx', drive: 'Driving.fbx' }
     },
     pluie: {
         dir: 'avatars/pluie/', model: 'pluie.fbx', height: 1.68,
-        anims: { idle: 'happy_idle.fbx', walk: 'walking.fbx', run: 'run.fbx', sit: 'sit.fbx', talk: 'talk.fbx' }
+        anims: { walk: 'Walking.fbx', run: 'Running.fbx', sit: 'Sitting.fbx', talk: 'Talking.fbx' }
     },
     evelyn: {
         dir: 'avatars/evelyn/', model: 'evelyn.fbx', height: 1.7, insideAt: 'therapist_house',   // insideAt : « chez elle » = dans la maison (invisible dehors)
-        anims: { idle: 'idle.fbx', walk: 'Female Start Walking.fbx', run: 'Fast Run.fbx', sit: 'sit.fbx' }
+        anims: { walk: 'Walking.fbx', run: 'Running.fbx', sit: 'Sitting.fbx', talk: 'Talking.fbx' }   // noms EXACTS (majuscules comprises : GitHub Pages les distingue)
     }
 };
 const WALK_CHASE = 1.8;       // m/s : quand il a un nouveau point de repos à rejoindre
@@ -96,6 +96,7 @@ export function createBodies(scene, o) {
             model: d + def.model,
             textures: { map: d + 'texture_diffuse.png', normalMap: d + 'texture_normal.png', roughnessMap: d + 'texture_roughness.png', metalnessMap: d + 'texture_metallic.png' },
             animations: an,
+            modelAnimation: 'idle',      // l'idle = l'animation contenue dans le .fbx du personnage lui-même
             height: def.height
         }).then(function (a) {
             b.a = a;

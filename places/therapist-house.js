@@ -400,7 +400,8 @@ function createInterior(parent, o) {
   let avatarPromise = null;
   function ensureAvatar() {
     if (!avatarPromise) {
-      avatarPromise = loadAvatar().catch(function (e) { avatarPromise = null; throw e; });
+      // En cas d'échec on garde la promesse (rejetée) : plus de rechargement en boucle à chaque image
+      avatarPromise = loadAvatar();
     }
     return avatarPromise;
   }
@@ -414,7 +415,8 @@ function createInterior(parent, o) {
         map: d + 'texture_diffuse.png', normalMap: d + 'texture_normal.png',
         roughnessMap: d + 'texture_roughness.png', metalnessMap: d + 'texture_metallic.png'
       },
-      animations: { idle: d + 'idle.fbx', sit: d + 'sit.fbx', sit_talk: d + 'sit_talk.fbx' },
+      animations: { sit: d + 'Sitting.fbx', sit_talk: d + 'Sitting Talking.fbx' },
+      modelAnimation: 'idle',                                  // l'idle = l'animation de evelyn.fbx elle-même
       height: AVATAR_HEIGHT,                                   // taille debout : l'échelle se règle toute seule
       onProgress: function (f) { setProgress(f * 0.95); }
     });

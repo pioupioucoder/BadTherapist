@@ -38,7 +38,7 @@
     const HANDOFF_KEY = 'bt-handoff';
     const HANDOFF_MAX_AGE = 120000;   // l'écran est repris dans le jeu si on y arrive moins de 2 min après BTGo
     const HANDOFF_MIN = 1.0;          // s : durée minimale dans le jeu
-    const HANDOFF_SETTLE = 700;       // ms de calme sans nouveau chargement avant de retirer l'écran
+    const HANDOFF_SETTLE = 1800;      // ms de calme sans nouveau chargement avant de retirer l'écran
     const HANDOFF_TIMEOUT = 45000;    // sécurité : l'écran part quoi qu'il arrive
     const SMOOTH_FRAMES = 30, SMOOTH_MS = 40;   // « le jeu est fluide » = 30 images de suite sous 40 ms
     const FALLBACK = ['index.html', 'world_base.html', 'bedroom.js'];   // point de départ : le reste est découvert tout seul (imports, dossiers)

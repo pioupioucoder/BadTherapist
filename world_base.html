@@ -434,15 +434,18 @@ import * as THREE from 'three';
 
 const canvas = document.getElementById('gc');
 
+const IS_MOBILE = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
+  (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
+
 const renderer = new THREE.WebGLRenderer({
   canvas,
-  antialias: true,
-  powerPreference: 'low-power'
+  antialias: !IS_MOBILE,                    // le MSAA coûte cher sur téléphone
+  powerPreference: 'high-performance'       // ('low-power' forçait la puce graphique intégrée sur les PC portables)
 });
 
-renderer.setPixelRatio(
-  Math.min(window.devicePixelRatio || 1, 1.5)
-);
+// Résolution : plafonnée, et abaissée automatiquement si le jeu ramollit (voir animate)
+const PR_MAX = Math.min(window.devicePixelRatio || 1, IS_MOBILE ? 1.25 : 1.5);
+renderer.setPixelRatio(PR_MAX);
 
 renderer.outputEncoding = THREE.sRGBEncoding;
 
@@ -925,6 +928,86 @@ const worldPath = WORLD_FILES[worldFile] || worldFile;
 let camYaw = 0;
 let camPitch = 0;
 
+// ==========================================
+// GARDE-FOU FBX : un même fichier n'est téléchargé et décodé qu'UNE seule fois (les copies suivantes sont
+// instantanées), et un fichier introuvable (404) n'est pas redemandé en boucle. Sans ça, une animation manquante
+// faisait recharger et redécoder un avatar de 40 Mo à chaque tentative (gels de 2 à 5 secondes).
+// ==========================================
+
+try {
+  const { FBXLoader } = await import('three/examples/jsm/loaders/FBXLoader.js');
+  const SU = await import('three/examples/jsm/utils/SkeletonUtils.js');
+  const cloneObj = (SU.SkeletonUtils && SU.SkeletonUtils.clone) || SU.clone;
+
+  if (FBXLoader && cloneObj && !FBXLoader.prototype.__btCache) {
+    FBXLoader.prototype.__btCache = true;
+    const origLoad = FBXLoader.prototype.load;
+    const entries = new Map();   // url -> { state: 'loading' | 'ok' | 'fail', pristine, anims, err, waiters }
+
+    const copyOf = (en) => {
+      const c = cloneObj(en.pristine);
+      c.animations = en.anims;
+      return c;
+    };
+
+    FBXLoader.prototype.load = function (url, onLoad, onProgress, onError) {
+      let key;
+      try { key = new URL(url, window.location.href).href; }
+      catch (e) { return origLoad.call(this, url, onLoad, onProgress, onError); }
+
+      const manager = this.manager;
+      let en = entries.get(key);
+
+      // Déjà connu : on répond sans réseau ni décodage (en prévenant le LoadingManager pour que les barres de chargement avancent)
+      if (en && en.state !== 'loading') {
+        manager.itemStart(key);
+        setTimeout(() => {
+          if (en.state === 'ok') {
+            try { onLoad && onLoad(copyOf(en)); } finally { manager.itemEnd(key); }
+          } else {
+            if (onError) onError(en.err);
+            manager.itemError(key); manager.itemEnd(key);
+          }
+        }, 0);
+        return;
+      }
+
+      // Déjà en cours de chargement : on attend le même résultat
+      if (en && en.state === 'loading') {
+        manager.itemStart(key);
+        en.waiters.push({ onLoad, onError, manager });
+        return;
+      }
+
+      // Premier appel : vrai chargement
+      en = { state: 'loading', pristine: null, anims: null, err: null, waiters: [] };
+      entries.set(key, en);
+
+      origLoad.call(this, url, function (obj) {
+        en.pristine = cloneObj(obj);       // copie intacte, avant que l'appelant ne modifie l'original
+        en.anims = obj.animations;
+        en.state = 'ok';
+        try { onLoad && onLoad(obj); } finally {
+          en.waiters.splice(0).forEach(w => {
+            try { w.onLoad && w.onLoad(copyOf(en)); } finally { w.manager.itemEnd(key); }
+          });
+        }
+      }, onProgress, function (err) {
+        en.state = 'fail';
+        en.err = err;
+        console.warn('[BT] fichier FBX introuvable ou illisible (ne sera plus redemandé) :', key);
+        if (onError) onError(err);
+        en.waiters.splice(0).forEach(w => {
+          if (w.onError) w.onError(err);
+          w.manager.itemError(key); w.manager.itemEnd(key);
+        });
+      });
+    };
+  }
+} catch (e) {
+  console.warn('[BT] garde-fou FBX non installé :', e);
+}
+
 let world;
 
 try {
@@ -959,6 +1042,9 @@ try {
   input,
   action
 });
+
+  // Compile tous les shaders maintenant (écran de chargement) plutôt qu'au moment où un objet apparaît à l'écran
+  try { renderer.compile(scene, camera); } catch (e) { console.warn('[BT] précompilation ignorée :', e); }
 
 } catch (error) {
 
@@ -1770,11 +1856,33 @@ resize();
 
 const clock = new THREE.Clock();
 
+// --- Diagnostic : ajoute ?perf=1 à l'adresse pour afficher FPS, appels de dessin, triangles, mémoire GPU.
+// Dans tous les cas, un gel de plus de 200 ms est signalé dans la console avec le nombre de programmes shader
+// (si ce nombre monte au moment du gel, c'est une recompilation de shaders).
+let perfHud = null;
+if (params.get('perf')) {
+  perfHud = document.createElement('div');
+  perfHud.style.cssText = 'position:fixed;left:6px;top:6px;z-index:99999;padding:4px 7px;border-radius:4px;' +
+    'background:rgba(0,0,0,.65);color:#9f9;font:11px/1.35 monospace;pointer-events:none;white-space:pre';
+  document.body.appendChild(perfHud);
+}
+let perfFrames = 0, perfT = performance.now(), lastProgs = 0, prevWork = 0;
+let slowAcc = 0, slowN = 0;
+const joyLast = {};
+function drawJoyIfChanged(id, x, y) {
+  const k = x + ',' + y;
+  if (joyLast[id] === k) return;
+  joyLast[id] = k;
+  drawJoy(id, x, y);
+}
+
 function animate() {
 
   requestAnimationFrame(animate);
 
-  const dt = Math.min(clock.getDelta(), 0.1);   // (0.05 avant : sous 20 images/s tout passait au ralenti)
+  const rawDt = clock.getDelta();
+  const dt = Math.min(rawDt, 0.1);   // (0.05 avant : sous 20 images/s tout passait au ralenti)
+  const tf0 = performance.now();
 
   // SKY FOLLOWS CAMERA
 
@@ -1862,20 +1970,63 @@ function animate() {
 
   // WORLD UPDATE
 
+  const tw0 = performance.now();
   if (world && typeof world.update === 'function') {
     world.update(dt, clock.elapsedTime);
   }
+  const tWorld = performance.now() - tw0;
 
   // SAVE POSITION (après le monde, pour enregistrer la vraie hauteur)
 
   savePosition(dt);
 
+  const tr0 = performance.now();
   renderer.render(scene, camera);
+  const tRender = performance.now() - tr0;
 
-  // JOYSTICKS
+  // --- Mesure : gels, diagnostic, résolution adaptative
+  const info = renderer.info;
+  const progs = info.programs ? info.programs.length : 0;
+  const work = performance.now() - tf0;
+  if (rawDt > 0.2 && rawDt < 5) {
+    // Qui a bloqué ? 'hors animate' grand = un chargement/décodage asynchrone (FBX, JSON, image) a bloqué la page.
+    // 'world.update' grand = c'est le code d'un lieu/avatar. 'render' grand = trop de dessin pour le processeur.
+    console.warn('[BT-perf] gel ' + Math.round(rawDt * 1000) + ' ms' +
+      ' | hors animate ~' + Math.max(0, Math.round(rawDt * 1000 - prevWork)) + ' ms' +
+      ' | world.update ' + Math.round(tWorld) + ' ms | render(CPU) ' + Math.round(tRender) + ' ms' +
+      ' | programmes ' + lastProgs + '->' + progs +
+      ' | tex ' + info.memory.textures + ' geo ' + info.memory.geometries);
+  }
+  prevWork = work;
+  lastProgs = progs;
 
-  drawJoy('jL', jLx, jLy);
-  drawJoy('jR', jRx, jRy);
+  if (rawDt < 0.5) { slowAcc += rawDt; slowN++; }
+  if (slowN >= 90) {                         // ~1,5 s de mesure
+    const avg = slowAcc / slowN;
+    slowAcc = 0; slowN = 0;
+    const pr = renderer.getPixelRatio();
+    if (avg > 0.028 && pr > 0.75) {          // moins de ~36 images/s : on baisse la résolution d'un cran
+      renderer.setPixelRatio(Math.max(0.75, pr - 0.25));
+      resize();
+    }
+  }
+
+  if (perfHud) {
+    perfFrames++;
+    const now = performance.now();
+    if (now - perfT > 500) {
+      perfHud.textContent =
+        Math.round(perfFrames * 1000 / (now - perfT)) + ' fps  (res x' + renderer.getPixelRatio().toFixed(2) + ')\n' +
+        'calls ' + info.render.calls + '  tris ' + info.render.triangles + '\n' +
+        'geo ' + info.memory.geometries + '  tex ' + info.memory.textures + '  prog ' + progs;
+      perfFrames = 0; perfT = now;
+    }
+  }
+
+  // JOYSTICKS (redessinés seulement quand ils bougent)
+
+  drawJoyIfChanged('jL', jLx, jLy);
+  drawJoyIfChanged('jR', jRx, jRy);
 }
 
 animate();

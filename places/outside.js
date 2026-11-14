@@ -167,8 +167,8 @@ const roadMat2 = new THREE.MeshStandardMaterial({
 });
 SH.roads.forEach(r => {
   if (r.kind === 'rail') return;                 // la voie ferrée est dessinée par places/bridge.js
+  r.geo.computeBoundingSphere();           // sphère exacte : la route n'est plus dessinée quand elle est hors champ
   const m = new THREE.Mesh(r.geo, roadMat2);
-  m.frustumCulled = false;
   m.renderOrder = 1;                       // dessinée après le terrain
   scene.add(m);
 });
@@ -178,12 +178,20 @@ const patchMat = new THREE.MeshStandardMaterial({
   color: 0x2c3342, roughness: 0.9, emissive: roadEmissive,
   polygonOffset: true, polygonOffsetFactor: -10, polygonOffsetUnits: -60
 });
-SH.patches.forEach(p => {
-  const m = new THREE.Mesh(new THREE.CircleGeometry(p.r, 28), patchMat);
-  m.rotation.x = -Math.PI / 2;
-  m.position.set(p.x, p.y + 0.012, p.z);
-  scene.add(m);
-});
+if (SH.patches.length) {
+  const patchI = new THREE.InstancedMesh(new THREE.CircleGeometry(1, 28), patchMat, SH.patches.length);
+  const pm = new THREE.Matrix4(), pp = new THREE.Vector3(), ps = new THREE.Vector3();
+  const pq = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
+  SH.patches.forEach((p, i) => {
+    pp.set(p.x, p.y + 0.012, p.z);
+    ps.set(p.r, p.r, 1);
+    pm.compose(pp, pq, ps);
+    patchI.setMatrixAt(i, pm);
+  });
+  patchI.instanceMatrix.needsUpdate = true;
+  patchI.frustumCulled = false;            // three r128 : le culling d'une instance ne tient pas compte des positions
+  scene.add(patchI);
+}
 
 // Neige repoussée le long des routes
 makeInstanced(lumpGeo, mats.snow, SH.lumps.map(l => item(l.x, l.y, l.z, l.w, l.h, l.d)), scene);
@@ -198,27 +206,74 @@ makeInstanced(unitBox, mats.metal, poleItems, scene);
 makeInstanced(unitBox, new THREE.MeshBasicMaterial({ color: disp(0.8, 0.12, 0.08) }), reflItems, scene);
 
 // Lampadaires de route (halo seulement : visibles de loin, sans lumière réelle)
-SH.lamps.forEach(l => {
-  const g = new THREE.Group();
-  g.position.set(l.x, l.y, l.z);
-  scene.add(g);
-  // Le bras se penche toujours au-dessus de la route, quelle que soit sa direction
-  const toX = l.side * l.tz, toZ = -l.side * l.tx;
-  g.rotation.y = Math.atan2(-toZ, toX);
-  const dir = 1;
-  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.11, 5.6, 7), mats.metal);
-  pole.position.y = 2.8;
-  g.add(pole);
-  const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 1.1, 6), mats.metal);
-  arm.rotation.z = Math.PI / 2;
-  arm.position.set(dir * 0.5, 5.5, 0);
-  g.add(arm);
-  box(g, 0.44, 0.14, 0.24, mats.metal, dir * 1.0, 5.4, 0);
-  const bulb = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.06, 0.18), new THREE.MeshBasicMaterial({ color: 0xe7c99e }));
-  bulb.position.set(dir * 1.0, 5.3, 0);
-  g.add(bulb);
-  glowSprite(g, dir * 1.0, 5.2, 0, 0xffa860, 4.6, 0.5);
-});
+// Même rendu qu'avant, mais en instances : 5 appels de dessin au total, quel que soit le nombre de lampadaires.
+if (SH.lamps.length) {
+  const N = SH.lamps.length;
+  const poleI = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.07, 0.11, 5.6, 7), mats.metal, N);
+  const armI  = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.04, 0.05, 1.1, 6), mats.metal, N);
+  const headI = new THREE.InstancedMesh(new THREE.BoxGeometry(0.44, 0.14, 0.24), mats.metal, N);
+  const bulbI = new THREE.InstancedMesh(new THREE.BoxGeometry(0.32, 0.06, 0.18), new THREE.MeshBasicMaterial({ color: 0xe7c99e }), N);
+  const base = new THREE.Matrix4(), local = new THREE.Matrix4(), mm = new THREE.Matrix4(), vv = new THREE.Vector3();
+  const glowPos = new Float32Array(N * 3);
+
+  SH.lamps.forEach((l, i) => {
+    // Le bras se penche toujours au-dessus de la route, quelle que soit sa direction
+    const toX = l.side * l.tz, toZ = -l.side * l.tx;
+    base.makeRotationY(Math.atan2(-toZ, toX)).setPosition(l.x, l.y, l.z);
+    const put = (mesh, x, y, rotZ) => {
+      local.makeRotationZ(rotZ || 0).setPosition(x, y, 0);
+      mesh.setMatrixAt(i, mm.multiplyMatrices(base, local));
+    };
+    put(poleI, 0, 2.8);
+    put(armI, 0.5, 5.5, Math.PI / 2);
+    put(headI, 1.0, 5.4);
+    put(bulbI, 1.0, 5.3);
+    vv.set(1.0, 5.2, 0).applyMatrix4(base);
+    glowPos[i * 3] = vv.x; glowPos[i * 3 + 1] = vv.y; glowPos[i * 3 + 2] = vv.z;
+  });
+  [poleI, armI, headI, bulbI].forEach(mesh => {
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.frustumCulled = false;            // three r128 : le culling d'une instance ne tient pas compte des positions
+    scene.add(mesh);
+  });
+
+  // Halos : un seul quad orienté vers la caméra, instancié (taille monde 4.6, comme l'ancien sprite)
+  const quad = new THREE.PlaneGeometry(1, 1);
+  const glowGeo = new THREE.InstancedBufferGeometry();
+  glowGeo.index = quad.index;
+  glowGeo.setAttribute('position', quad.attributes.position);
+  glowGeo.setAttribute('uv', quad.attributes.uv);
+  glowGeo.setAttribute('iPos', new THREE.InstancedBufferAttribute(glowPos, 3));
+  glowGeo.instanceCount = N;
+  const glowMesh = new THREE.Mesh(glowGeo, new THREE.ShaderMaterial({
+    uniforms: { uSize: { value: 4.6 }, uColor: { value: new THREE.Color(0xffa860) }, uAlpha: { value: 0.5 } },
+    vertexShader: `
+      attribute vec3 iPos;
+      uniform float uSize;
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        vec4 mv = modelViewMatrix * vec4(iPos, 1.0);
+        mv.xy += position.xy * uSize;
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: `
+      uniform vec3 uColor;
+      uniform float uAlpha;
+      varying vec2 vUv;
+      void main() {
+        float d = length(vUv - 0.5) * 2.0;
+        float a = clamp(1.0 - d, 0.0, 1.0);
+        a *= a;
+        gl_FragColor = vec4(uColor, a * uAlpha);
+        gl_FragColor = linearToOutputTexel(gl_FragColor);
+      }`,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending
+  }));
+  glowMesh.frustumCulled = false;
+  glowMesh.renderOrder = 3;
+  scene.add(glowMesh);
+}
 
 // Forêt : grands arbres feuillus, buissons et rochers qui bougent avec le vent (forest.js)
 const forest = buildForest(scene, SH.forestData, { boost: BOOST, cheapLight: false, chunk: 40, cullTree: 75, cullBush: 45, cullRock: 60 });

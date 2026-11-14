@@ -291,8 +291,8 @@ export function buildCorridor(parent, opts) {
 
     // Chargement : .png, puis .jpg, puis .webp
     const base = 'images/corridor' + imageIndex;
-    const exts = ['.png', '.jpg', '.webp'];
-    FRAME_IMAGES.push(base + '.png');
+    const exts = ['.jpg'];   // tes images sont des .jpg : plus d'essais .png/.webp (ils faisaient des 404 dans la console)
+    FRAME_IMAGES.push(base + '.jpg');
 
     function tryLoad(i) {
       if (i >= exts.length) {
