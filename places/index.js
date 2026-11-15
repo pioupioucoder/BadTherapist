@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { SEA } from './layout.js';
 import { createHub, createTraffic } from './common.js';
 import { buildTown } from './town.js';
+import { buildStore } from './store.js';
 import { buildGasStation } from './gasstation.js';
 import { buildRailway } from './bridge.js';
 import { buildCityB } from './cityb.js';
@@ -75,7 +76,8 @@ export function buildPlaces(scene, o) {
   const env = {
     X: o.X, sites: o.X.sites, rects: rects, hub: hub, traffic: traffic,
     wantLight: function (x, y, z, k) { if (!want || k > want.k) want = { x: x, y: y, z: z, k: k }; },
-    teleport: o.teleport
+    teleport: o.teleport,
+    camera: o.camera, canvas: o.canvas || null
   };
 
   if (o.crossing) {
@@ -84,7 +86,7 @@ export function buildPlaces(scene, o) {
   }
 
   // Chaque lieu est construit puis ses objets fixes sont fusionnés (peu d'appels de dessin : important sur téléphone)
-  const mods = [buildTown, buildGasStation, buildRailway, buildCityB, buildPort].map(function (fn) {
+  const mods = [buildTown, buildStore, buildGasStation, buildRailway, buildCityB, buildPort].map(function (fn) {
     const before = scene.children.length;
     const r = fn(scene, env);
     mergeStatic(scene, scene.children.slice(before));

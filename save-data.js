@@ -28,6 +28,8 @@
         gameFlags: 'lmtd_gameFlags',
         player:    'bt_player_state',     // position du joueur dans le jeu 3D
         book:      'bt_journal',          // le livre du tiroir
+        evelynBook: 'bt_evelyn_journal',  // le carnet intime d'Evelyn (journal.js, mêmes règles que le livre du tiroir)
+        houseLights: 'bt_house_lights',   // interrupteurs de la maison d'Evelyn (therapist-house.js) : { pièce: allumée ? }
         evelyn:    'bt_evelyn_memory',    // mémoire d'Evelyn (séances : therapist-memory.js + « mind » : avatar-mind.js)
         pluie:     'bt_pluie_memory',     // mémoire de Pluie (avatar-mind.js)
         oliver:    'bt_oliver_memory'     // mémoire d'Oliver (avatar-mind.js). Nouvel avatar : ajoute ICI une ligne 'bt_<id>_memory'
@@ -64,6 +66,8 @@
     const VALID = {
         player: function (o) { return !!(o && typeof o === 'object' && o.worlds); },
         book:   function (o) { return !!(o && Array.isArray(o.pages)); },
+        evelynBook:  function (o) { return !!(o && Array.isArray(o.pages)); },
+        houseLights: function (o) { return !!(o && typeof o === 'object' && !Array.isArray(o)); },
         evelyn: function (o) { return !!(o && typeof o === 'object' && !Array.isArray(o) && o.v); },
         pluie:  function (o) { return !!(o && typeof o === 'object' && !Array.isArray(o)); },
         oliver: function (o) { return !!(o && typeof o === 'object' && !Array.isArray(o)); }
@@ -158,6 +162,8 @@
             return !!(mi && ((mi.notes && mi.notes.length) || (mi.people && Object.keys(mi.people).length)));
         })) return true;
         if (filled(d.chapters) || filled(d.endings) || filled(d.gameFlags)) return true;
+        const eb = parse(d.evelynBook);
+        if (eb && Array.isArray(eb.pages) && eb.pages.some(function (t) { return String(t).trim() !== ''; })) return true;
         const book = parse(d.book);
         return !!(book && Array.isArray(book.pages) && book.pages.some(function (t) { return String(t).trim() !== ''; }));
     }
@@ -222,9 +228,12 @@
     function fingerprint(d) {
         d = d || {};
         const book = parse(d.book);
+        const eBook = parse(d.evelynBook);
         return JSON.stringify([
             d.save || '', d.chapters || '', d.endings || '', d.gameFlags || '', d.evelyn || '', d.pluie || '', d.oliver || '',
-            book && Array.isArray(book.pages) ? book.pages : []
+            book && Array.isArray(book.pages) ? book.pages : [],
+            eBook && Array.isArray(eBook.pages) ? eBook.pages : [],
+            d.houseLights || ''
         ]);
     }
 

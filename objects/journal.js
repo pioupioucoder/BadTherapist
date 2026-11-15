@@ -2,6 +2,15 @@
 //
 // Le texte est gardé dans le navigateur (localStorage, clé "bt_journal") à chaque frappe.
 // Il fait partie de la sauvegarde globale : Settings > EXPORT / IMPORT (voir save-data.js).
+//
+// UN SEUL FICHIER POUR LES DEUX CARNETS : celui du joueur (par défaut) et le carnet intime d'Evelyn :
+//     createJournal({ key: 'bt_evelyn_journal', readOnly: true, label: 'Carnet intime d\'Evelyn', cover: [...] })
+// (la clé 'bt_evelyn_journal' est déclarée dans save-data.js -> sauvegarde, export, profils, synchro)
+// Evelyn écrit par programme avec les mêmes règles de sauvegarde que toi :
+//     j.write('texte')                  ajoute à la suite (nouvelle page quand la page est pleine) — sauvegardé tout de suite
+//     j.erase('un mot ou une phrase')   efface cette phrase (la première trouvée, ou toutes avec {all:true}) — sauvegardé
+//     j.replace('ancien', 'nouveau')    remplace — sauvegardé
+//     j.setPage(i, 'texte') / j.getPages() / j.reload()
 
 const KEY = 'bt_journal';
 const MAX_PAGES = 400;     // nombre de pages maximum
@@ -38,7 +47,7 @@ const CSS = `
 .btj-book.is-open .btj-cover{transform:rotateY(-180deg)}
 .btj-book.is-flipped .btj-cover{visibility:hidden}
 .btj-cover>div{position:absolute;left:0;top:0;width:100%;height:100%;backface-visibility:hidden;-webkit-backface-visibility:hidden}
-.btj-cover-front{border-radius:0 6px 6px 0;background:radial-gradient(120% 90% at 30% 20%,#7c2431 0%,#521320 55%,#2e0a12 100%);
+.btj-cover-front{border-radius:0 6px 6px 0;background:radial-gradient(120% 90% at 30% 20%,var(--btj-c1,#7c2431) 0%,var(--btj-c2,#521320) 55%,var(--btj-c3,#2e0a12) 100%);
   box-shadow:inset 0 0 40px rgba(0,0,0,.55),0 22px 50px rgba(0,0,0,.6)}
 .btj-cover-front::before{content:'';position:absolute;left:8%;top:6%;right:8%;bottom:6%;border:2px solid rgba(214,174,92,.8);border-radius:3px}
 .btj-cover-front::after{content:'';position:absolute;left:50%;top:50%;width:15%;aspect-ratio:1;transform:translate(-50%,-50%) rotate(45deg);
@@ -63,6 +72,8 @@ const CSS = `
 
 export function createJournal(opts) {
     opts = opts || {};
+    const KEY_ = opts.key || KEY;                 // clé de sauvegarde de CE carnet
+    const readOnly = !!opts.readOnly;             // lecture seule : le joueur lit, seul le code (Evelyn) écrit
     // ─── DONNÉES ─────────────────────────────────────────────────
     function normalize(d) {
         const pages = (d && Array.isArray(d.pages) ? d.pages : [])
@@ -83,7 +94,7 @@ export function createJournal(opts) {
 
     function readLocal() {
         try {
-            const raw = localStorage.getItem(KEY);
+            const raw = localStorage.getItem(KEY_);
             if (raw) return normalize(JSON.parse(raw));
         } catch (e) {
             console.warn('[journal] lecture impossible :', e);
@@ -93,7 +104,7 @@ export function createJournal(opts) {
 
     function writeLocal() {
         try {
-            localStorage.setItem(KEY, JSON.stringify(data));
+            localStorage.setItem(KEY_, JSON.stringify(data));
         } catch (e) {
             console.warn('[journal] sauvegarde navigateur impossible :', e);
         }
@@ -165,14 +176,22 @@ export function createJournal(opts) {
 
     function build() {
         if (root) return;
-        const st = document.createElement('style');
-        st.textContent = CSS;
-        document.head.appendChild(st);
+        if (!document.getElementById('btj-style')) {
+            const st = document.createElement('style');
+            st.id = 'btj-style';
+            st.textContent = CSS;
+            document.head.appendChild(st);
+        }
 
         root = document.createElement('div');
         root.className = 'btj';
         root.setAttribute('role', 'dialog');
-        root.setAttribute('aria-label', 'Journal');
+        root.setAttribute('aria-label', opts.label || 'Journal');
+        if (opts.cover && opts.cover.length >= 3) {
+            root.style.setProperty('--btj-c1', opts.cover[0]);
+            root.style.setProperty('--btj-c2', opts.cover[1]);
+            root.style.setProperty('--btj-c3', opts.cover[2]);
+        }
         const ta = '<textarea class="btj-ta" spellcheck="false" autocomplete="off" maxlength="' + MAX_CHARS + '"';
         root.innerHTML =
             '<div class="btj-stage">' +
@@ -196,6 +215,8 @@ export function createJournal(opts) {
         el.next = root.querySelector('.btj-next');
         el.close = root.querySelector('.btj-close');
         el.saved = root.querySelector('.btj-saved');
+
+        if (readOnly) { el.ta[0].readOnly = true; el.ta[1].readOnly = true; }
 
         // Les touches tapées dans le livre ne doivent pas faire marcher le joueur (WASD, espace, E...)
         root.addEventListener('keydown', function(e) {
@@ -245,7 +266,7 @@ export function createJournal(opts) {
         const last = p + perView >= data.pages.length;
         const visibleHasText = data.pages.slice(p, p + perView).some(function(t) { return t.trim() !== ''; });
         el.prev.disabled = p === 0;
-        el.next.disabled = last && !visibleHasText;
+        el.next.disabled = readOnly ? last : (last && !visibleHasText);
     }
 
     function render() {
@@ -260,6 +281,7 @@ export function createJournal(opts) {
         if (el.book.classList.contains('turning')) return;
         let np = p + dir * perView;
         if (dir > 0 && np >= data.pages.length) {
+            if (readOnly) return;
             // à la fin : une nouvelle double page apparaît seulement si on a écrit sur celle-ci
             if (!data.pages.slice(p, p + perView).some(function(t) { return t.trim() !== ''; })) return;
             if (data.pages.length + 2 > MAX_PAGES) return;
@@ -333,6 +355,7 @@ export function createJournal(opts) {
     }
 
     function focusWriting() {
+        if (readOnly) return;
         // Sur tablette / téléphone on n'ouvre pas le clavier tout seul : il cacherait le livre
         if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) return;
         let i = 0;
@@ -364,10 +387,87 @@ export function createJournal(opts) {
         if (typeof opts.onClose === 'function') opts.onClose();
     }
 
+    // ─── ÉCRITURE PAR PROGRAMME (Evelyn) : mêmes règles de sauvegarde que la frappe au clavier ───
+    function touched() {
+        data.updated = Date.now();
+        saveNow();                                  // écrit dans le navigateur tout de suite (comme quand tu tapes)
+        if (isOpen) render();
+        try { window.dispatchEvent(new CustomEvent('badtherapist:journal-change', { detail: { key: KEY_ } })); } catch (e) {}
+    }
+
+    function lastUsedPage() {
+        for (let i = data.pages.length - 1; i >= 0; i--) if (data.pages[i].trim() !== '') return i;
+        return 0;
+    }
+
+    function write(text, o) {
+        text = String(text == null ? '' : text);
+        if (!text.trim()) return false;
+        o = o || {};
+        let i = lastUsedPage();
+        if (o.newPage && data.pages[i].trim() !== '') i++;
+        let rest = text;
+        while (rest.length) {
+            while (i >= data.pages.length) {
+                if (data.pages.length + 2 > MAX_PAGES) return false;       // carnet plein
+                data.pages.push('', '');
+            }
+            const cur = data.pages[i];
+            const sep = cur && !/\n$/.test(cur) ? '\n' : '';
+            const room = MAX_CHARS - cur.length - sep.length;
+            if (room <= 0) { i++; continue; }
+            data.pages[i] = cur + sep + rest.slice(0, room);
+            rest = rest.slice(room);
+            if (rest.length) i++;
+        }
+        while (data.pages.length < 2 || data.pages.length % 2) data.pages.push('');
+        touched();
+        return true;
+    }
+
+    function replace(oldText, newText, o) {
+        oldText = String(oldText == null ? '' : oldText);
+        if (!oldText) return false;
+        newText = String(newText == null ? '' : newText);
+        o = o || {};
+        let done = false;
+        for (let i = 0; i < data.pages.length; i++) {
+            if (data.pages[i].indexOf(oldText) === -1) continue;
+            data.pages[i] = (o.all ? data.pages[i].split(oldText).join(newText) : data.pages[i].replace(oldText, function() { return newText; })).slice(0, MAX_CHARS);
+            done = true;
+            if (!o.all) break;
+        }
+        if (done) touched();
+        return done;
+    }
+
+    function erase(text, o) { return replace(text, '', o); }
+
+    function setPage(i, text) {
+        if (!Number.isInteger(i) || i < 0 || i >= MAX_PAGES) return false;
+        while (i >= data.pages.length) data.pages.push('');
+        while (data.pages.length % 2) data.pages.push('');
+        data.pages[i] = String(text == null ? '' : text).slice(0, MAX_CHARS);
+        touched();
+        return true;
+    }
+
+    // Relit le navigateur (si un autre onglet / un import a changé le carnet)
+    function reload() {
+        data = readLocal();
+        if (isOpen) render();
+    }
+
     return {
         open: open,
         close: close,
         isOpen: function() { return isOpen; },
+        write: write,
+        erase: erase,
+        replace: replace,
+        setPage: setPage,
+        getPages: function() { return data.pages.slice(); },
+        reload: reload,
         // Pour l'export / import JSON du jeu
         exportData: function() { return { version: data.version, pages: data.pages.slice(), updated: data.updated }; },
         importData: function(d) {

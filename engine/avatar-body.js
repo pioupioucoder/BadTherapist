@@ -6,6 +6,8 @@
 //   • Violet au volant du bus (objects/bus.js, piloté par engine/bus-line.js) : même principe, métier 'bus' ;
 //   • marche en ligne droite entre deux lieux (animation walk), repos (idle) près du lieu, regarde le joueur s'il est proche ;
 //   • invisibles quand ils sont dans l'immeuble ou passagers du taxi.
+//   • Lou (station-service) : un « poste » (def.post = window.BadTherapistGas, places/gasstation.js) lui dit où il est et ce qu'il fait
+//     (caisse, pompes, lit…) : pose() -> { x, y, z, heading, anim, visible }. Tant que post.controls(actor) est vrai, c'est le lieu qui le pilote.
 // Evelyn est ici comme les autres : chez elle on ne la voit pas dehors (son corps assis est dans therapist-house.js) ;
 // dès qu'elle sort, son corps de rue apparaît à la porte et marche.
 //
@@ -29,6 +31,10 @@ const DEFS = {
     pluie: {
         dir: 'avatars/pluie/', model: 'pluie.fbx', height: 1.68,
         anims: { walk: 'Walking.fbx', run: 'Running.fbx', sit: 'Sitting.fbx', talk: 'Talking.fbx' }
+    },
+    lou: {
+        dir: 'avatars/lou/', model: 'lou.fbx', height: 1.75, post: 'BadTherapistGas',
+        anims: { walk: 'Walking.fbx', run: 'Running.fbx', sit: 'Sitting.fbx', talk: 'Talking.fbx', greet: 'Standing Greeting.fbx', work: 'FuelingAndSelling.fbx', sleep: 'Sleeping.fbx' }
     },
     evelyn: {
         dir: 'avatars/evelyn/', model: 'evelyn.fbx', height: 1.7, insideAt: 'therapist_house',   // insideAt : « chez elle » = dans la maison (invisible dehors)
@@ -119,7 +125,7 @@ export function createBodies(scene, o) {
 
     function play(b, name) {
         if (!b.a || b.cur === name) return;
-        const key = b.a.actions && b.a.actions[name] ? name : (name === 'drive' || name === 'talk' ? 'idle' : null);
+        const key = b.a.actions && b.a.actions[name] ? name : (name === 'drive' || name === 'talk' || name === 'greet' || name === 'work' || name === 'sleep' ? 'idle' : null);
         if (!key || !b.a.actions[key]) return;
         b.cur = name;
         try { b.a.play(key); } catch (e) { /* animation absente : on garde la précédente */ }
@@ -171,6 +177,21 @@ export function createBodies(scene, o) {
             const tr = actor.travel;
             if (actor.ride || (tr && tr.mode === 'vehicle')) { b.grp.visible = false; bubbleAt(b, false); return; }
 
+            // 2b. à son poste (station-service...) : c'est le lieu qui dit où il est et ce qu'il fait
+            const PS = b.def.post ? window[b.def.post] : null;
+            if (PS && !tr && PS.controls && PS.controls(actor)) {
+                const p = PS.pose();
+                b.grp.visible = !!p.visible;
+                if (!p.visible) { bubbleAt(b, false); return; }
+                b.x = p.x; b.z = p.z; b.heading = p.heading;
+                b.grp.position.set(p.x, p.y, p.z);
+                b.grp.rotation.y = p.heading;
+                const qx = cam.x - p.x, qz = cam.z - p.z;
+                if (Math.hypot(qx, qz) < FAR_NO_ANIM) { play(b, p.anim); a.update(dt); }
+                bubbleAt(b, true);
+                return;
+            }
+
             // 3. position
             const place = R.place(actor.loc);
             let moving = false, vis = true;
@@ -207,6 +228,8 @@ export function createBodies(scene, o) {
                 diff = Math.atan2(Math.sin(diff), Math.cos(diff));
                 b.heading += diff * Math.min(1, dt * 4);
             }
+            const BV = vehicles.bus;                                       // le bus est solide : on ne le traverse pas
+            if (BV && BV.collide && b.x !== null) { const c = BV.collide(b.x, b.z, 0.35); b.x = c[0]; b.z = c[1]; }
             b.grp.position.set(b.x, groundH(b.x, b.z), b.z);
             b.grp.rotation.y = b.heading;
 

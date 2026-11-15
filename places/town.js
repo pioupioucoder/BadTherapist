@@ -7,7 +7,7 @@ import { mats, box, glow, lampPost, fakeBuilding, enterable, signMaterial, addGa
 // ==========================================
 // Une rue principale (nord-sud) et une rue transversale. Tout est factice sauf trois bâtiments
 // dont la porte s'ouvre (bouton OPEN / CLOSE) et qu'on peut visiter :
-//   - le marchand de journaux, le magasin, la basilique.
+//   - le marchand de journaux et la basilique (le magasin est dans store.js).
 // Coordonnées ci-dessous : relatives au centre de la ville (PLACES.town). x vers l'est, z vers le sud.
 
 export function buildTown(scene, env) {
@@ -39,23 +39,6 @@ export function buildTown(scene, env) {
     }
   }));
 
-  // Magasin
-  const shop = enterable(scene, env, Object.assign(A(-15, 47), {
-    id: 'town-shop', y: Y, w: 12, d: 14, h: 4.8, face: 'e', pal: 1, doorDz: 0, sign: 'STORE',
-    fill: function (inner, a) {
-      for (let k = -1; k <= 1; k += 2) {
-        box(inner, 0.7, 2.0, 7, M.wood, -1 + k * 0, 1.0, k * 3.8);              // rayons
-        box(inner, 0.5, 0.05, 6.6, M.woodLight, -1, 1.2, k * 3.8);
-      }
-      box(inner, 0.8, 1.0, 3, M.wood, 3.4, 0.5, -3.5);                         // caisse
-      for (let i = 0; i < 14; i++) {
-        const mt = new THREE.MeshStandardMaterial({ color: [0x7a2a22, 0x2a4a6a, 0x6a6a2a, 0x3a6a3a][i % 4], roughness: 1, emissive: 0x100c0a });
-        box(inner, 0.3, 0.3, 0.3, mt, -1, 1.4 + (i % 2) * 0.3, (i < 7 ? 3.8 : -3.8) + ((i % 7) - 3) * 0.9);
-      }
-      box(inner, 0.5, 0.5, 0.5, M.warm, 0, a.h - 0.4, 0);
-    }
-  }));
-
   // Basilique : grande nef (axe est-ouest), porte vers la rue, clocher
   const bas = enterable(scene, env, Object.assign(A(-29, 75), {
     id: 'town-basilica', y: Y, w: 42, d: 20, h: 11, face: 'e', pal: 3, doorW: 3.2, doorH: 4.6, doorDz: 0,
@@ -84,7 +67,7 @@ export function buildTown(scene, env) {
     env.rects.push({ x0: x - 3.2, x1: x + 3.2, z0: z - 3.2, z1: z + 3.2 });
   })();
 
-  const enter = [news, shop, bas];
+  const enter = [news, bas];
 
   // ---------- bâtiments factices ----------
   const F = function (rx, rz, w, d, h, face, pal, sign, roof) {

@@ -319,7 +319,7 @@ const work = buildWork(scene, {
   origin: { x: scene.position.x, y: scene.position.y, z: scene.position.z },
   action: ctx.action, view: ctx.view, snow: ctx.snow,
   onTeleport: function () { walkY = null; if (ctx.onTeleport) ctx.onTeleport(); },
-  isBusy: function () { return !!(truck && truck.isDriving()) || !!(taxi && taxi.isRiding()) || !!(bus && bus.isRiding()); }
+  isBusy: function () { return !!(truck && truck.isDriving()) || !!(taxi && taxi.isRiding()); }
 });
 
 // Hauteur du joueur sur les collines (seulement si le monde nous donne la caméra)
@@ -332,6 +332,18 @@ let taxi = null;
 let bus = null;
 let busLine = null;
 let bodies = null;
+
+// Le bus est solide pour le camion et le taxi : 6 petits rectangles qui suivent sa carrosserie (mis à jour à chaque image)
+const busRects = [];
+for (let i = 0; i < 6; i++) busRects.push({ x0: 1e6, x1: 1e6 + 1, z0: 1e6, z1: 1e6 + 1 });
+function syncBusRects() {
+  if (!bus || !busLine) return;
+  const p = bus.getPose(), fx = -Math.sin(p.heading), fz = -Math.cos(p.heading);
+  busRects.forEach(function (r, i) {
+    const o = (i - 2.5) * 1.93, cx = p.x + fx * o, cz = p.z + fz * o;
+    r.x0 = cx - 1.4; r.x1 = cx + 1.4; r.z0 = cz - 1.4; r.z1 = cz + 1.4;
+  });
+}
 let places = null;
 if (playerCam) {
   const org0 = { x: scene.position.x, y: scene.position.y, z: scene.position.z };
@@ -352,14 +364,18 @@ if (playerCam) {
   });
 }
 // Collisions : arbres + bâtiments des nouveaux lieux + mer
-const collideAll = places
+const collideBase = places
   ? function (x, z, r) { const t = forest.collide(x, z, r); return places.collide(t[0], t[1], r); }
   : forest.collide;
+const collideAll = function (x, z, r) {                              // arbres + bâtiments + mer + BUS
+  const t = collideBase(x, z, r);
+  return (bus && !bus.isInside()) ? bus.collide(t[0], t[1], r, true) : t;
+};
 
 // Le camion (un seul véhicule). Créé seulement si le monde nous donne la caméra de conduite.
 if (ctx.driveCamera) {
   const org = { x: scene.position.x, y: scene.position.y, z: scene.position.z };
-  const truckRects = [{ x0: -12.2, x1: 12.2, z0: -34.4, z1: -24.2 }].concat(work.colliders, places ? places.rects : []);
+  const truckRects = [{ x0: -12.2, x1: 12.2, z0: -34.4, z1: -24.2 }].concat(work.colliders, places ? places.rects : [], busRects);
   truck = createTruck(scene, {
     x: 3.8, z: -9.5, heading: Math.PI,
     origin: org,
@@ -396,7 +412,8 @@ if (ctx.driveCamera) {
   const busNet = createRoadNet(SH.roads, { lane: 2.3 });
   bus = createBus(scene, {
     origin: org,
-    camera: ctx.driveCamera, view: ctx.view, action: ctx.action, snow: ctx.snow,
+    camera: ctx.driveCamera, view: ctx.view, snow: ctx.snow,
+    canvas: renderer && renderer.domElement,
     groundH: SH.walkHeight,
     net: busNet,
     signals: places && places.signals ? places.signals : null,     // feux rouges (si places/ les expose : voir notes)
@@ -408,7 +425,7 @@ if (ctx.driveCamera) {
       return out;
     },
     truck: truck, taxi: taxi,
-    onExit: function () { walkY = null; if (ctx.onTruckExit) ctx.onTruckExit(); }
+    onExit: function () { walkY = null; }                              // sorti à pied : la hauteur du sol est recalculée
   });
   const siteBus = SH.X.sites;
   busLine = attachBusLine({
@@ -458,7 +475,7 @@ return {
   // la hauteur du sol et les collisions de la maison
   main: main,
   entranceMeshes: imm.entranceMeshes,
-  walkHeight: SH.walkHeight,
+  walkHeight: function (x, z) { return (bus && bus.isInside()) ? bus.floorY() : SH.walkHeight(x, z); },   // dans le bus : le plancher du bus
   terrainHeight: SH.terrainH,
   colliders: places ? work.colliders.concat(places.rects) : work.colliders,
   workSpot: WORK_SPOT,
@@ -469,7 +486,7 @@ return {
   truck: truck,
   taxi: taxi,
   bus: bus,
-  isDriving: function () { return !!(truck && truck.isDriving()) || !!(taxi && taxi.isRiding()) || !!(bus && bus.isRiding()); },
+  isDriving: function () { return !!(truck && truck.isDriving()) || !!(taxi && taxi.isRiding()); },     // dans le bus on MARCHE : ce n'est pas « conduire »
   getMapData: function () { return mapData(); },
 
   update(dt, time) {
@@ -478,23 +495,23 @@ return {
     work.update(dt, time);
 
     // Nouveaux lieux : portes, feux de circulation, train, lumière des intérieurs
-    if (places) places.update(dt, !(truck && truck.isDriving()) && !(taxi && taxi.isRiding()) && !(bus && bus.isRiding()));
+    if (places) places.update(dt, !(truck && truck.isDriving()) && !(taxi && taxi.isRiding()));
 
     // Forêt (vent) : seuls les blocs proches du joueur sont dessinés
     forest.update(time, getFocus());
     
     // Piloté par bedroom.js (pas de ctx.camera) : le taxi se met à jour ici (le camion est appelé par bedroom.js)
     if (!camera && taxi) taxi.update(dt, true);
-    if (!camera && bus) bus.update(dt, true);
+    if (!camera && bus) { bus.update(dt, true); syncBusRects(); }
 
     // Autonome (immeuble.js / work.js) : on suit le relief, on contourne les arbres, on conduit
     if (camera) {
-      const riding = !!(taxi && taxi.isRiding()) || !!(bus && bus.isRiding());     // dans le taxi OU dans le bus : on ne marche pas
+      const riding = !!(taxi && taxi.isRiding());
       if (truck) truck.update(dt, !riding);
       if (taxi) taxi.update(dt, true);
-      if (bus) bus.update(dt, true);
+      if (bus) { bus.update(dt, true); syncBusRects(); }
       
-      if (!(truck && truck.isDriving()) && !riding) {
+      if (!(truck && truck.isDriving()) && !riding && !(bus && bus.isInside())) {
         const tc = collideAll(camera.position.x, camera.position.z, 0.3);
         camera.position.x = tc[0];
         camera.position.z = tc[1];

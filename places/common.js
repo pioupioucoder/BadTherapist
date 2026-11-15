@@ -493,7 +493,45 @@ export function enterable(parent, env, o) {
   g.add(hinge);
   const panel = box(hinge, 0.07, dh - 0.04, dw - 0.04, M.woodLight, 0, (dh - 0.04) / 2, (dw - 0.04) / 2);
   box(hinge, 0.12, 0.06, 0.06, M.metalLight, 0.07, 1.05, dw - 0.2);
-  void panel;
+  // Porte cliquable (o.clickDoor) : pas de bouton OPEN / CLOSE, on clique sur la porte elle-même (comme la porte de la chambre).
+  // Survol = la porte s'éclaire ; clic / toucher = elle s'ouvre ou se ferme. Marche aussi souris verrouillée (centre de l'écran).
+  const click = !!o.clickDoor;
+  let hover = false, nearDoor = false, lastActive = false, mx = 0, my = 0;
+  const hoverMat = click ? new THREE.MeshStandardMaterial({ color: 0x9a7a52, roughness: 0.9, emissive: 0x553311 }) : null;
+  const ray = new THREE.Raycaster(), v2 = new THREE.Vector2();
+  function canvasEl() { return env.canvas || (typeof document !== 'undefined' ? document.querySelector('canvas') : null); }
+  function hitDoor(nx, ny) {
+    if (!env.camera) return false;
+    ray.setFromCamera(v2.set(nx, ny), env.camera);
+    ray.far = 6;
+    return ray.intersectObject(hinge, true).length > 0;
+  }
+  if (click) {
+    const area = new THREE.Mesh(new THREE.PlaneGeometry(dw * 1.1, dh * 1.05),
+      new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false }));
+    area.rotation.y = Math.PI / 2;
+    area.position.set(0.05, dh / 2, dw / 2);
+    hinge.add(area);
+    window.addEventListener('mousemove', function (ev) {
+      const cv = canvasEl(); if (!cv) return;
+      const r = cv.getBoundingClientRect();
+      mx = ((ev.clientX - r.left) / r.width) * 2 - 1;
+      my = -((ev.clientY - r.top) / r.height) * 2 + 1;
+    });
+    window.addEventListener('click', function (ev) {
+      if (!nearDoor || !lastActive) return;
+      const cv = canvasEl(); if (!cv) return;
+      const locked = !!document.pointerLockElement;
+      if (!locked && ev.target !== cv) return;
+      let nx = 0, ny = 0;
+      if (!locked) {
+        const r = cv.getBoundingClientRect();
+        nx = ((ev.clientX - r.left) / r.width) * 2 - 1;
+        ny = -((ev.clientY - r.top) / r.height) * 2 + 1;
+      }
+      if (hitDoor(nx, ny)) toggle();
+    });
+  }
 
   // intérieur
   const inner = new THREE.Group();
@@ -530,8 +568,19 @@ export function enterable(parent, env, o) {
       doorRect.x0 = solid ? doorHome.x0 : 1e7; doorRect.x1 = solid ? doorHome.x1 : 1e7 + 1;
       doorRect.z0 = solid ? doorHome.z0 : 1e7; doorRect.z1 = solid ? doorHome.z1 : 1e7 + 1;
       const dDoor = Math.hypot(lx - w / 2, lz - dz);
-      if (active && dDoor < 3.4 && Math.abs(lx - w / 2) < 3.2) {
+      if (!click && active && dDoor < 3.4 && Math.abs(lx - w / 2) < 3.2) {
         env.hub.request(o.id, open ? 'CLOSE' : 'OPEN', toggle, dDoor);
+      }
+      if (click) {
+        lastActive = !!active; nearDoor = dDoor < 6;
+        let h = false;
+        if (active && nearDoor) { const locked = !!document.pointerLockElement; h = hitDoor(locked ? 0 : mx, locked ? 0 : my); }
+        if (h !== hover) {
+          hover = h;
+          panel.material = h ? hoverMat : M.woodLight;
+          const cv = canvasEl();
+          if (cv && !document.pointerLockElement) cv.style.cursor = h ? 'pointer' : '';
+        }
       }
       const inside = Math.abs(lx) < w / 2 && Math.abs(lz) < d / 2;
       if (active && (inside || (open && dDoor < 14))) {

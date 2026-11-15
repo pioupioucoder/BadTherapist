@@ -18,7 +18,8 @@ import { createBusStops } from '../objects/bus.js';
 // Les autres avatars : board_bus / get_off_bus. Toi : le bouton ENTER / EXIT du bus (objects/bus.js).
 
 const LINE_NO = '1';
-const CFG = { dwellSec: 150, terminusSec: 240, extendSec: 45, maxExtend: 2, nearMeters: 28, timeScale: 1 };
+const CFG = { dwellSec: 10, terminusSec: 20, extendSec: 25, maxExtend: 3, graceSec: 4, nearMeters: 28, timeScale: 1,
+    vmax: 22, acc: 3.2, brk: 4.0, alat: 4.2 };     // vitesse max (m/s, 22 ≈ 80 km/h), accélération, freinage, virage : réglables en direct
 
 // arrêt : id -> { nom affiché sur l'afficheur, lieu du registre, [roadName, s] pour les arrêts « non officiels » }
 const PLACE_OF = { home: 'street_front', work: 'therapist_house', town: 'town', gas: 'gas', station: 'station', port: 'port' };
@@ -154,7 +155,8 @@ export function attachBusLine(o) {
             if (!r) { st.phase = 'parked'; return false; }
             st.phase = 'driving';
         }
-        const P = net.makePath(r.pts, { vmax: 16, acc: 1.7, brk: 3.0, alat: 2.4 });
+        if (bus.setAcc) bus.setAcc(CFG.acc);
+        const P = net.makePath(r.pts, { vmax: CFG.vmax, acc: CFG.acc, brk: CFG.brk, alat: CFG.alat });
         const guard = setTimeout(function () { bus.abort(); }, (P.len / 3 + 150) * 1000);        // filet de sécurité : jamais bloqué pour toujours
         const res = await bus.follow(P);
         clearTimeout(guard);
@@ -168,21 +170,24 @@ export function attachBusLine(o) {
     async function dwell(id) {
         st.phase = 'dwelling'; st.stop = id; st.place = stops[id].place;
         st.depart = false; st.ext = 0;
-        const boardedBefore = bus.isRiding() ? 1 : 0;
         bus.setDisplay(LINE_NO, LABEL[id] || id);
         syncNow();
         await bus.openDoors();
-        const base = (id === 'town' ? CFG.terminusSec : CFG.dwellSec);
-        st.left = base;
-        let sawBoard = bus.isRiding() || ridersAboard().length > 0 || boardedBefore > 0;
+        // Arrêt court : portes ouvertes dwellSec secondes (10 par défaut), puis elles se ferment et le bus repart.
+        // Si quelqu'un est près du bus (le joueur à moins de nearMeters, un avatar à l'arrêt) ou si le joueur attend à une porte pour descendre,
+        // elle attend extendSec de plus (au plus maxExtend fois). Quand quelqu'un monte ou descend, elle laisse graceSec secondes.
+        st.left = (id === 'town' ? CFG.terminusSec : CFG.dwellSec);
+        const count = function () { return ridersAboard().length + (bus.isRiding() ? 1 : 0); };
+        let lastCount = count();
         while (onDuty()) {
             await sleep(1000 / sc());
             st.left -= 1;
-            if (bus.isRiding() || ridersAboard().length) sawBoard = true;
+            const c = count();
+            if (c !== lastCount) { lastCount = c; st.left = Math.max(st.left, CFG.graceSec); }
             if (st.depart) break;
             if (st.left <= 0) {
-                if (!sawBoard && st.ext < CFG.maxExtend && somebodyNear()) { st.ext++; st.left = CFG.extendSec; continue; }   // quelqu'un s'approche : elle attend un peu
-                break;                                                                                                          // personne : elle part
+                if (st.ext < CFG.maxExtend && (somebodyNear() || bus.playerAtDoor())) { st.ext++; st.left = CFG.extendSec; continue; }
+                break;                                                                       // personne aux alentours : elle part
             }
         }
         if (onDuty()) await bus.closeDoors();                  // descendue (getOff) : les portes restent ouvertes
@@ -343,7 +348,7 @@ export function attachBusLine(o) {
             return 'bus posé à ' + id + ' (Violet n\'est pas en service : resume() pour reprendre la ligne)';
         },
         hold: function (sec) { st.left += (sec || 600); return 'le bus attend encore ' + Math.round(st.left) + ' s'; },     // l'empêche de repartir
-        come: function () { bus.bringPlayer(); return 'tu es à côté du bus : si les portes sont ouvertes, le bouton ENTER apparaît'; },
+        come: function () { bus.bringPlayer(); return 'tu es à côté du bus : si les portes sont ouvertes, marche vers la porte pour entrer'; },
         // getOff() : Violet descend du bus (arrêté à un arrêt) et marche jusqu\'à son point de repos ; les portes restent ouvertes
         getOff: function () {
             if (violet.job !== 'bus') return 'Violet est déjà descendue';

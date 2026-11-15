@@ -13,18 +13,39 @@
 //      onAnswer(fn)  onHangUp(fn)  onDial(fn)
 //    et ces événements sur window : badtherapist:phone-answer / -hangup / -dial
 // Pour tester : F12 > console > BadTherapistPhone.ring()
+//
+// ─ UN SEUL FICHIER POUR TOUS LES TÉLÉPHONES ─────────────────────────────────────────────
+// Le téléphone d'Evelyn (maison du thérapeute) est CE MÊME code, avec un autre « owner » :
+//     buildPhone(scene, { owner: 'evelyn', parent: groupe, position: {x, y, z}, yaw, camera, canvas, ... })
+// Toute fonctionnalité que tu ajoutes plus tard ici existe donc automatiquement pour les deux.
+// Seules les couleurs (PHONE_THEMES) et le placement changent. Chaque téléphone est retrouvable par :
+//     window.BadTherapistPhones.player   (et window.BadTherapistPhone, comme avant)
+//     window.BadTherapistPhones.evelyn
+// Événements du joueur inchangés (badtherapist:phone-answer...). Ceux d'Evelyn sont préfixés :
+//     badtherapist:phone-evelyn-answer / -hangup / -dial
+// Options : owner, theme (couleurs à la carte), parent, position, yaw, reachable(camera, worldPos), audible(distance)
 
 import * as THREE from 'three';
+
+// Couleurs par propriétaire. Pour un nouveau téléphone : ajoute une ligne ici.
+export const PHONE_THEMES = {
+    player: { body: 0x8a1c28, cream: 0xd9d0b0, emissive: 0xff5a3c, halo: ['255,120,90', '255,70,50', '255,50,30'],
+              bulbOff: 0x3a0a0a, ringOn: 0xff3b30, ringOff: 0x6a1410, inCall: 0x2ecc71 },
+    evelyn: { body: 0x1d5c6b, cream: 0xe9dfc4, emissive: 0x4cc9f0, halo: ['130,215,255', '60,165,235', '40,120,220'],
+              bulbOff: 0x0a2530, ringOn: 0x4cc9f0, ringOff: 0x14505f, inCall: 0x2ecc71 }
+};
 
 export function buildPhone(scene, opts) {
     opts = opts || {};
     const camera = opts.camera;
     const canvas = opts.canvas;
     const anchor = opts.anchor;                 // la table de chevet (nightstand.group)
+    const owner = opts.owner || 'player';
+    const theme = Object.assign({}, PHONE_THEMES.player, PHONE_THEMES[owner] || {}, opts.theme || {});
     const TOP_Y = 0.60;                         // dessus de la table de chevet
     const RING_PERIOD = 3.0;                    // une sonnerie (2 coups) toutes les 3 secondes
     const CALL_MAX = 90;                        // sécurité : raccroche tout seul après 90 s si personne ne le fait
-    const FOLLOW_SCREEN = opts.followScreenCall !== false;
+    const FOLLOW_SCREEN = opts.followScreenCall !== false && owner === 'player';   // le bouton « EVELYN IS CALLING » ne concerne que le téléphone du joueur
     let soundOn = opts.sound !== false;
 
     // ─── PLACEMENT ───────────────────────────────────────────────
@@ -32,12 +53,15 @@ export function buildPhone(scene, opts) {
     if (anchor) {
         root.position.copy(anchor.position);
         root.rotation.y = anchor.rotation.y;
+        root.position.y = TOP_Y;
+    } else if (opts.position) {
+        root.position.set(opts.position.x || 0, opts.position.y || 0, opts.position.z || 0);   // y = dessus du meuble
+        root.rotation.y = opts.yaw || 0;
     } else {
-        root.position.set(-7.72, 0, 1.75);
+        root.position.set(-7.72, TOP_Y, 1.75);
         root.rotation.y = Math.PI / 2;
     }
-    root.position.y = TOP_Y;
-    scene.add(root);
+    (opts.parent || scene).add(root);
 
     const body = new THREE.Group();
     body.position.set(0, 0, -0.03);
@@ -49,9 +73,9 @@ export function buildPhone(scene, opts) {
         c.width = c.height = 128;
         const x = c.getContext('2d');
         const g = x.createRadialGradient(64, 64, 2, 64, 64, 62);
-        g.addColorStop(0, 'rgba(255,120,90,1)');
-        g.addColorStop(0.35, 'rgba(255,70,50,0.45)');
-        g.addColorStop(1, 'rgba(255,50,30,0)');
+        g.addColorStop(0, 'rgba(' + theme.halo[0] + ',1)');
+        g.addColorStop(0.35, 'rgba(' + theme.halo[1] + ',0.45)');
+        g.addColorStop(1, 'rgba(' + theme.halo[2] + ',0)');
         x.fillStyle = g;
         x.fillRect(0, 0, 128, 128);
         const t = new THREE.CanvasTexture(c);
@@ -59,10 +83,10 @@ export function buildPhone(scene, opts) {
         return t;
     }
 
-    const mRed = new THREE.MeshLambertMaterial({ color: 0x8a1c28, emissive: 0xff5a3c });
-    const mCream = new THREE.MeshLambertMaterial({ color: 0xd9d0b0, emissive: 0xff5a3c });
+    const mRed = new THREE.MeshLambertMaterial({ color: theme.body, emissive: theme.emissive });      // « Red » = la couleur du corps (rouge pour le joueur)
+    const mCream = new THREE.MeshLambertMaterial({ color: theme.cream, emissive: theme.emissive });
     const mDark = new THREE.MeshLambertMaterial({ color: 0x1a1410 });
-    const mBulb = new THREE.MeshBasicMaterial({ color: 0x3a0a0a });
+    const mBulb = new THREE.MeshBasicMaterial({ color: theme.bulbOff });
     mRed.emissiveIntensity = 0.12;
     mCream.emissiveIntensity = 0.05;
 
@@ -142,7 +166,8 @@ export function buildPhone(scene, opts) {
 
     function fire(name, detail) {
         handlers[name].forEach(function(fn) { try { fn(detail); } catch (e) { console.error('[phone]', e); } });
-        try { window.dispatchEvent(new CustomEvent('badtherapist:phone-' + name, { detail: detail || {} })); } catch (e) {}
+        const evt = 'badtherapist:phone-' + (owner === 'player' ? '' : owner + '-') + name;
+        try { window.dispatchEvent(new CustomEvent(evt, { detail: Object.assign({ owner: owner }, detail || {}) })); } catch (e) {}
     }
 
     // ─── SONNERIE (générée, pas de fichier audio) ────────────────
@@ -217,7 +242,8 @@ export function buildPhone(scene, opts) {
         if (!AC || !master || state !== 'ringing' || !camera) return;
         const d = camera.position.distanceTo(worldPos);
         let gain = 0;
-        if (camera.position.x <= 100) gain = 0.04 + 0.5 * Math.pow(Math.max(0, 1 - d / 25), 2);   // faible mais audible dans tout l'immeuble, pas dans la rue
+        if (typeof opts.audible === 'function') gain = opts.audible(d) || 0;                        // ex. maison d'Evelyn : audible seulement à côté
+        else if (camera.position.x <= 100) gain = 0.04 + 0.5 * Math.pow(Math.max(0, 1 - d / 25), 2);   // faible mais audible dans tout l'immeuble, pas dans la rue
         master.gain.setTargetAtTime(gain * 0.5, AC.currentTime, 0.05);
         if (pan) {
             tmp.copy(worldPos).applyMatrix4(camera.matrixWorldInverse);
@@ -272,7 +298,7 @@ export function buildPhone(scene, opts) {
     function dial() {
         if (state !== 'idle') return false;
         nudge = 1;                                           // le combiné vibre : on appelle
-        if (!handlers.dial.length) console.info('[phone] numéro composé : rien n\'est encore branché sur onDial / badtherapist:phone-dial');
+        if (!handlers.dial.length) console.info('[phone:' + owner + '] numéro composé : rien n\'est encore branché sur onDial');
         fire('dial');
         return true;
     }
@@ -346,6 +372,8 @@ export function buildPhone(scene, opts) {
     function update(dt) {
         dt = Math.min(dt || 0, 0.1);
         clock += dt;
+        root.getWorldPosition(worldPos);          // le lieu peut avoir été déplacé après la construction (décalage du monde)
+        worldPos.y += 0.08;
 
         let on = false;                                          // vrai pendant les deux « brrr »
         if (state === 'ringing') {
@@ -384,9 +412,9 @@ export function buildPhone(scene, opts) {
         mRed.emissiveIntensity = 0.12 + glow * 0.5;
         mCream.emissiveIntensity = 0.05 + glow * 0.3;
         halo.material.opacity = state === 'ringing' ? glow * 0.9 : 0;
-        if (state === 'ringing') mBulb.color.setHex(on ? 0xff3b30 : 0x6a1410);
-        else if (state === 'inCall') mBulb.color.setHex(0x2ecc71);
-        else mBulb.color.setHex(0x3a0a0a);
+        if (state === 'ringing') mBulb.color.setHex(on ? theme.ringOn : theme.ringOff);
+        else if (state === 'inCall') mBulb.color.setHex(theme.inCall);
+        else mBulb.color.setHex(theme.bulbOff);
     }
 
     // ─── CLIC / SURVOL ───────────────────────────────────────────
@@ -395,6 +423,7 @@ export function buildPhone(scene, opts) {
 
     function reachable() {
         if (!camera) return false;
+        if (typeof opts.reachable === 'function') return !!opts.reachable(camera, worldPos);
         const q = camera.position;
         if (q.x > 100 || Math.abs(q.y - 1.7) > 1.2 || q.z < 0.3) return false;
         return Math.hypot(q.x - worldPos.x, q.z - worldPos.z) < 3.4;
@@ -446,6 +475,9 @@ export function buildPhone(scene, opts) {
         // utile pour tester : le point de l'écran est-il sur le téléphone ?
         isOver: overPhone
     };
-    window.BadTherapistPhone = api;
+    api.owner = owner;
+    if (owner === 'player') window.BadTherapistPhone = api;                  // inchangé : le téléphone du joueur
+    window.BadTherapistPhones = window.BadTherapistPhones || {};
+    window.BadTherapistPhones[owner] = api;                                  // tous les téléphones, par propriétaire
     return api;
 }

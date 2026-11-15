@@ -12,11 +12,17 @@ import * as THREE from 'three';
 //     (options.signals) et devant un obstacle (options.obstacles : taxi, camion, toi à pied) ;
 //   • demi-tour en trois manœuvres (marche arrière comprise) aux terminus ;
 //   • tu peux monter (bouton ENTER, portes ouvertes) et descendre (EXIT) à chaque arrêt ;
+//   • on ENTRE ET ON SORT À PIED par les portes ouvertes (aucun bouton) ; dans le bus on marche librement dans l'allée,
+//     on CLIQUE SUR UN SIÈGE pour s'y asseoir (même si on est déjà assis ailleurs : on se lève et on y va),
+//     on CLIQUE SUR LE SOL pour se lever à cet endroit, ou on bouge (ZQSD / WASD / flèches) pour se relever ; aucun message à l'écran ;
+//     de vrais caissons de passage de roue à l'intérieur (comme dans un vrai bus), l'essieu avant est derrière la porte avant ;
+//   • le bus est SOLIDE : le joueur, les avatars et le camion le contournent (bus.collide), sauf par les portes ouvertes ;
 //   • détails de vrai bus : sifflement pneumatique des portes et du frein, essuie-glaces, afficheur « prochain arrêt » dans l'allée,
 //     lumière qui coule sur la neige devant les portes quand elles s'ouvrent.
 //
 // Repère : comme taxi.js / vehicle.js. Avant du bus = -z local ; cap h -> avant (-sin h, -cos h), droite (cos h, -sin h).
 // Le conducteur est à GAUCHE, les portes à DROITE (on roule à droite).
+// Repère « bus » du joueur : x vers la droite, z vers l'arrière (l'avant du bus est -z).
 //
 // Réglage en direct (F12) : BadTherapistBus.driver(x, y, z, yawEnDegres)
 
@@ -24,8 +30,8 @@ const L = 11.6, W = 2.55, FLOOR = 0.36;
 const DRIVER = { x: -0.88, y: FLOOR, z: -4.25, yaw: Math.PI };       // pieds du conducteur (repère du bus)
 const WHEEL = { x: -0.88, y: 1.12, z: -4.62 };
 const DOOR_Z = [-4.3, 0.0];                                           // centres des deux portes (côté droit)
-const SEAT_EYE = new THREE.Vector3(0.85, 1.62, 1.9);                  // le joueur assis, côté fenêtre droite
-const ACC = 1.7, BRK = 3.0, BRK_E = 6.5, ALAT = 2.4, VMAX = 16;       // bus : doux, mais freinage d'urgence possible
+let ACC = 3.2;                                                        // accélération (réglable : bus.setAcc / BadTherapistBusLine.cfg.acc)
+const BRK_E = 6.5;                                                    // freinage d'urgence (feu rouge, obstacle)
 const DOOR_TIME = 1.7;                                                // secondes pour ouvrir / fermer
 
 function ss(a, b, t) { t = Math.max(0, Math.min(1, (t - a) / (b - a))); return t * t * (3 - 2 * t); }
@@ -256,7 +262,8 @@ export function createBus(parent, o) {
 
   // ---------- Roues ----------
   const wheels = [];
-  [[-1.18, -3.75, true], [1.18, -3.75, true], [-1.18, 2.85, false], [1.18, 2.85, false]].forEach(function (w) {
+  const AXLE_F = -3.0, AXLE_R = 2.85;                                // l'essieu avant est derrière la porte avant (avant : la roue était dans la cabine et le marchepied)
+  [[-1.18, AXLE_F, true], [1.18, AXLE_F, true], [-1.18, AXLE_R, false], [1.18, AXLE_R, false]].forEach(function (w) {
     const wg = new THREE.Group();
     wg.rotation.order = 'YXZ';
     wg.position.set(w[0], 0.5, w[1]);
@@ -284,18 +291,32 @@ export function createBus(parent, o) {
   [[1.05, DOOR_Z[0] + 0.75], [1.05, DOOR_Z[1] - 0.75], [1.05, DOOR_Z[1] + 0.75], [-0.2, -1.6], [0.2, 2.2], [-0.2, 3.6]].forEach(function (p) {
     cyl(0.022, WIN1 - FLOOR - 0.15, M.pole, p[0], (FLOOR + WIN1) / 2 - 0.02, p[1]);
   });
-  // sièges : deux par rang à gauche, deux à droite, sauf devant les portes
-  function seatPair(x, z, flip) {
-    [0, 1].forEach(function (k) {
-      const sx = x + (k ? 0.43 : -0.0) * (x < 0 ? 1 : -1);
-      box(0.42, 0.28, 0.46, M.seatB, sx, FLOOR + 0.2, z);
-      box(0.42, 0.08, 0.46, M.seat, sx, FLOOR + 0.38, z);
-      box(0.42, 0.56, 0.08, M.seat, sx, FLOOR + 0.7, z + (flip ? -0.2 : 0.2));
+  // caissons de passage de roue : à l'intérieur, la roue (1 m de diamètre) dépasse du plancher bas, comme dans un vrai bus
+  const HOUSINGS = [];
+  [AXLE_F, AXLE_R].forEach(function (az) {
+    [-1, 1].forEach(function (sd) {
+      const xa = sd * 0.78, xb = sd * (XW - 0.04);
+      const hx = { x0: Math.min(xa, xb), x1: Math.max(xa, xb), z0: az - 0.5, z1: az + 0.5 };
+      HOUSINGS.push(hx);
+      box(hx.x1 - hx.x0, 1.04 - FLOOR, hx.z1 - hx.z0, M.dark, (hx.x0 + hx.x1) / 2, (FLOOR + 1.04) / 2, az);
+      box(hx.x1 - hx.x0 + 0.02, 0.03, hx.z1 - hx.z0 + 0.02, M.accent, (hx.x0 + hx.x1) / 2, 1.045, az);      // liseré turquoise sur le dessus
     });
+  });
+  // sièges : deux par rang à gauche, deux à droite, sauf devant les portes ; pas de siège à la place d'un caisson de roue
+  const SEATS = [];
+  [-3.0, -2.2, -1.4, 1.2, 2.0, 2.8, 3.6, 4.4].forEach(function (zz) {
+    [-0.95, -0.52].forEach(function (sx) { SEATS.push({ x: sx, z: zz }); });
+    if (zz > 0.9 || zz < -1.2) [0.52, 0.95].forEach(function (sx) { SEATS.push({ x: sx, z: zz }); });
+  });
+  for (let i = SEATS.length - 1; i >= 0; i--) {
+    const st = SEATS[i];
+    if (HOUSINGS.some(function (h) { return st.x + 0.22 > h.x0 && st.x - 0.22 < h.x1 && st.z + 0.28 > h.z0 && st.z - 0.24 < h.z1; })) SEATS.splice(i, 1);
   }
-  [-3.0, -2.2, -1.4, 1.2, 2.0, 2.8, 3.6, 4.4].forEach(function (z) {
-    seatPair(-0.95, z, false);
-    if (z > 0.9 || z < -1.2) seatPair(0.95 + 0.0, z, false);
+  SEATS.sort(function (a, b) { return a.z - b.z || a.x - b.x; });
+  SEATS.forEach(function (st) {
+    box(0.42, 0.28, 0.46, M.seatB, st.x, FLOOR + 0.2, st.z);
+    box(0.42, 0.08, 0.46, M.seat, st.x, FLOOR + 0.38, st.z);
+    box(0.42, 0.56, 0.08, M.seat, st.x, FLOOR + 0.7, st.z + 0.2);
   });
   // cabine du conducteur : tableau de bord, écran, volant, siège, vitre de protection
   box(1.0, 0.3, 0.5, M.dark, -0.7, 0.95, -5.1);
@@ -353,10 +374,228 @@ export function createBus(parent, o) {
   let mode = 'parked';                 // parked | driving | turning
   let P = null, s = 0, legResolve = null, errX = 0, errZ = 0, errH = 0;
   let doorT = 0, doorTarget = 0, doorWait = [];
-  let riding = false, actionShown = false, owned = false, cool = 0;
+  let riding = false;                  // le joueur est DANS le bus (debout ou assis)
   let lightsOn = false, driverIn = true, indicator = null, blinkT = 0, braking = false, reversing = false, beepT = 0;
   let turn = null;
   let ac = null;
+
+  // ==========================================
+  // LE JOUEUR DANS LE BUS
+  // ==========================================
+  // Entrer : portes ouvertes + bus arrêté, on franchit la porte à pied. Sortir : pareil dans l'autre sens.
+  // Dedans : on marche (le jeu fait avancer la caméra, on garde son déplacement et on le convertit dans le repère du bus,
+  // donc le bus nous emporte quand il roule), on clique sur un siège pour s'asseoir, on bouge pour se relever.
+  // Tout ce qui est solide à pied dans le bus : sièges + caissons de roue
+  const OBST = SEATS.map(function (st) { return { x0: st.x - 0.22, x1: st.x + 0.22, z0: st.z - 0.26, z1: st.z + 0.28 }; }).concat(HOUSINGS);
+  const PR = 0.12;                                                   // rayon du joueur dans l'allée
+  const EYE_STAND = FLOOR + 1.7, EYE_SIT = 1.62, GLIDE = 3.4;         // GLIDE : m/s quand on va d'une place à l'autre
+  let pm = 'standing', seatI = -1, goalSeat = -1, faceFwd = false;    // pm : standing | seated | gliding
+  let path = [];
+  const pl = { x: 0, z: 0 };                                         // position du joueur dans le repère du bus
+  let ey = EYE_STAND, lastCX = 0, lastCZ = 0, uiOn = false;
+  const tmpV = new THREE.Vector3(), tmpP = new THREE.Vector3();
+
+  function laneAt(lz) {                                              // quelle porte (0 avant, 1 milieu) est en face de ce z ? -1 : aucune
+    for (let i = 0; i < DOOR_Z.length; i++) if (Math.abs(lz - DOOR_Z[i]) < DW / 2 - 0.12) return i;
+    return -1;
+  }
+  function canvasEl() { return o.canvas || (o.renderer && o.renderer.domElement) || document.querySelector('canvas'); }
+  function busyElsewhere() {
+    const tr = o.truck, taxiRide = o.taxi && o.taxi.isRiding && o.taxi.isRiding();
+    return !!((tr && tr.isDriving && tr.isDriving()) || taxiRide);
+  }
+
+  // --- rayon de la souris (ou du regard si la souris est verrouillée) dans le repère du bus ---
+  function rayDirLocal(ev) {
+    if (ev && !document.pointerLockElement) {
+      const cv = canvasEl(); if (!cv) return null;
+      const r = cv.getBoundingClientRect();
+      camera.updateMatrixWorld();
+      tmpV.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1, 0.5).unproject(camera);
+      tmpP.setFromMatrixPosition(camera.matrixWorld);
+      tmpV.sub(tmpP).normalize();
+    } else {
+      camera.getWorldDirection(tmpV);
+    }
+    const fx = -Math.sin(heading), fz = -Math.cos(heading), rx = Math.cos(heading), rz = -Math.sin(heading);
+    return { x: tmpV.x * rx + tmpV.z * rz, y: tmpV.y, z: -(tmpV.x * fx + tmpV.z * fz) };
+  }
+  // Chaque siège = un coussin + un dossier : on peut viser un siège côté fenêtre par-dessus celui de l'allée
+  function seatBoxes(st) {
+    return [
+      [st.x - 0.22, FLOOR + 0.04, st.z - 0.24, st.x + 0.22, FLOOR + 0.46, st.z + 0.20],     // coussin
+      [st.x - 0.22, FLOOR + 0.46, st.z + 0.15, st.x + 0.22, FLOOR + 1.16, st.z + 0.28]      // dossier
+    ];
+  }
+  function pickSeat(d) {
+    if (!d) return -1;
+    let best = -1, bt = 4;
+    const org = [pl.x, ey, pl.z], dir = [d.x, d.y, d.z];
+    SEATS.forEach(function (st, i) {
+      seatBoxes(st).forEach(function (bx) {
+        let t0 = 0, t1 = bt;
+        for (let k = 0; k < 3; k++) {
+          if (Math.abs(dir[k]) < 1e-6) { if (org[k] < bx[k] || org[k] > bx[k + 3]) return; continue; }
+          let a = (bx[k] - org[k]) / dir[k], b = (bx[k + 3] - org[k]) / dir[k];
+          if (a > b) { const t = a; a = b; b = t; }
+          t0 = Math.max(t0, a); t1 = Math.min(t1, b);
+          if (t0 > t1) return;
+        }
+        if (t0 < bt) { bt = t0; best = i; }
+      });
+    });
+    return best;
+  }
+  function pickFloor(d) {                                            // le point du plancher visé (ou null)
+    if (!d || d.y > -0.05) return null;
+    const t = (FLOOR + 0.02 - ey) / d.y;
+    if (t <= 0 || t > 8) return null;
+    const p = { x: pl.x + d.x * t, z: pl.z + d.z * t };
+    if (Math.abs(p.x) > XW - 0.2 || p.z < -4.9 || p.z > 4.85) return null;
+    return p;
+  }
+
+  // --- contraintes : parois, cabine, sièges, caissons de roue ---
+  function clampBody(p, lane) {
+    p.x = Math.max(-(XW - 0.22), Math.min(lane >= 0 ? XW + 1.2 : XW - 0.22, p.x));
+    p.z = Math.max(-4.95, Math.min(4.9, p.z));
+    if (p.x < -0.1 && p.z < -4.1) p.z = -4.1;                        // cabine du conducteur (à gauche)
+  }
+  function pushOut(p) {
+    for (let pass = 0; pass < 2; pass++) {
+      for (let i = 0; i < OBST.length; i++) {
+        const b = OBST[i], x0 = b.x0 - PR, x1 = b.x1 + PR, z0 = b.z0 - PR, z1 = b.z1 + PR;
+        if (p.x <= x0 || p.x >= x1 || p.z <= z0 || p.z >= z1) continue;
+        const dl = p.x - x0, dr = x1 - p.x, df = p.z - z0, db = z1 - p.z, m = Math.min(dl, dr, df, db);
+        if (m === dl) p.x = x0; else if (m === dr) p.x = x1; else if (m === df) p.z = z0; else p.z = z1;
+      }
+    }
+  }
+  function constrainInside() {
+    const open = mode === 'parked' && doorT > 0.9;
+    clampBody(pl, open ? laneAt(pl.z) : -1);
+    pushOut(pl);
+  }
+
+  // --- aller d'une place à l'autre : on passe toujours par l'allée (jamais à travers les sièges) ---
+  function planTo(tx, tz) {
+    const w = [];
+    function add(x, z) { const l = w.length ? w[w.length - 1] : pl; if (Math.hypot(x - l.x, z - l.z) > 0.03) w.push({ x: x, z: z }); }
+    add(0, pl.z);
+    add(0, tz);
+    add(tx, tz);
+    return w;
+  }
+  function sit(i) {
+    if (!riding || i < 0 || i >= SEATS.length || (pm === 'seated' && seatI === i)) return;
+    const st = SEATS[i];
+    goalSeat = i; seatI = -1; pm = 'gliding'; faceFwd = true;
+    path = planTo(st.x, st.z + 0.12);
+  }
+  function standAt(p) {
+    goalSeat = -1; seatI = -1; pm = 'gliding'; faceFwd = false;
+    path = planTo(p.x, p.z);
+  }
+  function writeCamera() {
+    const fx = -Math.sin(heading), fz = -Math.cos(heading), rx = Math.cos(heading), rz = -Math.sin(heading);
+    const wx = x + rx * pl.x + fx * (-pl.z), wz = z + rz * pl.x + fz * (-pl.z);
+    camera.position.set(origin.x + wx, origin.y + g.position.y + ey, origin.z + wz);
+    lastCX = wx; lastCZ = wz;
+    if (o.snow) o.snow.setBaseY(origin.y + bodyY);
+  }
+  function standUp() {                                               // touche de déplacement : on se lève là où on est
+    if (!riding || pm === 'standing') return;
+    const wasSeated = pm === 'seated';
+    const st = SEATS[seatI];
+    path = []; goalSeat = -1; faceFwd = false; pm = 'standing';
+    if (wasSeated && st) { pl.x = (st.x < 0 ? -1 : 1) * 0.1; pl.z = st.z + 0.05; }
+    seatI = -1;
+    writeCamera();
+  }
+  const MOVE_KEYS = { KeyW: 1, KeyA: 1, KeyS: 1, KeyD: 1, KeyZ: 1, KeyQ: 1, ArrowUp: 1, ArrowDown: 1, ArrowLeft: 1, ArrowRight: 1, Space: 1 };
+  function onKey(ev) {
+    if (!riding || pm === 'standing') return;
+    if (MOVE_KEYS[ev.code] || /^[zqswadZQSWAD]$/.test(ev.key || '')) standUp();
+  }
+  // Clic : sur un siège = on s'y assoit (même si on est déjà assis ailleurs : on se lève et on y va) ;
+  //        sur le sol quand on est assis = on se lève à cet endroit.
+  function onClick(ev) {
+    if (!riding) return;
+    const t = ev.target;
+    if (t && t.closest && t.closest('.bt-say, .bt-reply')) return;
+    const d = rayDirLocal(ev);
+    const i = pickSeat(d);
+    if (i >= 0) { sit(i); return; }
+    if (pm !== 'standing') {
+      const p = pickFloor(d);
+      if (p) { clampBody(p, -1); pushOut(p); standAt(p); }
+    }
+  }
+  function setInput(on) {
+    if (on === uiOn) return;
+    uiOn = on;
+    if (on) { window.addEventListener('keydown', onKey, true); window.addEventListener('click', onClick); }
+    else { window.removeEventListener('keydown', onKey, true); window.removeEventListener('click', onClick); }
+  }
+
+  // --- entrer / sortir ---
+  function enter(lx, lz, cx, cz) {
+    riding = true; pm = 'standing'; seatI = -1; goalSeat = -1; path = []; faceFwd = false;
+    pl.x = lx; pl.z = lz;
+    ey = Math.max(EYE_SIT, camera.position.y - origin.y - g.position.y);
+    lastCX = cx; lastCZ = cz;
+    setInput(true);
+    if (o.onBoard) o.onBoard();
+  }
+  function leave() {
+    riding = false; pm = 'standing'; seatI = -1; goalSeat = -1; path = []; faceFwd = false;
+    setInput(false);
+    if (o.onExit) o.onExit();
+    if (o.onAlight) o.onAlight();
+  }
+  // Appelé à chaque image, après le déplacement du bus
+  function playerStep(dt, h0) {
+    const fx = -Math.sin(heading), fz = -Math.cos(heading), rx = Math.cos(heading), rz = -Math.sin(heading);
+    const cx = camera.position.x - origin.x, cz = camera.position.z - origin.z;
+    if (!riding) {
+      if (mode === 'parked' && doorT > 0.9 && !busyElsewhere()) {
+        const dx = cx - x, dz = cz - z;
+        const lx = dx * rx + dz * rz, lz = -(dx * fx + dz * fz);
+        if (lx < XW - 0.05 && lx > -0.3 && laneAt(lz) >= 0) enter(lx, lz, cx, cz);      // il a franchi la porte ouverte
+      }
+      return;
+    }
+    // le bus tourne : le regard tourne avec lui
+    if (o.view && Math.abs(wrap(heading - h0)) > 1e-6) { const v = o.view.get(); o.view.set(v.yaw + wrap(heading - h0), v.pitch); }
+    const k = Math.min(1, dt * 7);
+    if (pm === 'standing') {
+      const dx = cx - lastCX, dz = cz - lastCZ;                         // ce que le joueur a marché tout seul depuis la dernière image
+      pl.x += dx * rx + dz * rz; pl.z += -(dx * fx + dz * fz);
+      constrainInside();
+      if (mode === 'parked' && doorT > 0.9 && laneAt(pl.z) >= 0 && pl.x > XW + 0.02) { leave(); return; }   // il est ressorti par la porte
+      ey += (EYE_STAND - ey) * k;
+    } else if (pm === 'gliding') {
+      const t = path[0];
+      if (!t) { pm = goalSeat >= 0 ? 'seated' : 'standing'; seatI = goalSeat; }
+      else {
+        const ddx = t.x - pl.x, ddz = t.z - pl.z, d = Math.hypot(ddx, ddz), stp = GLIDE * dt;
+        if (d <= stp) { pl.x = t.x; pl.z = t.z; path.shift(); } else { pl.x += ddx / d * stp; pl.z += ddz / d * stp; }
+        if (!path.length) { pm = goalSeat >= 0 ? 'seated' : 'standing'; seatI = goalSeat; }
+      }
+      ey += ((goalSeat >= 0 ? EYE_SIT : EYE_STAND) - ey) * k;
+    } else {                                                            // assis : collé au siège, le regard est libre
+      const st = SEATS[seatI];
+      if (st) { pl.x = st.x; pl.z = st.z + 0.12; }
+      ey += (EYE_SIT - ey) * k;
+    }
+    // en s'asseyant on se tourne vers l'avant du bus (tous les sièges regardent vers l'avant)
+    if (faceFwd && o.view) {
+      const v = o.view.get(), dy = wrap(heading - v.yaw), kk = Math.min(1, dt * 5);
+      o.view.set(v.yaw + dy * kk, v.pitch + (0 - v.pitch) * kk);
+      if (Math.abs(dy) < 0.03 && pm === 'seated') faceFwd = false;
+    }
+    writeCamera();
+  }
 
   function place(dt, snap) {
     const fx = -Math.sin(heading), fz = -Math.cos(heading);
@@ -365,7 +604,11 @@ export function createBus(parent, o) {
     const hR = groundH(x - fx * 4.4, z - fz * 4.4);
     const hRt = groundH(x + rx * 1.2, z + rz * 1.2);
     const hL = groundH(x - rx * 1.2, z - rz * 1.2);
-    const ty = (hF + hR + hRt + hL) / 4;
+    let hW = -1e9;                                                   // hauteur du sol sous chaque roue : le bus se pose sur la plus haute
+    [[AXLE_F, -1], [AXLE_F, 1], [AXLE_R, -1], [AXLE_R, 1]].forEach(function (w) {
+      hW = Math.max(hW, groundH(x - fx * w[0] + rx * w[1] * 1.18, z - fz * w[0] + rz * w[1] * 1.18));
+    });
+    const ty = Math.max((hF + hR + hRt + hL) / 4, hW - 0.02) + 0.09;     // +9 cm : le sol visible (neige) est un peu plus haut que le sol logique
     const tp = Math.atan2(hF - hR, 8.8);
     const tr = Math.atan2(hRt - hL, 2.4);
     const k = snap ? 1 : Math.min(1, dt * 7);
@@ -513,7 +756,6 @@ export function createBus(parent, o) {
     place(dt, false);
     wheelRot += speed * dt / 0.5;
     wheels.forEach(function (w) { w.g.rotation.x = wheelRot; w.g.rotation.y = w.front ? steer : 0; });
-    if (riding) rideCamera(prevHeading);
     if (arrived) {
       speed = 0; braking = true; indicator = null; mode = 'parked'; reversing = false;
       hiss(0.05, 0.9, 0.05);                                        // purge du frein à air
@@ -556,46 +798,6 @@ export function createBus(parent, o) {
     place(dt, false);
     wheelRot += vel * dt / 0.5;
     wheels.forEach(function (w) { w.g.rotation.x = wheelRot; w.g.rotation.y = w.front ? steer : 0; });
-    if (riding) rideCamera(prevHeading);
-  }
-
-  function rideCamera(prevHeading) {
-    const eye = SEAT_EYE.clone().applyEuler(g.rotation).add(g.position);
-    camera.position.set(origin.x + eye.x, origin.y + eye.y, origin.z + eye.z);
-    if (o.view && prevHeading != null) {
-      const v = o.view.get();
-      o.view.set(v.yaw + wrap(heading - prevHeading), v.pitch);
-    }
-    if (o.snow) o.snow.setBaseY(origin.y + bodyY);
-  }
-
-  // ==========================================
-  // MONTER / DESCENDRE
-  // ==========================================
-  function showAct(label, fn) { if (o.action) { o.action.show(label, fn); actionShown = true; } }
-  function hideAct() { if (o.action && actionShown) { o.action.hide(); actionShown = false; } }
-
-  function board() {
-    if (riding || mode !== 'parked' || doorT < 0.9) return;
-    riding = true;
-    hideAct();
-    cool = 0.6;
-    rideCamera(null);
-    if (o.view) o.view.set(heading, 0);
-    if (o.onBoard) o.onBoard();
-  }
-  function alight() {
-    if (!riding || mode !== 'parked' || doorT < 0.9) return;
-    riding = false;
-    cool = 2.5;
-    const rx = Math.cos(heading), rz = -Math.sin(heading);
-    const fx = -Math.sin(heading), fz = -Math.cos(heading);
-    const px = x + rx * 3.5 + fx * (-DOOR_Z[1]), pz = z + rz * 3.5 + fz * (-DOOR_Z[1]);      // à côté de la porte du milieu
-    camera.position.x = origin.x + px;
-    camera.position.z = origin.z + pz;
-    hideAct();
-    if (o.onExit) o.onExit(px, pz);
-    if (o.onAlight) o.onAlight();
   }
 
   // ==========================================
@@ -610,31 +812,14 @@ export function createBus(parent, o) {
     // (l'avatar Violet est animé par engine/avatar-body.js : sit à l'arrêt, drive en roulant)
   }
   function step(dt, active) {
+    const h0 = heading;
     if (mode === 'driving' && P) followStep(dt);
     else if (mode === 'turning' && turn) turnStep(dt);
-    else {
-      speed = 0;
-      if (riding) rideCamera(null);
-      else if (doorT > 0) place(dt, false);
-      else place(dt, false);
-    }
+    else { speed = 0; place(dt, false); }
     updateDoors(dt);
     lights(dt);
     animate(dt);
-
-    // Bouton ENTER / EXIT
-    if (cool > 0) { cool -= dt; hideAct(); return; }
-    if (riding) {
-      if (mode === 'parked' && doorT > 0.95) showAct('EXIT', alight); else hideAct();
-      return;
-    }
-    const px = camera.position.x - origin.x, pz = camera.position.z - origin.z;
-    const d = Math.hypot(px - x, pz - z);
-    const tr = o.truck, truckBusy = !!(tr && tr.isDriving && tr.isDriving());
-    const taxiBusy = !!(o.taxi && o.taxi.isRiding && o.taxi.isRiding());
-    const near = active !== false && !truckBusy && !taxiBusy && mode === 'parked' && doorT > 0.95 && d < 9;
-    if (near) { showAct('ENTER', board); owned = true; }
-    else if (owned) { owned = false; hideAct(); }
+    playerStep(dt, h0);
   }
 
   let lastTick = 0;
@@ -650,6 +835,9 @@ export function createBus(parent, o) {
   window.BadTherapistBus = {
     group: g, slot: driverSlot,
     bringPlayer: function () { if (window.BadTherapistBusLine) window.BadTherapistBusLine.come(); },
+    seat: function (n) { if (!riding) return 'monte dans le bus d\'abord'; sit((n | 0) - 1); return 'siège ' + n; },
+    stand: function () { standUp(); return 'debout'; },
+    setAcc: function (a) { if (a > 0) ACC = a; return ACC; },
     driver: function (px, py, pz, yawDeg) {
       driverSlot.position.set(px, py, pz);
       if (yawDeg != null) driverSlot.rotation.y = yawDeg * Math.PI / 180;
@@ -675,6 +863,29 @@ export function createBus(parent, o) {
         if (doorT > 0 || doorTarget > 0) setDoors(false);
       });
     },
+    setAcc: function (a) { if (a > 0) ACC = a; },
+    // Le bus est solide : repousse un cercle (joueur, avatar, véhicule) hors du rectangle du bus. Renvoie [x, z] (repère de la scène).
+    collide: function (px, pz, rad, forPlayer) {
+      if (!g.visible) return [px, pz];
+      rad = rad || 0.3;
+      const fx = -Math.sin(heading), fz = -Math.cos(heading), rx = Math.cos(heading), rz = -Math.sin(heading);
+      const dx = px - x, dz = pz - z;
+      const a = dx * fx + dz * fz, b = dx * rx + dz * rz;
+      const hl = L / 2 + rad, hw = W / 2 + 0.12 + rad;               // +0.12 : rétroviseurs
+      if (Math.abs(a) >= hl || Math.abs(b) >= hw) return [px, pz];
+      if (forPlayer && mode === 'parked' && doorT > 0.9 && b > 0 && laneAt(-a) >= 0) return [px, pz];   // porte ouverte : on peut entrer
+      let na = a, nb = b;
+      if (hl - Math.abs(a) < hw - Math.abs(b)) na = (a < 0 ? -1 : 1) * hl; else nb = (b < 0 ? -1 : 1) * hw;
+      return [x + fx * na + rx * nb, z + fz * na + rz * nb];
+    },
+    seat: function (n) { if (!riding) return 'monte dans le bus d\'abord'; sit((n | 0) - 1); return 'siège ' + n; },   // seat(12) : s'asseoir au siège 12
+    stand: function () { standUp(); return 'debout'; },
+    seatCount: SEATS.length,
+    floorY: function () { return g.position.y + FLOOR; },              // hauteur du plancher (le jeu s'en sert pour la hauteur des yeux dans le bus)
+    isInside: function () { return riding; },
+    playerAtDoor: function () {                                        // le joueur attend près d'une porte pour descendre
+      return riding && pl.x > 0.2 && DOOR_Z.some(function (zc) { return Math.abs(pl.z - zc) < 1.4; });
+    },
     // Arrête tout de suite la manœuvre en cours (la promesse de follow / turnAround est résolue avec 'aborted')
     abort: function () {
       if (mode === 'parked') return;
@@ -683,7 +894,7 @@ export function createBus(parent, o) {
       const r = legResolve; legResolve = null;
       if (r) r('aborted');
     },
-    // Met le joueur à pied à côté du bus, entre les deux portes, tourné vers lui (pour tester le bouton ENTER)
+    // Met le joueur à pied à côté du bus, entre les deux portes, tourné vers lui (pour tester l'entrée par la porte)
     bringPlayer: function () {
       if (riding) return;
       const rx = Math.cos(heading), rz = -Math.sin(heading), fx = -Math.sin(heading), fz = -Math.cos(heading);
@@ -692,7 +903,6 @@ export function createBus(parent, o) {
       camera.position.z = origin.z + pz;
       camera.position.y = origin.y + 1.7 + groundH(px, pz);
       if (o.view) o.view.set(heading + Math.PI / 2, 0);
-      cool = 0;
     },
     turnAround: function () {
       return new Promise(function (resolve) { turn = { phase: 0, dh: 0, pause: 0 }; mode = 'turning'; legResolve = resolve; });
@@ -715,8 +925,14 @@ export function createBus(parent, o) {
       const fx = -Math.sin(heading), fz = -Math.cos(heading);
       return [x + rx * 3.4 + fx * 4.3, z + rz * 3.4 + fz * 4.3];
     },
-    // le joueur est monté / descendu par code (ex. fin de ligne)
-    forceAlight: function () { if (riding) { doorT = 1; alight(); } },
+    // le joueur est descendu par code (ex. fin de ligne) : devant la porte du milieu
+    forceAlight: function () {
+      if (!riding) return;
+      const rx = Math.cos(heading), rz = -Math.sin(heading), fx = -Math.sin(heading), fz = -Math.cos(heading);
+      camera.position.x = origin.x + x + rx * 3.5 + fx * (-DOOR_Z[1]);
+      camera.position.z = origin.z + z + rz * 3.5 + fz * (-DOOR_Z[1]);
+      leave();
+    },
     isPlayerNear: function (r) { return Math.hypot(camera.position.x - origin.x - x, camera.position.z - origin.z - z) < (r || 30); },
     LENGTH: L, WIDTH: W
   };
