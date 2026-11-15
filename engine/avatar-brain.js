@@ -88,7 +88,7 @@ export function createBrainSystem(R, M, opts) {
             shared.trim(),
             own.trim(),
             extra.trim(),
-            'You are ' + actor.name + '. Your phone number is ' + actor.number + '. You are a person like any other: you move, open doors, write, call, drive.',
+            'You are ' + (actor.selfName || actor.name) + '. Your phone number is ' + actor.number + '. You are a person like any other: you move, open doors, write, call, drive.',
             'WHAT YOU CAN DO (the only actions that exist):\n' + caps,
             'PEOPLE YOU CAN WRITE TO OR CALL:\n' + dir,
             'PHONE: a call rings for a few seconds; the other person may answer or not (people only hear their phone when they are near it). If nobody answers, text them or try again much later: never call or text again and again. If the person is standing right next to you, use say, not text. You can block a number (block) and unblock it (unblock); someone you block is told, and if someone blocked you, your texts and calls to them fail.',
@@ -129,7 +129,7 @@ export function createBrainSystem(R, M, opts) {
         }
         if (calls) {
             const inc = calls.incoming(actor.id);
-            if (inc.length) { L.push('Your phone is RINGING: ' + inc.map(function (c) { const f = R.actor(c.from); return (f ? f.name : c.from) + ' is calling you (use answer_call to pick up, or hang_up / do nothing to let it ring out)'; }).join('; ') + '.'); withId = inc[0].from; }
+            if (inc.length) { L.push((actor.pager ? 'Your PAGER beeps (someone is calling the Police line): ' : 'Your phone is RINGING: ') + inc.map(function (c) { const f = R.actor(c.from); return (f ? f.name : c.from) + ' is calling you (use answer_call to pick up, or hang_up / do nothing to let it ring out)'; }).join('; ') + '.'); withId = inc[0].from; }
             const act = calls.active(actor.id);
             if (act) { const o = R.actor(act.from === actor.id ? act.to : act.from); L.push('You are ON THE PHONE with ' + (o ? o.name : '?') + '. What you say goes to them with say.'); withId = o ? o.id : withId; }
             calls.missedFor(actor.id).forEach(function (c) { const o = R.actor(c.to); L.push('Your call to ' + (o ? o.name : '?') + ' was not answered. You can text them, or try again much later.'); });
@@ -247,7 +247,7 @@ export function createBrainSystem(R, M, opts) {
 
     function due(b, now) {
         const a = b.actor;
-        if (a.busyUntil > now) return false;
+        if (a.busyUntil > now && !(a.phoneWhileBusy && b.wake)) return false;      // Leon : un appel ou un SMS le joint même au volant
         if (b.wake && now - b.lastRun > (b.fast ? fastGap(b) : cfg.avatarWakeGapSec * 1000)) return true;      // un SMS ou une rencontre le réveille, mais pas en boucle ; une conversation en direct va vite
         return now - b.lastRun > (cfg.avatarThinkSec * 1000) * (0.75 + b.jitter * 0.5) * (onStage(a) ? 1 : 3);     // loin de toi : 3 fois plus rare
     }

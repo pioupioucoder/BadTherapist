@@ -143,7 +143,9 @@ export function attachPolice(o) {
             await sleep(rnd(2, 6) * 1000 / sc());
         }
         await walk(cur, { x: door[0], z: door[1] }, Math.max(5, Math.hypot(door[0] - cur.x, door[1] - cur.z) / 1.5));
-        leon.job = 'police'; R.save();
+        await car.openDoor();
+        leon.job = 'police'; R.save();                            // il remonte (animation « Entering Car »)
+        await sleep(2400 / sc());
         await car.closeDoor();
         S.foot = false; S.phase = 'parked';
         return true;

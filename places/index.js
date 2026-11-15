@@ -2,7 +2,6 @@ import * as THREE from 'three';
 import { SEA } from './layout.js';
 import { createHub, createTraffic } from './common.js';
 import { buildTown } from './town.js';
-import { buildStore } from './store.js';
 import { buildGasStation } from './gasstation.js';
 import { buildRailway } from './bridge.js';
 import { buildCityB } from './cityb.js';
@@ -76,9 +75,7 @@ export function buildPlaces(scene, o) {
   const env = {
     X: o.X, sites: o.X.sites, rects: rects, hub: hub, traffic: traffic,
     wantLight: function (x, y, z, k) { if (!want || k > want.k) want = { x: x, y: y, z: z, k: k }; },
-    teleport: o.teleport,
-    camera: o.camera, canvas: o.canvas || null,
-    noSea: []            // zones où la limite « mer » ne s'applique pas (le magasin dépasse cette limite)
+    teleport: o.teleport
   };
 
   if (o.crossing) {
@@ -87,7 +84,7 @@ export function buildPlaces(scene, o) {
   }
 
   // Chaque lieu est construit puis ses objets fixes sont fusionnés (peu d'appels de dessin : important sur téléphone)
-  const mods = [buildTown, buildStore, buildGasStation, buildRailway, buildCityB, buildPort].map(function (fn) {
+  const mods = [buildTown, buildGasStation, buildRailway, buildCityB, buildPort].map(function (fn) {
     const before = scene.children.length;
     const r = fn(scene, env);
     mergeStatic(scene, scene.children.slice(before));
@@ -96,14 +93,7 @@ export function buildPlaces(scene, o) {
 
   // Collision cercle contre les rectangles des lieux (+ la mer : on ne marche pas dans l'eau)
   function collide(px, pz, R) {
-    if (pz > SEA.z0 - 5) {
-      let free = false;
-      for (let k = 0; k < env.noSea.length; k++) {
-        const z = env.noSea[k];
-        if (px > z.x0 && px < z.x1 && pz > z.z0 && pz < z.z1) { free = true; break; }
-      }
-      if (!free) pz = SEA.z0 - 5;
-    }
+    if (pz > SEA.z0 - 5) pz = SEA.z0 - 5;
     for (let it = 0; it < 2; it++) {
       for (let i = 0; i < rects.length; i++) {
         const c = rects[i];
@@ -127,6 +117,7 @@ export function buildPlaces(scene, o) {
   return {
     rects: rects,
     collide: collide,
+    signals: { ahead: traffic.ahead },       // feux rouges : le bus et la voiture de police s'y arrêtent (places.signals.ahead)
     update: function (dt, active) {
       time += dt;
       const px = o.camera.position.x - o.origin.x, pz = o.camera.position.z - o.origin.z;

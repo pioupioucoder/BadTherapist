@@ -316,6 +316,8 @@ export function createTraffic() {
   });
   const heads = [[], []];
   let last = '';
+  let cur = ['r', 'r'];                // état courant [axe A, axe B] : 'g' vert, 'y' orange, 'r' rouge
+  const ints = [];                    // tous les carrefours à feux : { cx, cz, ax, az, hwA, hwB }
   const M = mats();
 
   function head(parent, x, y, z, fx, fz, gi) {
@@ -351,6 +353,7 @@ export function createTraffic() {
     // Carrefour en (cx, cy, cz) ; (ax, az) = direction unitaire de la route A ; hwA / hwB = demi-largeurs
     intersection: function (parent, cx, cy, cz, ax, az, hwA, hwB) {
       const bx = -az, bz = ax;
+      ints.push({ cx: cx, cz: cz, ax: ax, az: az, hwA: hwA, hwB: hwB });
       [-1, 1].forEach(function (sa) {
         [-1, 1].forEach(function (sb) {
           const px = cx + sa * (hwB + 1.7) * ax + sb * (hwA + 1.7) * bx;
@@ -375,7 +378,34 @@ export function createTraffic() {
       const key = st.join('');
       if (key === last) return;
       last = key;
+      cur = st;
       apply(st);
+    },
+    // Feu devant un véhicule en (x, z) qui roule dans la direction unitaire (fx, fz) : le plus proche carrefour à moins de `range` m.
+    // Renvoie null s'il n'y en a pas, sinon { dist, red } : dist = mètres jusqu'à la ligne d'arrêt, red = il faut s'arrêter
+    // (rouge, ou orange quand on est encore loin). Les feux du bus et de la voiture de police passent par ici (places.signals).
+    ahead: function (x, z, fx, fz, range) {
+      let best = null;
+      for (let i = 0; i < ints.length; i++) {
+        const c = ints[i];
+        const dx = c.cx - x, dz = c.cz - z;
+        const along = dx * fx + dz * fz;
+        if (along <= 0 || along > range + 15) continue;
+        const bx = -c.az, bz = c.ax;
+        const dA = Math.abs(fx * c.ax + fz * c.az), dB = Math.abs(fx * bx + fz * bz);
+        let gi, lineAt;
+        if (dA > 0.8) { gi = 0; lineAt = c.hwB + 2.2; }                 // on roule le long de la route A : la ligne est avant la route B
+        else if (dB > 0.8) { gi = 1; lineAt = c.hwA + 2.2; }
+        else continue;
+        const lat = Math.abs(dx * (gi === 0 ? bx : c.ax) + dz * (gi === 0 ? bz : c.az));
+        if (lat > 7) continue;                                          // pas dans l'axe du carrefour
+        const dist = along - lineAt;
+        if (dist < -1 || dist > range) continue;                        // déjà passé la ligne, ou trop loin
+        const s = cur[gi];
+        const red = s === 'r' || (s === 'y' && dist > 9);
+        if (!best || dist < best.dist) best = { dist: Math.max(0, dist), red: red };
+      }
+      return best;
     }
   };
 }

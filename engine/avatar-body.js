@@ -4,10 +4,10 @@
 //   • Oliver au volant du vrai taxi (taxi.js, option freeDriver) : assis à l'arrêt, « driving » quand ça roule ;
 //     s'il descend (stop_job) il apparaît à côté de la portière et peut marcher ;
 //   • Violet au volant du bus (objects/bus.js, piloté par engine/bus-line.js) : même principe, métier 'bus' ;
+//   • Leon (« Police ») au volant de la voiture de police (objects/police-car.js, engine/police-service.js) : métier 'police' ;
+//     il monte et descend avec les animations « Entering Car » / « Exiting Car » s'il les a ;
 //   • marche en ligne droite entre deux lieux (animation walk), repos (idle) près du lieu, regarde le joueur s'il est proche ;
 //   • invisibles quand ils sont dans l'immeuble ou passagers du taxi.
-//   • Lou (station-service) : un « poste » (def.post = window.BadTherapistGas, places/gasstation.js) lui dit où il est et ce qu'il fait
-//     (caisse, pompes, lit…) : pose() -> { x, y, z, heading, anim, visible }. Tant que post.controls(actor) est vrai, c'est le lieu qui le pilote.
 // Evelyn est ici comme les autres : chez elle on ne la voit pas dehors (son corps assis est dans therapist-house.js) ;
 // dès qu'elle sort, son corps de rue apparaît à la porte et marche.
 //
@@ -28,13 +28,14 @@ const DEFS = {
         dir: 'avatars/violet/', model: 'violet.fbx', height: 1.66, driver: true, vehicle: 'bus',
         anims: { walk: 'Walking.fbx', sit: 'Sitting.fbx', drive: 'Driving.fbx' }   // son dossier n'a ni Running ni Talking : « talk » retombe sur idle
     },
+    leon: {
+        dir: 'avatars/leon/', model: 'leon.fbx', height: 1.8, driver: true, vehicle: 'police',
+        // son dossier : Driving, Entering Car, Exiting Car, Salute, SitTalking, StandingTalking, Walking (pas de Running : « run » absent = on marche)
+        anims: { walk: 'Walking.fbx', sit: 'SitTalking.fbx', drive: 'Driving.fbx', talk: 'StandingTalking.fbx', greet: 'Salute.fbx', enter: 'Entering Car.fbx', exit: 'Exiting Car.fbx' }
+    },
     pluie: {
         dir: 'avatars/pluie/', model: 'pluie.fbx', height: 1.68,
         anims: { walk: 'Walking.fbx', run: 'Running.fbx', sit: 'Sitting.fbx', talk: 'Talking.fbx' }
-    },
-    lou: {
-        dir: 'avatars/lou/', model: 'lou.fbx', height: 1.75, post: 'BadTherapistGas',
-        anims: { walk: 'Walking.fbx', run: 'Running.fbx', sit: 'Sitting.fbx', talk: 'Talking.fbx', greet: 'Standing Greeting.fbx', work: 'FuelingAndSelling.fbx', sleep: 'Sleeping.fbx' }
     },
     evelyn: {
         dir: 'avatars/evelyn/', model: 'evelyn.fbx', height: 1.7, insideAt: 'therapist_house',   // insideAt : « chez elle » = dans la maison (invisible dehors)
@@ -49,7 +50,7 @@ const CLICK_RANGE = 12;       // on peut cliquer sur un avatar pour lui parler �
 
 export function createBodies(scene, o) {
     const camera = o.camera, groundH = o.groundH || function () { return 0; }, taxi = o.taxi || null;
-    const vehicles = { taxi: taxi, bus: o.bus || null };      // véhicule conduit par chaque métier (def.vehicle = nom du métier)
+    const vehicles = { taxi: taxi, bus: o.bus || null, police: o.police || null };      // véhicule conduit par chaque métier (def.vehicle = nom du métier)
     const R = society.registry;
     const bodies = {};
     let tSync = 0, tEnsure = 0;
@@ -114,7 +115,6 @@ export function createBodies(scene, o) {
             b.a = a;
             b.grp.add(a.root);
             play(b, 'idle');
-            console.log('[body] ' + id + ' chargé. Animations :', Object.keys(a.actions));
         }).catch(function (e) {
             console.warn('[body] ' + id + " n'a pas pu être chargé :", e && e.message ? e.message : e);
             // Oliver absent : le taxi reste utilisable comme avant (conducteur « virtuel »)
@@ -125,7 +125,7 @@ export function createBodies(scene, o) {
 
     function play(b, name) {
         if (!b.a || b.cur === name) return;
-        const key = b.a.actions && b.a.actions[name] ? name : (name === 'drive' || name === 'talk' || name === 'greet' || name === 'work' || name === 'sleep' ? 'idle' : null);
+        const key = b.a.actions && b.a.actions[name] ? name : (name === 'drive' || name === 'talk' ? 'idle' : null);
         if (!key || !b.a.actions[key]) return;
         b.cur = name;
         try { b.a.play(key); } catch (e) { /* animation absente : on garde la précédente */ }
@@ -147,6 +147,8 @@ export function createBodies(scene, o) {
             const ds = V.doorSpot ? V.doorSpot() : [0, 0];
             b.x = ds[0]; b.z = ds[1];
             b.cur = '';
+            b.entering = 0;
+            if (b.def.anims.exit) { b.hold = Date.now() + 2300; b.holdAnim = 'exit'; }       // il descend : animation de sortie, puis il marche
         }
         if (b.def.driver && V.setDriverPresent) V.setDriverPresent(!!yes);
         b.seated = !!yes;
@@ -165,6 +167,20 @@ export function createBodies(scene, o) {
             // 1. au volant ? (taxi pour Oliver, bus pour Violet)
             const V = b.def.vehicle ? vehicles[b.def.vehicle] : null;
             const wantSeat = !!(b.def.driver && V && V.slot && actor.job === b.def.vehicle);
+            if (wantSeat && !b.seated && b.def.anims.enter && b.x !== null) {       // il monte : animation d'entrée à côté de la portière, puis il s'assoit
+                if (!b.entering) { b.entering = now + 2100; b.cur = ''; }
+                if (now < b.entering) {
+                    const ds0 = V.doorSpot ? V.doorSpot() : [b.x, b.z], vp = V.getPose ? V.getPose() : null;
+                    b.x = ds0[0]; b.z = ds0[1];
+                    if (vp) b.heading = Math.atan2(vp.x - b.x, vp.z - b.z);
+                    b.grp.visible = true;
+                    b.grp.position.set(b.x, groundH(b.x, b.z), b.z);
+                    b.grp.rotation.y = b.heading;
+                    play(b, 'enter'); a.update(dt); bubbleAt(b, true);
+                    return;
+                }
+                b.entering = 0;
+            }
             if (b.seated !== wantSeat) seat(b, wantSeat);
             if (wantSeat) {
                 play(b, V.isMoving && V.isMoving() ? 'drive' : 'sit');
@@ -173,24 +189,18 @@ export function createBodies(scene, o) {
                 return;
             }
 
+            // 1b. il vient de descendre : animation de sortie à côté de la portière
+            if (b.hold && b.hold > now && !wantSeat) {
+                b.grp.visible = true;
+                b.grp.position.set(b.x, groundH(b.x, b.z), b.z);
+                b.grp.rotation.y = b.heading;
+                play(b, b.holdAnim || 'exit'); a.update(dt); bubbleAt(b, true);
+                return;
+            }
+
             // 2. passager d'un véhicule : invisible
             const tr = actor.travel;
             if (actor.ride || (tr && tr.mode === 'vehicle')) { b.grp.visible = false; bubbleAt(b, false); return; }
-
-            // 2b. à son poste (station-service...) : c'est le lieu qui dit où il est et ce qu'il fait
-            const PS = b.def.post ? window[b.def.post] : null;
-            if (PS && !tr && PS.controls && PS.controls(actor)) {
-                const p = PS.pose();
-                b.grp.visible = !!p.visible;
-                if (!p.visible) { bubbleAt(b, false); return; }
-                b.x = p.x; b.z = p.z; b.heading = p.heading;
-                b.grp.position.set(p.x, p.y, p.z);
-                b.grp.rotation.y = p.heading;
-                const qx = cam.x - p.x, qz = cam.z - p.z;
-                if (Math.hypot(qx, qz) < FAR_NO_ANIM) { play(b, p.anim); a.update(dt); }
-                bubbleAt(b, true);
-                return;
-            }
 
             // 3. position
             const place = R.place(actor.loc);
@@ -242,7 +252,10 @@ export function createBodies(scene, o) {
         });
     }
 
-    function ensure() { Object.keys(DEFS).forEach(function (id) { if (!bodies[id] && R.actor(id)) load(id, DEFS[id]); }); }
+    // TOUS les corps sont chargés tout de suite, pendant l'écran de chargement (avatar-loader.js le retient jusqu'à ce que
+    // chacun soit prêt). Avant, un avatar dont l'acteur n'existait pas encore (Violet, Leon...) se chargeait en pleine partie,
+    // après la fin de l'écran de chargement : c'est ce qui figeait le jeu quelques secondes. Un corps sans acteur reste invisible (voir step).
+    function ensure() { Object.keys(DEFS).forEach(function (id) { if (!bodies[id]) load(id, DEFS[id]); }); }
     ensure();
 
     const api = {

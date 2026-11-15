@@ -6,6 +6,8 @@ import { createTaxi } from '../taxi.js';
 import { createRoadNet } from '../objects/roadnet.js';
 import { createBus } from '../objects/bus.js';
 import { attachBusLine } from '../engine/bus-line.js';
+import { createPoliceCar } from '../objects/police-car.js';
+import { attachPolice } from '../engine/police-service.js';
 import { SEA } from './layout.js';
 import { buildPlaces } from './index.js';
 import { createKit } from './common.js';
@@ -331,6 +333,8 @@ let truck = null;
 let taxi = null;
 let bus = null;
 let busLine = null;
+let policeCar = null;
+let policeSvc = null;
 let bodies = null;
 
 // Le bus est solide pour le camion et le taxi : 6 petits rectangles qui suivent sa carrosserie (mis à jour à chaque image)
@@ -436,9 +440,35 @@ if (ctx.driveCamera) {
   });
   if (!busLine) bus.group.visible = false;                          // ligne impossible : on ne laisse pas un bus planté à l'origine
 
-  // Les corps d'Oliver (taxi), de Violet (bus) et de Pluie, pilotés par la société des avatars
+  // La voiture de police de Leon (« Police ») : patrouille toute seule, s'arrête aux feux et devant les obstacles
+  policeCar = createPoliceCar(scene, {
+    origin: org,
+    camera: ctx.driveCamera,
+    groundH: SH.walkHeight,
+    net: busNet,
+    signals: places && places.signals ? places.signals : null,
+    obstacles: function () {
+      const out = [];
+      [truck, taxi].forEach(function (v) {
+        if (v && v.getPose) { const q = v.getPose(); if (q && q.x != null) out.push({ x: q.x, z: q.z, r: 1.7 }); }
+      });
+      if (bus && busLine) {                                           // le bus est long : trois points le long de sa carrosserie
+        const p = bus.getPose(), fx = -Math.sin(p.heading), fz = -Math.cos(p.heading);
+        [-4, 0, 4].forEach(function (o2) { out.push({ x: p.x + fx * o2, z: p.z + fz * o2, r: 1.8 }); });
+      }
+      return out;
+    }
+  });
+  policeSvc = attachPolice({
+    society: society, car: policeCar, net: busNet,
+    stops: SH.X.stops,
+    sites: { home: { x: 0, z: -29 }, work: WORK_SPOT, town: siteBus.town, gas: siteBus.gas, station: siteBus.station, port: siteBus.port, cityB: siteBus.cityB }
+  });
+  if (!policeSvc) policeCar.group.visible = false;
+
+  // Les corps d'Oliver (taxi), de Violet (bus), de Leon (police) et de Pluie, pilotés par la société des avatars
   society.attachTaxi(taxi);
-  bodies = createBodies(scene, { camera: ctx.driveCamera, groundH: SH.walkHeight, taxi: taxi, bus: bus });
+  bodies = createBodies(scene, { camera: ctx.driveCamera, groundH: SH.walkHeight, taxi: taxi, bus: bus, police: policeCar });
 }
 
 

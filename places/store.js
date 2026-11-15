@@ -315,7 +315,6 @@ export function buildStore(scene, env) {
       parent.add(a.root);
       applyVeri();
       go('sit');
-      console.log('[store] Véri chargée. Animations :', Object.keys(a.actions));
     }).catch(function (e) {
       console.warn('[store] Véri introuvable :', e && e.message ? e.message : e);
     });
@@ -524,8 +523,7 @@ export function buildStore(scene, env) {
   // On libère la limite autour du magasin (+ 5 m de marge) pour pouvoir entrer par la porte.
   const m5 = Math.max(CONF.w, CONF.d) / 2 + 5;
   if (env.noSea) env.noSea.push({ x0: ox - m5, x1: ox + m5, z0: oz - m5, z1: oz + m5 });
-  console.log('[store] magasin z ' + (oz - CONF.d / 2).toFixed(1) + '..' + (oz + CONF.d / 2).toFixed(1) + ' | limite du joueur (mer) z = ' + (SEA.z0 - 5).toFixed(1) + (oz + CONF.d / 2 > SEA.z0 - 5 ? '  -> le magasin DÉPASSE la limite (corrigé par noSea)' : '  -> ok'));
-  loadVeri(shell.group);
+  loadVeri(shell.group);            // chargée pendant l'écran de chargement (avatar-loader.js retient l'écran jusqu'à ce qu'elle soit prête)
 
   window.BadTherapistStore = {
     tune: function (o) { Object.assign(V, o || {}); applyVeri(); console.log('[store] Véri :', JSON.stringify(V)); },
@@ -584,7 +582,6 @@ export function buildStore(scene, env) {
     root.traverse(function (n) {
       if (n.isPoints && n.geometry && n.geometry.attributes.position && n.geometry.attributes.position.count > 100) snowList.push(n);
     });
-    console.log('[store] neige trouvée (Points) : ' + snowList.length);
     return snowList;
   }
 
@@ -602,7 +599,6 @@ export function buildStore(scene, env) {
       mn.min(v); mx.max(v);
     }); }); });
     sn.excludeBox(mn.x, mn.y, mn.z, mx.x, mx.y, mx.z);
-    console.log('[store] neige coupée à l\'intérieur : x ' + mn.x.toFixed(1) + '..' + mx.x.toFixed(1) + ' y ' + mn.y.toFixed(1) + '..' + mx.y.toFixed(1) + ' z ' + mn.z.toFixed(1) + '..' + mx.z.toFixed(1));
   }
 
   // ---------- mise à jour ----------
