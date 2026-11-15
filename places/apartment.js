@@ -92,8 +92,14 @@ export function buildWorld(scene, opts) {
     physics.add({ x0: STREET_DX - 12, x1: STREET_DX - 1.4, z0: -24.8, z1: -15.7, level: 0 });
     physics.add({ x0: STREET_DX + 1.4, x1: STREET_DX + 12, z0: -24.8, z1: -15.7, level: 0 });
     // La maison de travail (work.js), sa voiture et sa pile de bois sont solides
+    // Les rectangles sont lus EN DIRECT (getters) et non copiés : les portes des bâtiments (places/common.js) déplacent
+    // leur rectangle quand elles s'ouvrent. Avec une copie figée, elles restaient solides même ouvertes.
     street.colliders.forEach(function(c) {
-        physics.add({ x0: STREET_DX + c.x0, x1: STREET_DX + c.x1, z0: STREET_Z + c.z0, z1: STREET_Z + c.z1, level: 0 });
+        physics.add({
+            get x0() { return STREET_DX + c.x0; }, get x1() { return STREET_DX + c.x1; },
+            get z0() { return STREET_Z + c.z0; }, get z1() { return STREET_Z + c.z1; },
+            level: 0
+        });
     });
 
     // Capteur de la porte d'entrée : quelqu'un dans le hall OU devant l'immeuble, près de la porte

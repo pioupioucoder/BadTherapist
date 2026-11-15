@@ -77,7 +77,8 @@ export function buildPlaces(scene, o) {
     X: o.X, sites: o.X.sites, rects: rects, hub: hub, traffic: traffic,
     wantLight: function (x, y, z, k) { if (!want || k > want.k) want = { x: x, y: y, z: z, k: k }; },
     teleport: o.teleport,
-    camera: o.camera, canvas: o.canvas || null
+    camera: o.camera, canvas: o.canvas || null,
+    noSea: []            // zones où la limite « mer » ne s'applique pas (le magasin dépasse cette limite)
   };
 
   if (o.crossing) {
@@ -95,7 +96,14 @@ export function buildPlaces(scene, o) {
 
   // Collision cercle contre les rectangles des lieux (+ la mer : on ne marche pas dans l'eau)
   function collide(px, pz, R) {
-    if (pz > SEA.z0 - 5) pz = SEA.z0 - 5;
+    if (pz > SEA.z0 - 5) {
+      let free = false;
+      for (let k = 0; k < env.noSea.length; k++) {
+        const z = env.noSea[k];
+        if (px > z.x0 && px < z.x1 && pz > z.z0 && pz < z.z1) { free = true; break; }
+      }
+      if (!free) pz = SEA.z0 - 5;
+    }
     for (let it = 0; it < 2; it++) {
       for (let i = 0; i < rects.length; i++) {
         const c = rects[i];

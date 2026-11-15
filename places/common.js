@@ -547,7 +547,9 @@ export function enterable(parent, env, o) {
   R(-w / 2, w / 2, d / 2 - t / 2, d / 2 + t / 2);
   R(w / 2 - t / 2, w / 2 + t / 2, zL1, zL2);
   R(w / 2 - t / 2, w / 2 + t / 2, zR1, zR2);
-  const doorRect = R(w / 2 - 0.1, w / 2 + 0.1, dz - dw / 2, dz + dw / 2);
+  // Porte cliquable : pas de rectangle dans la liste partagée (certains systèmes en gardent une COPIE figée, la porte
+  // resterait solide même ouverte). Elle est gérée plus bas par un « portillon » qui repousse le joueur seulement si elle est fermée.
+  const doorRect = o.clickDoor ? toWorldRect(o, yaw, w / 2 - 0.1, w / 2 + 0.1, dz - dw / 2, dz + dw / 2) : R(w / 2 - 0.1, w / 2 + 0.1, dz - dw / 2, dz + dw / 2);
   const doorHome = { x0: doorRect.x0, x1: doorRect.x1, z0: doorRect.z0, z1: doorRect.z1 };
 
   let openT = 0, open = false;
@@ -568,6 +570,14 @@ export function enterable(parent, env, o) {
       doorRect.x0 = solid ? doorHome.x0 : 1e7; doorRect.x1 = solid ? doorHome.x1 : 1e7 + 1;
       doorRect.z0 = solid ? doorHome.z0 : 1e7; doorRect.z1 = solid ? doorHome.z1 : 1e7 + 1;
       const dDoor = Math.hypot(lx - w / 2, lz - dz);
+      if (o.clickDoor && env.camera && openT < 0.35 && Math.abs(lz - dz) < dw / 2 + 0.05) {
+        const RR = 0.35, lo = w / 2 - 0.1 - RR, hi = w / 2 + 0.1 + RR;
+        if (lx > lo && lx < hi) {
+          const target = lx >= w / 2 ? hi : lo, dl = target - lx;        // repoussé du côté d'où il vient
+          env.camera.position.x += dl * cy;
+          env.camera.position.z += -dl * sy;
+        }
+      }
       if (!click && active && dDoor < 3.4 && Math.abs(lx - w / 2) < 3.2) {
         env.hub.request(o.id, open ? 'CLOSE' : 'OPEN', toggle, dDoor);
       }

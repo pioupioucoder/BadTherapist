@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PLACES } from './layout.js';
+import { PLACES, SEA } from './layout.js';
 import { mats, box, glow, enterable, signMaterial, canvasTex, makeCanvas, FACE_YAW } from './common.js';
 import { loadMixamoAvatar } from '../avatar-loader.js';
 
@@ -247,6 +247,16 @@ export function buildStore(scene, env) {
   let innerRef = null, padMesh = null, scanMat = null;
   let open = true;
   let lastP = { x: 0, z: 0 }, wasInside = false, snowList = null;
+  let dbgOn = false, dbgEl = null, dbgT = 0, dbgPrev = null;
+  function dbgShow(t) {
+    if (typeof document === 'undefined') return;
+    if (!dbgEl) {
+      dbgEl = document.createElement('div');
+      dbgEl.style.cssText = 'position:fixed;left:8px;top:8px;background:rgba(0,0,0,.75);color:#7dff9a;padding:6px 10px;border-radius:6px;font:12px monospace;z-index:99999;pointer-events:none;white-space:pre';
+      document.body.appendChild(dbgEl);
+    }
+    dbgEl.textContent = t; dbgEl.style.display = t ? 'block' : 'none';
+  }
 
   // écran de la caisse
   const scr = makeCanvas(256, 160), sk = scr.getContext('2d');
@@ -509,6 +519,12 @@ export function buildStore(scene, env) {
   });
 
   shell.group.add(shellGroupPending);
+
+  // La limite « mer » (index.js : le joueur ne dépasse pas SEA.z0 - 5) coupe le magasin en deux si la façade est plus au sud.
+  // On libère la limite autour du magasin (+ 5 m de marge) pour pouvoir entrer par la porte.
+  const m5 = Math.max(CONF.w, CONF.d) / 2 + 5;
+  if (env.noSea) env.noSea.push({ x0: ox - m5, x1: ox + m5, z0: oz - m5, z1: oz + m5 });
+  console.log('[store] magasin z ' + (oz - CONF.d / 2).toFixed(1) + '..' + (oz + CONF.d / 2).toFixed(1) + ' | limite du joueur (mer) z = ' + (SEA.z0 - 5).toFixed(1) + (oz + CONF.d / 2 > SEA.z0 - 5 ? '  -> le magasin DÉPASSE la limite (corrigé par noSea)' : '  -> ok'));
   loadVeri(shell.group);
 
   window.BadTherapistStore = {
@@ -545,7 +561,17 @@ export function buildStore(scene, env) {
       console.table(out);
       return out;
     },
-    snow: function () { snowList = null; return findSnow(); }
+    snow: function () { snowList = null; return findSnow(); },
+    // Affichage de debug en haut à gauche : BadTherapistStore.debug(true) / debug(false)
+    debug: function (on) { dbgOn = on !== false; if (!dbgOn) dbgShow(''); },
+    // Téléporte le joueur dans le magasin (repère du magasin : x = 6 est la porte, x = 0 le milieu, z = 0 l'axe de la porte)
+    go: function (lx, lz) {
+      if (!env.camera) return 'pas de caméra';
+      lx = lx == null ? 2 : lx; lz = lz == null ? 0 : lz;
+      env.camera.position.x += (ox + lx * cy + lz * sy) - lastP.x;
+      env.camera.position.z += (oz - lx * sy + lz * cy) - lastP.z;
+      return 'ok';
+    }
   };
 
   // ---------- neige : coupée à l'intérieur ----------
@@ -562,24 +588,50 @@ export function buildStore(scene, env) {
     return snowList;
   }
 
+  // zone sans neige : l'intérieur du magasin (le système de neige de world_base.html sait exclure jusqu'à 6 boîtes)
+  let snowDone = false;
+  function snowExclude() {
+    const sn = window.BadTherapistSnow;
+    if (snowDone || !sn || typeof sn.excludeBox !== 'function') return;
+    snowDone = true;
+    shell.group.updateWorldMatrix(true, false);
+    const mn = new THREE.Vector3(1e9, 1e9, 1e9), mx = new THREE.Vector3(-1e9, -1e9, -1e9), v = new THREE.Vector3();
+    [-1, 1].forEach(function (sx) { [0, 1].forEach(function (sh) { [-1, 1].forEach(function (sz) {
+      v.set(sx * CONF.w / 2, sh ? CONF.h + 0.3 : -0.1, sz * CONF.d / 2);
+      shell.group.localToWorld(v);
+      mn.min(v); mx.max(v);
+    }); }); });
+    sn.excludeBox(mn.x, mn.y, mn.z, mx.x, mx.y, mx.z);
+    console.log('[store] neige coupée à l\'intérieur : x ' + mn.x.toFixed(1) + '..' + mx.x.toFixed(1) + ' y ' + mn.y.toFixed(1) + '..' + mx.y.toFixed(1) + ' z ' + mn.z.toFixed(1) + '..' + mx.z.toFixed(1));
+  }
+
   // ---------- mise à jour ----------
   const cnt = { x: 3.0, z: -1.9 };         // point « client » devant le comptoir
   return {
     update: function (dt, time, px, pz, active) {
       shell.update(dt, px, pz, active);
+      snowExclude();
+      if (dbgOn) {
+        const ddx = px - ox, ddz = pz - oz;
+        const llx = ddx * cy - ddz * sy, llz = ddx * sy + ddz * cy;
+        let near = [];
+        env.rects.forEach(function (r, i) {
+          const cx = Math.max(r.x0, Math.min(r.x1, px)), cz = Math.max(r.z0, Math.min(r.z1, pz));
+          const d = Math.hypot(px - cx, pz - cz);
+          if (d < 0.8) near.push('#' + i + ' d=' + d.toFixed(2));
+        });
+        dbgShow('magasin x ' + llx.toFixed(2) + '  z ' + llz.toFixed(2) + '   (porte : x 6, z -1.2..1.2)\n' +
+          'porte ' + (shell.isOpen() ? 'OUVERTE' : 'fermée') + '   dans le magasin : ' + (Math.abs(llx) < CONF.w / 2 && Math.abs(llz) < CONF.d / 2) + '\n' +
+          'collisions < 0.8 m : ' + (near.length ? near.join(', ') : 'aucune') +
+          (dbgPrev ? '\nbouge de ' + Math.hypot(px - dbgPrev.x, pz - dbgPrev.z).toFixed(3) + ' m / image' : ''));
+        dbgPrev = { x: px, z: pz };
+      }
 
       const dx = px - ox, dz = pz - oz;
       const lx = dx * cy - dz * sy, lz = dx * sy + dz * cy;
       const inside = Math.abs(lx) < CONF.w / 2 && Math.abs(lz) < CONF.d / 2;
       const near = Math.hypot(lx, lz) < 60;
       lastP.x = px; lastP.z = pz;
-      if (inside !== wasInside) {
-        wasInside = inside;
-        findSnow().forEach(function (n) {
-          if (inside) { n.userData._btVis = n.visible; n.visible = false; }
-          else if (n.userData._btVis !== undefined) { n.visible = n.userData._btVis; }
-        });
-      }
 
       open = CONF.isOpen();
       if (A) { A.root.visible = open; if (near && open) A.update(dt); }

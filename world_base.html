@@ -1029,6 +1029,7 @@ try {
   camera.rotation.x = camPitch;
 };
 
+ window.BadTherapistSnow = snow;   // les lieux (store.js...) s'en servent pour couper la neige à l'intérieur
  world = worldModule.buildWorld(scene, {
   camera,
   renderer,
@@ -1991,11 +1992,7 @@ function animate() {
   if (rawDt > 0.2 && rawDt < 5) {
     // Qui a bloqué ? 'hors animate' grand = un chargement/décodage asynchrone (FBX, JSON, image) a bloqué la page.
     // 'world.update' grand = c'est le code d'un lieu/avatar. 'render' grand = trop de dessin pour le processeur.
-    console.warn('[BT-perf] gel ' + Math.round(rawDt * 1000) + ' ms' +
-      ' | hors animate ~' + Math.max(0, Math.round(rawDt * 1000 - prevWork)) + ' ms' +
-      ' | world.update ' + Math.round(tWorld) + ' ms | render(CPU) ' + Math.round(tRender) + ' ms' +
-      ' | programmes ' + lastProgs + '->' + progs +
-      ' | tex ' + info.memory.textures + ' geo ' + info.memory.geometries);
+    // (log « BT-perf » retiré : il spammait la console à chaque gel)
   }
   prevWork = work;
   lastProgs = progs;
