@@ -76,8 +76,11 @@ function fixClip(model, clip, label) {
 
 // Tout avatar chargé pendant le démarrage retient automatiquement l'écran de chargement (loader.js) :
 // un nouvel avatar, quel que soit le fichier qui le charge, est donc prêt avant que le jeu s'affiche.
+let holdSeq = 0;
 export async function loadMixamoAvatar(opts) {
-    const key = 'avatar:' + (opts && opts.model);
+    // clé UNIQUE à chaque appel : si le même avatar est demandé deux fois (ex. evelyn par avatar-body ET par therapist-house),
+    // le premier à finir ne doit pas libérer l'écran de chargement pendant que l'autre charge encore
+    const key = 'avatar:' + (opts && opts.model) + '#' + (++holdSeq);
     if (window.BTLoad) window.BTLoad.hold(key);
     try {
         return await loadMixamoAvatarNow(opts);

@@ -38,7 +38,7 @@
     const HANDOFF_KEY = 'bt-handoff';
     const HANDOFF_MAX_AGE = 120000;   // l'écran est repris dans le jeu si on y arrive moins de 2 min après BTGo
     const HANDOFF_MIN = 1.0;          // s : durée minimale dans le jeu
-    const HANDOFF_SETTLE = 1800;      // ms de calme sans nouveau chargement avant de retirer l'écran
+    const HANDOFF_SETTLE = 3000;      // ms de calme sans nouveau chargement avant de retirer l'écran
     const HANDOFF_TIMEOUT = 45000;    // sécurité : l'écran part quoi qu'il arrive
     const SMOOTH_FRAMES = 30, SMOOTH_MS = 40;   // « le jeu est fluide » = 30 images de suite sous 40 ms
     const FALLBACK = ['index.html', 'world_base.html', 'bedroom.js'];   // point de départ : le reste est découvert tout seul (imports, dossiers)
@@ -481,13 +481,19 @@
         const stop = startScene(function () { return 1; }, null, true);
 
         BT.active = function () { return !released; };
-        BT.hold = function (n) { if (!released) { holds[n] = 1; lastEvent = performance.now(); } };
-        BT.release = function (n) { delete holds[n]; lastEvent = performance.now(); };
+        // compteurs (et non plus 0/1) : deux chargements du même nom ne se libèrent plus l'un l'autre
+        BT.hold = function (n) { if (!released) { holds[n] = (holds[n] || 0) + 1; lastEvent = performance.now(); } };
+        BT.release = function (n) { if (holds[n] > 1) holds[n]--; else delete holds[n]; lastEvent = performance.now(); };
         addEventListener('load', function () { loaded = true; lastEvent = performance.now(); });
+        // tout fichier qui finit de charger (image, fbx, vidéo...) repousse le départ de l'écran
+        try {
+            new PerformanceObserver(function () { if (!released) lastEvent = performance.now(); }).observe({ entryTypes: ['resource'] });
+        } catch (e) { /* navigateur sans resource timing */ }
 
         function finish() {
             if (released) return;
             released = true;
+            console.log('[BT] écran de chargement retiré après ' + ((performance.now() - t0) / 1000).toFixed(1) + ' s');
             ui.root.style.transition = 'opacity .6s';
             ui.root.style.opacity = '0';
             setTimeout(function () { stop(); ui.root.remove(); ui = null; }, 700);
@@ -533,7 +539,9 @@
     // Arrivée dans le jeu juste après BTGo : on garde l'écran de chargement
     try {
         const t = Number(sessionStorage.getItem(HANDOFF_KEY));
-        if (t && Date.now() - t < HANDOFF_MAX_AGE && !document.getElementById('bt-load') && !/[?&]noload\b/.test(location.search)) startHandoff();
+        const fresh = t && Date.now() - t < HANDOFF_MAX_AGE;
+        const isGame = /[?&]launch\b/.test(location.search);   // la page du jeu s'ouvre avec ?launch=1 : F5 ou nouvel onglet gardent l'écran aussi
+        if ((fresh || isGame) && !document.getElementById('bt-load') && !/[?&]noload\b/.test(location.search)) startHandoff();
     } catch (e) { /* sessionStorage indisponible */ }
 
     // retour arrière : on ne garde pas l'écran de chargement
