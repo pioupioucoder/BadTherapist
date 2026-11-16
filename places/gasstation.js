@@ -90,18 +90,31 @@ export function buildGasStation(scene, env) {
     glow(scene, X + 2, Y + 4.4, Z - 15, 0xcfe8ff, 22, 0.28);
     [[-9, -22], [13, -22], [-9, -8], [13, -8]].forEach(function (c) { env.rects.push({ x0: X + c[0] - 0.4, x1: X + c[0] + 0.4, z0: Z + c[1] - 0.4, z1: Z + c[1] + 0.4 }); });
 
-    // ---------- pompes : écran vivant (prix au litre / litres servis) ----------
+    // ---------- pompes : écran vivant, tuyau et pistolet ----------
     const pumpMat = new THREE.MeshStandardMaterial({ color: 0x8a2a1c, roughness: 0.6, metalness: 0.3, emissive: 0x180806 });
+    const hoseMat = new THREE.MeshStandardMaterial({ color: 0x141414, roughness: 0.55 });
+    const nozMat = new THREE.MeshStandardMaterial({ color: 0x2b2f33, roughness: 0.5, metalness: 0.4 });
+    const nozGrip = new THREE.MeshStandardMaterial({ color: 0xc0281c, roughness: 0.6 });
     const pumpsW = [], pumpScr = [];
+    function makeNozzle() {
+        const g = new THREE.Group();
+        const body = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.2, 0.05), nozMat); g.add(body);
+        const grip = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.1, 0.04), nozGrip); grip.position.set(0, -0.08, 0.04); g.add(grip);
+        const spout = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.22, 6), nozMat); spout.position.set(0, -0.2, 0); g.add(spout);   // le bec pointe vers le bas au repos
+        scene.add(g); return g;
+    }
     [[-4, -18], [-4, -12], [8, -18], [8, -12]].forEach(function (p, i) {
-        const px = X + p[0], pz = Z + p[1];
+        const px = X + p[0], pz = Z + p[1], side = p[0] < 2 ? 1 : -1;        // le tuyau sort du côté de l'allée centrale
         box(scene, 0.9, 1.7, 0.55, pumpMat, px, Y + 0.95, pz);
         box(scene, 1.6, 0.25, 1.2, M.concreteDark, px, Y + 0.19, pz);
+        box(scene, 0.07, 0.34, 0.16, M.metal, px + side * 0.5, Y + 1.02, pz + 0.12);   // support du pistolet
         env.rects.push({ x0: px - 0.8, x1: px + 0.8, z0: pz - 0.6, z1: pz + 0.6 });
-        pumpsW.push({ x: px, z: pz });
+        const pw = { x: px, z: pz, side: side, hoseStart: { x: px + side * 0.46, y: Y + 1.3, z: pz }, rest: { x: px + side * 0.56, y: Y + 1.05, z: pz + 0.12 }, hose: null, noz: makeNozzle() };
+        pw.hose = new THREE.Mesh(new THREE.BufferGeometry(), hoseMat); scene.add(pw.hose);
+        pumpsW.push(pw);
         let scr = { ctx: null, tex: null };
         if (typeof document !== 'undefined') {
-            const cv = document.createElement('canvas'); cv.width = 128; cv.height = 64;
+            const cv = document.createElement('canvas'); cv.width = 160; cv.height = 96;
             const tex = new THREE.CanvasTexture(cv);
             scr = { ctx: cv.getContext('2d'), tex: tex };
             const m = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.3), new THREE.MeshBasicMaterial({ map: tex }));
@@ -109,14 +122,27 @@ export function buildGasStation(scene, env) {
         }
         pumpScr[i] = scr;
     });
-    function drawPump(i, top, bottom) {
+    function drawPump(i, a, b, c) {        // a = litres, b = prix, c = ligne du bas
         const s = pumpScr[i]; if (!s || !s.ctx) return;
-        const c = s.ctx; c.fillStyle = '#0b1a10'; c.fillRect(0, 0, 128, 64);
-        c.fillStyle = '#9fd0a0'; c.font = 'bold 22px monospace'; c.fillText(top, 6, 26); c.fillText(bottom, 6, 54);
+        const g = s.ctx; g.fillStyle = '#0b1a10'; g.fillRect(0, 0, 160, 96);
+        g.fillStyle = '#6fa874'; g.font = '11px monospace'; g.fillText('LITERS', 6, 14); g.fillText('PRICE', 6, 50);
+        g.fillStyle = '#9fd0a0'; g.font = 'bold 26px monospace'; g.fillText(a, 6, 40); g.fillText(b, 6, 76);
+        g.font = '12px monospace'; g.fillText(c, 6, 92);
         s.tex.needsUpdate = true;
     }
-    function pumpIdle(i) { drawPump(i, 'FUEL', fmt(cfg.fuelPerLiter) + '/L'); }
-    pumpsW.forEach(function (p, i) { pumpIdle(i); });
+    function pumpIdle(i) { drawPump(i, '--.--', '--.--', fmt(cfg.fuelPerLiter) + ' / L'); }
+    // tuyau : courbe qui pend entre la pompe et le pistolet (reconstruite seulement quand le pistolet bouge)
+    function setHose(i, end) {
+        const pw = pumpsW[i], s = pw.hoseStart;
+        const a = new THREE.Vector3(s.x, s.y, s.z), b = new THREE.Vector3(end.x, end.y, end.z), d = a.distanceTo(b), sag = Math.min(1.0, 0.3 + d * 0.12);
+        const m1 = a.clone().lerp(b, 0.33), m2 = a.clone().lerp(b, 0.66);
+        m1.y = Math.max(Y + 0.06, m1.y - sag * 0.6); m2.y = Math.max(Y + 0.06, m2.y - sag);
+        const geo = new THREE.TubeGeometry(new THREE.CatmullRomCurve3([a, m1, m2, b]), 16, 0.022, 6, false);
+        pw.hose.geometry.dispose(); pw.hose.geometry = geo;
+    }
+    function setNozzle(i, pos, yaw, tilt) { const n = pumpsW[i].noz; n.position.set(pos.x, pos.y, pos.z); n.rotation.set(0, yaw || 0, tilt || 0); }
+    function nozzleHome(i) { const r = pumpsW[i].rest; setNozzle(i, r, 0, 0); setHose(i, { x: r.x, y: r.y + 0.08, z: r.z }); }
+    pumpsW.forEach(function (p, i) { pumpIdle(i); nozzleHome(i); });
 
     // mât + enseigne + prix
     box(scene, 0.35, 9, 0.35, M.metal, X - 18, Y + 4.5, Z - 3);
@@ -283,32 +309,48 @@ export function buildGasStation(scene, env) {
     });
     const dg = new THREE.Mesh(new THREE.BoxGeometry(1.55, 2.1, 0.03), mGlass); dg.position.set(0.85, 1.15, 0); doorG.add(dg);
     const dh = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.3, 0.05), mMetal); dh.position.set(1.55, 1.1, 0.04); doorG.add(dh);
-    const bell = new THREE.Group(); bell.position.set(lx(-4.0), FY + WH - 0.05, lz(6.4)); scene.add(bell);
-    const bellRod = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.55, 0.03), mMetal); bellRod.position.y = -0.27; bell.add(bellRod);
+    // cloche de porte : lamelle de clochettes FIXÉE en haut de la porte (devant, côté intérieur) ; elle tinte dès que la porte bouge
     const brass = new THREE.MeshStandardMaterial({ color: 0xc9a23a, roughness: 0.35, metalness: 0.8 });
-    const bellBody = new THREE.Mesh(new THREE.SphereGeometry(0.08, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.8), brass); bellBody.position.y = -0.6; bell.add(bellBody);
-    const door = { open: 0, hold: 0, foreign: false };
+    const strap = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.05, 0.015), std(0x4a2f1a, 0.9)); strap.position.set(0.95, 2.18, -0.045); doorG.add(strap);
+    const bells = [];
+    [0.55, 0.95, 1.35].forEach(function (bx, i) {
+        const g = new THREE.Group(); g.position.set(bx, 2.16, -0.05); doorG.add(g);
+        const cord = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.09 + i * 0.015, 0.008), mTrim); cord.position.y = -0.05; g.add(cord);
+        const bb = new THREE.Mesh(new THREE.SphereGeometry(0.035, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.85), brass); bb.position.y = -0.12 - i * 0.015; g.add(bb);
+        bells.push(g);
+    });
+    const door = { open: 0, hold: 0, foreign: false, ringed: false };
     let bellAmp = 0, bellT = 0, AC = null;
-    function ding(vol) {
+    function audio() { AC = AC || new (window.AudioContext || window.webkitAudioContext)(); if (AC.state === 'suspended') AC.resume(); return AC; }
+    function jingle(vol, soft) {                 // « ting-a-ling » : trois clochettes de hauteurs différentes qui s'éteignent
         if (vol < 0.03) return;
         try {
-            AC = AC || new (window.AudioContext || window.webkitAudioContext)();
-            if (AC.state === 'suspended') AC.resume();
-            [0, 0.2].forEach(function (off, n) {
-                [[2637, 1], [3951, 0.45], [5274, 0.2]].forEach(function (p) {
-                    const o = AC.createOscillator(), g = AC.createGain(), t0 = AC.currentTime + off;
-                    o.type = 'sine'; o.frequency.value = p[0] * (n ? 0.99 : 1);
-                    g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(0.18 * p[1] * vol, t0 + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 1.3);
-                    o.connect(g); g.connect(AC.destination); o.start(t0); o.stop(t0 + 1.4);
+            const A = audio(), hits = soft ? 4 : 9, base = A.currentTime;
+            for (let n = 0; n < hits; n++) {
+                const f = [2489, 3136, 3729][n % 3] * (1 + (Math.random() - 0.5) * 0.02), t0 = base + n * (0.045 + Math.random() * 0.03), amp = (soft ? 0.09 : 0.16) * vol * Math.pow(0.82, n);
+                [[1, 1], [2.76, 0.35]].forEach(function (pp) {
+                    const o = A.createOscillator(), g = A.createGain();
+                    o.type = 'sine'; o.frequency.value = f * pp[0];
+                    g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(amp * pp[1], t0 + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.5);
+                    o.connect(g); g.connect(A.destination); o.start(t0); o.stop(t0 + 0.55);
                 });
-            });
+            }
         } catch (e) { /* audio impossible : pas grave */ }
     }
-    function ring() {
-        bellAmp = 0.7; bellT = 0;
+    function click(vol) {                         // « clac » du pistolet
+        try {
+            const A = audio(), o = A.createOscillator(), g = A.createGain(), t0 = A.currentTime;
+            o.type = 'square'; o.frequency.setValueAtTime(220, t0); o.frequency.exponentialRampToValueAtTime(90, t0 + 0.05);
+            g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(0.12 * vol, t0 + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.07);
+            if (PL && Math.hypot(PL.x - L.x, PL.z - L.z) > 30) return;
+            o.connect(g); g.connect(A.destination); o.start(t0); o.stop(t0 + 0.08);
+        } catch (e) { /* ignore */ }
+    }
+    function ring(soft) {
+        bellAmp = soft ? 0.4 : 0.9; bellT = 0;
         const d = PL ? Math.hypot(PL.x - lx(-4), PL.z - lz(6)) : 0;
-        ding(Math.max(0, 1 - d / 45));
-        if (L.state === 'asleep') wake('bell');
+        jingle(Math.max(0, 1 - d / 45), !!soft);
+        if (!soft && L.state === 'asleep') wake('bell');
     }
 
     // produits : un seul draw call
@@ -336,7 +378,7 @@ export function buildGasStation(scene, env) {
     edge('reg', 'hall'); edge('reg', 'stool'); edge('hall', 'doorin'); edge('hall', 'jerry'); edge('hall', 'shelfS'); edge('hall', 'aisle');
     edge('doorin', 'doorout'); edge('doorin', 'fridge'); edge('doorout', 'yard'); edge('yard', 'lane'); edge('lane', 'cust');
     edge('shelfS', 'shelfAisle'); edge('aisle', 'bdoor'); edge('bdoor', 'bedroom'); edge('bedroom', 'bedside');
-    function nearestNode(x, z) { let b = 'reg', bd = 1e9; Object.keys(NODE).forEach(function (k) { if (k === 'cust') return; const d = Math.hypot(NODE[k].x - x, NODE[k].z - z); if (d < bd) { bd = d; b = k; } }); return b; }
+    function nearestNode(x, z) { let b = 'reg', bd = 1e9; Object.keys(NODE).forEach(function (k) { if (k === 'cust' || k === 'tmp') return; const d = Math.hypot(NODE[k].x - x, NODE[k].z - z); if (d < bd) { bd = d; b = k; } }); return b; }
     function route(from, to) {
         if (from === to) return [to];
         const prev = {}, q = [from]; prev[from] = null;
@@ -349,7 +391,7 @@ export function buildGasStation(scene, env) {
     const L = {
         x: NODE.reg.x, z: NODE.reg.z, y: FY, heading: Math.PI, anim: 'idle', state: 'idle', mode: 'register', modeUntil: 90,
         path: [], onArrive: null, faceTo: Math.PI, hurry: false, until: 0, after: null, talkUntil: 0, onBed: false,
-        cust: null, greeted: false, sitting: false, dwellUntil: 0, tidyI: 0, fatigue: 0.2, visible: true
+        cust: null, carry: null, carryT: 0, greeted: false, sitting: false, dwellUntil: 0, tidyI: 0, fatigue: 0.2, visible: true
     };
     const queue = [], seen = {};
     let vehMap = {}; const fake = [];
@@ -404,61 +446,129 @@ export function buildGasStation(scene, env) {
         });
     }
 
-    // ----- clients de la pompe -----
+    // ----- clients de la pompe : il va à la voiture, demande les litres, prend le pistolet, le met dans le réservoir, sert, encaisse -----
+    const tanks = {}, REACH = 6.0;            // REACH : longueur utile du tuyau (m)
+    function tankOf(v) {                      // réservoir du véhicule (objects/fuel.js) ; sinon un réservoir interne pour que ça marche déjà
+        if (v.tank && v.tank.cap != null) return v.tank;
+        return tanks[v.id] || (tanks[v.id] = { cap: v.tankCap || 50, level: (v.tankCap || 50) * (0.1 + Math.random() * 0.3) });
+    }
+    function freeOf(v) { const t = tankOf(v); return Math.max(0, t.cap - t.level); }
+    function addFuel(v, dl) {
+        if (v.refuel) { try { v.refuel(dl); return; } catch (e) { /* retombe sur le réservoir */ } }
+        const t = tankOf(v); t.level = Math.min(t.cap, t.level + dl);
+    }
+    // où est la trappe d'essence ? cap du véhicule + décalage (fuelPort : x = côté, y = hauteur, z = avant(+)/arrière(−)) ; il choisit le côté de la pompe
+    function portOf(v, pi) {
+        const p = pumpsW[pi], fp = v.fuelPort || {};
+        const off = fp.x != null ? Math.abs(fp.x) : 0.95, yo = fp.y != null ? fp.y : 0.75, zo = fp.z != null ? fp.z : -1.5;
+        if (v.heading == null || !isFinite(v.heading)) {          // pas de cap connu : on vise le côté de la pompe
+            const dx = p.x - v.x, dz = p.z - v.z, d = Math.hypot(dx, dz) || 1;
+            return { x: v.x + dx / d * off, y: Y + yo, z: v.z + dz / d * off };
+        }
+        const fX = Math.sin(v.heading), fZ = Math.cos(v.heading), leftX = Math.cos(v.heading), leftZ = -Math.sin(v.heading);
+        let best = null, bd = 1e9;
+        [1, -1].forEach(function (sd) {
+            if (fp.side === 'left' && sd < 0) return; if (fp.side === 'right' && sd > 0) return;
+            const x = v.x + fX * zo + leftX * sd * off, z = v.z + fZ * zo + leftZ * sd * off, d = Math.hypot(x - p.x, z - p.z);
+            if (d < bd) { bd = d; best = { x: x, y: Y + yo, z: z }; }
+        });
+        return best;
+    }
+    function standOf(port, pi) { const p = pumpsW[pi]; const dx = p.x - port.x, dz = p.z - port.z, d = Math.hypot(dx, dz) || 1; return { x: port.x + dx / d * 0.9, z: port.z + dz / d * 0.9 }; }
+    function pumpStand(pi) { const p = pumpsW[pi]; return { x: p.x + p.side * 0.95, z: p.z + 0.35 }; }
+    function goDirect(x, z, face, cb) { NODE.tmp = { x: x, z: z, face: face == null ? null : face }; L.path = ['tmp']; L.onArrive = cb || null; L.state = 'moving'; L.sitting = false; L.faceTo = null; }
+    function carryTick(dt) {                  // le pistolet suit sa main, le tuyau suit le pistolet
+        if (L.carry == null) return;
+        const hx = L.x + Math.sin(L.heading) * 0.28, hz = L.z + Math.cos(L.heading) * 0.28;
+        setNozzle(L.carry, { x: hx, y: L.y + 1.0, z: hz }, L.heading, 0.5);
+        L.carryT -= dt; if (L.carryT <= 0) { L.carryT = 0.04; setHose(L.carry, { x: hx, y: L.y + 0.95, z: hz }); }
+    }
     function startCustomer() {
         const c = queue.shift(), v = vehMap[c.id]; if (!v) return;
-        L.cust = c; c.step = 'go'; L.hurry = c.t > 6;
-        const p = pumpsW[c.pump]; let dx = v.x - p.x, dz = v.z - p.z; const d = Math.hypot(dx, dz) || 1;
-        const k = Math.min(1.2, d * 0.5); NODE.cust.x = p.x + dx / d * k; NODE.cust.z = p.z + dz / d * k; NODE.cust.face = null;
+        c.port = portOf(v, c.pump); c.stand = standOf(c.port, c.pump); L.cust = c; c.step = 'go'; L.hurry = c.t > 6;
+        NODE.cust.x = c.stand.x; NODE.cust.z = c.stand.z; NODE.cust.face = null;
         goTo('cust', function () { custArrive(c); });
-        L.state = 'moving';
     }
     function custArrive(c) {
-        const v = vehMap[c.id]; if (!v) return finishCust(false);
-        L.faceTo = Math.atan2(v.x - L.x, v.z - L.z); c.step = 'greet';
-        say(pick(LINES.car));
+        const v = vehMap[c.id]; if (!v) return finishCust();
+        c.port = portOf(v, c.pump); L.faceTo = Math.atan2(c.port.x - L.x, c.port.z - L.z);
+        const p = pumpsW[c.pump];
+        if (Math.hypot(p.hoseStart.x - c.port.x, p.hoseStart.z - c.port.z) > REACH) { say('Pull up closer to the pump.', 4000); c.step = 'close'; c.t0 = clock; L.state = 'cust'; L.anim = 'idle'; return; }
+        c.step = 'greet'; say(pick(LINES.car));
         act('greet', 1.6, function () { askLiters(c); });
     }
     function askLiters(c) {
-        const v = vehMap[c.id]; if (!v) return finishCust(false);
-        if (v.isPlayer) { c.step = 'order'; c.t0 = clock; L.state = 'cust'; L.anim = 'idle'; openOrder(c); }
-        else { c.liters = Math.round(8 + Math.random() * 30); startFuel(c); }
+        const v = vehMap[c.id]; if (!v) return finishCust();
+        const free = Math.floor(freeOf(v));
+        if (free < 1) { say('It’s already full.'); return finishCust(); }
+        if (v.isPlayer) { c.step = 'order'; c.t0 = clock; c.free = free; L.state = 'cust'; L.anim = 'idle'; openOrder(c); }
+        else { c.liters = v.wantLiters ? v.wantLiters(free) : Math.max(1, Math.round(free * (0.6 + Math.random() * 0.4))); startFuel(c); }   // l'avatar choisit ses litres (v.wantLiters)
     }
-    function fullAmount(v) { return v && v.tank ? Math.max(1, Math.round(v.tank.cap - v.tank.level)) : cfg.defaultTank; }
+    function fullAmount(v) { return v ? Math.max(1, Math.floor(freeOf(v))) : cfg.defaultTank; }
     function startFuel(c) {
-        c.liters = Math.min(Math.max(0, Math.floor(c.liters || 0)), Math.floor(ledger.fuelStock));
-        if (c.liters <= 0) { say(pick(LINES.never)); return finishCust(true); }
-        c.step = 'fuel'; c.prog = 0; c.dur = Math.max(3, c.liters / cfg.flowLitersPerSec); c.drawT = 0;
-        L.state = 'cust'; L.anim = 'work';
-        const v = vehMap[c.id]; if (v) L.faceTo = Math.atan2(pumpsW[c.pump].x - L.x, pumpsW[c.pump].z - L.z);
+        const v = vehMap[c.id]; if (!v) return finishCust();
+        c.liters = Math.min(Math.floor(c.liters || 0), Math.floor(freeOf(v)), Math.floor(ledger.fuelStock));
+        if (c.liters <= 0) { say(pick(LINES.never)); return finishCust(); }
+        c.step = 'toPump'; c.done = 0; c.price = cfg.fuelPerLiter;
+        const ps = pumpStand(c.pump), pw = pumpsW[c.pump];
+        goDirect(ps.x, ps.z, Math.atan2(pw.x - ps.x, pw.z - ps.z), function () {
+            c.step = 'take'; drawPump(c.pump, '0.00', '0.00', fmt(c.price) + ' / L'); click(0.6);
+            act('work', 1.0, function () { L.carry = c.pump; c.step = 'toCar'; goDirect(c.stand.x, c.stand.z, null, function () { arriveCar(c); }); });
+        });
+    }
+    function arriveCar(c) {
+        const v = vehMap[c.id]; if (!v) return finishCust();
+        c.port = portOf(v, c.pump); L.faceTo = Math.atan2(c.port.x - L.x, c.port.z - L.z);
+        act('work', 0.9, function () {            // il enfonce le pistolet dans le réservoir
+            const q = c.port, dx = v.x - q.x, dz = v.z - q.z;
+            L.carry = null; setNozzle(c.pump, q, Math.atan2(-dz, dx), Math.PI / 2); setHose(c.pump, { x: q.x, y: q.y + 0.02, z: q.z }); click(0.7);
+            c.step = 'fuel'; c.prog = 0; c.drawT = 0; L.state = 'cust'; L.anim = 'work';
+        });
     }
     function endFuel(c) {
-        const v = vehMap[c.id], total = c.liters * cfg.fuelPerLiter;
-        ledger.fuelStock -= c.liters;
-        if (v && v.refuel) { try { v.refuel(c.liters); } catch (e) { /* ignore */ } }
-        drawPump(c.pump, 'L ' + c.liters.toFixed(1), fmt(total));
-        const ok = charge(v && v.isPlayer ? 'player' : c.id, total, 'fuel');
-        if (ok === false) { say('You can’t pay? Then you owe me ' + fmt(total) + '. I’ll remember that.', 5000); emit({ kind: 'fuel', buyer: c.id, liters: c.liters, total: total, paid: false }); }
-        else { ledger.till += total; say(c.liters + ' liters. That’s ' + fmt(total) + '. Drive safe.', 4500); emit({ kind: 'fuel', buyer: v && v.isPlayer ? 'player' : c.id, liters: c.liters, total: total, paid: true }); }
-        act('greet', 2.2, function () { finishCust(true); });
+        const total = c.done * c.price, v = vehMap[c.id];
+        drawPump(c.pump, c.done.toFixed(2), fmt(total), fmt(c.price) + ' / L'); click(0.7);
+        ledger.fuelStock -= c.done; c.total = total; c.buyer = v && v.isPlayer ? 'player' : c.id; c.step = 'back';
+        act('work', 0.9, function () {            // il retire le pistolet et le rapporte à la pompe
+            L.carry = c.pump;
+            const ps = pumpStand(c.pump), pw = pumpsW[c.pump];
+            goDirect(ps.x, ps.z, Math.atan2(pw.x - ps.x, pw.z - ps.z), function () { act('work', 0.8, function () { L.carry = null; nozzleHome(c.pump); bill(c); }); });
+        });
     }
-    function finishCust(served) {
-        const c = L.cust; if (c) { pumpIdle(c.pump); (seen[c.id] || (seen[c.id] = { t: 0, cd: 0, last: clock })).cd = cfg.carCooldownSec; }
-        closePanel(); L.cust = null; L.state = 'idle'; L.anim = 'idle'; L.faceTo = null;
+    function bill(c) {
+        if (c.done < 0.05) return finishCust();
+        const ok = charge(c.buyer, c.total, 'fuel');
+        if (ok === false) { say('You can’t pay? Then you owe me ' + fmt(c.total) + '. I’ll remember that.', 5000); emit({ kind: 'fuel', buyer: c.buyer, liters: +c.done.toFixed(2), total: c.total, paid: false }); }
+        else { ledger.till += c.total; say(c.done.toFixed(1) + ' liters. That’s ' + fmt(c.total) + '. Drive safe.', 4500); emit({ kind: 'fuel', buyer: c.buyer, liters: +c.done.toFixed(2), total: c.total, paid: true }); }
+        act('greet', 2.2, function () { finishCust(); });
+    }
+    function finishCust() {
+        const c = L.cust;
+        if (c) { nozzleHome(c.pump); pumpIdle(c.pump); (seen[c.id] || (seen[c.id] = { t: 0, cd: 0, last: clock })).cd = cfg.carCooldownSec; }
+        closePanel(); L.cust = null; L.carry = null; L.state = 'idle'; L.anim = 'idle'; L.faceTo = null;
     }
     function custTick(dt) {
         const c = L.cust; if (!c) { L.state = 'idle'; return; }
         const v = vehMap[c.id];
-        if (c.step === 'order') {
+        if (c.step === 'close') {                 // trop loin du tuyau : il attend que la voiture avance
+            if (!v || clock - c.t0 > 30) { say(pick(LINES.never)); finishCust(); return; }
+            c.port = portOf(v, c.pump); const pw = pumpsW[c.pump];
+            if (Math.hypot(pw.hoseStart.x - c.port.x, pw.hoseStart.z - c.port.z) <= REACH && (v.speed || 0) < cfg.carStopSpeed) {
+                c.stand = standOf(c.port, c.pump); goDirect(c.stand.x, c.stand.z, null, function () { custArrive(c); });
+            }
+        } else if (c.step === 'order') {
             L.anim = 'idle'; if (L.faceTo != null) turnTo(L.faceTo, dt, 5);
-            if (c.chosen) { if (c.liters > 0) startFuel(c); else { say(pick(LINES.never)); finishCust(false); } return; }
-            if (!v || Math.hypot(v.x - pumpsW[c.pump].x, v.z - pumpsW[c.pump].z) > cfg.carRadius + 4) { say(pick(LINES.never)); finishCust(false); return; }
-            if (clock - c.t0 > cfg.orderTimeoutSec) { say('Alright, then.'); finishCust(false); }
+            if (c.chosen) { if (c.liters > 0) startFuel(c); else { say(pick(LINES.never)); finishCust(); } return; }
+            if (!v || Math.hypot(v.x - pumpsW[c.pump].x, v.z - pumpsW[c.pump].z) > cfg.carRadius + 4) { say(pick(LINES.never)); finishCust(); return; }
+            if (clock - c.t0 > cfg.orderTimeoutSec) { say('Alright, then.'); finishCust(); }
         } else if (c.step === 'fuel') {
-            c.prog += dt; const k = Math.min(1, c.prog / c.dur);
+            if (!v) { c.liters = c.done; endFuel(c); return; }                  // la voiture est partie pendant le plein
+            const remain = c.liters - c.done; c.prog += dt;
+            let flow = cfg.flowLitersPerSec * Math.min(1, 0.3 + c.prog / 1.5); if (remain < 2) flow *= Math.max(0.25, remain / 2);   // débit qui monte, puis ralentit à la fin
+            const dl = Math.min(remain, flow * dt); c.done += dl; addFuel(v, dl);
             if (L.faceTo != null) turnTo(L.faceTo, dt, 5);
-            c.drawT -= dt; if (c.drawT <= 0) { c.drawT = 0.1; drawPump(c.pump, 'L ' + (c.liters * k).toFixed(1), fmt(c.liters * k * cfg.fuelPerLiter)); }
-            if (k >= 1) endFuel(c);
+            c.drawT -= dt; if (c.drawT <= 0) { c.drawT = 0.08; drawPump(c.pump, c.done.toFixed(2), fmt(c.done * c.price), fmt(c.price) + ' / L'); }
+            if (c.liters - c.done <= 0.005) { c.done = c.liters; endFuel(c); }
         }
     }
     function vehicleTick(dt) {
@@ -470,7 +580,7 @@ export function buildGasStation(scene, env) {
             const st = seen[v.id] || (seen[v.id] = { t: 0, cd: 0, last: clock }); st.last = clock;
             if (st.cd > 0) { st.cd -= dt; if (bd > 15) st.cd = 0; }
             const busyWith = (L.cust && L.cust.id === v.id) || queue.some(function (q) { return q.id === v.id; });
-            if (bd < cfg.carRadius && (v.speed || 0) < cfg.carStopSpeed && st.cd <= 0 && !busyWith && L.mode !== 'away') {
+            if (bd < cfg.carRadius && (v.speed || 0) < cfg.carStopSpeed && st.cd <= 0 && !busyWith && L.mode !== 'away' && freeOf(v) >= 1) {
                 st.t += dt; if (st.t >= cfg.carStopSec) { queue.push({ id: v.id, pump: best, t: 0 }); st.t = 0; }
             } else st.t = 0;
         });
@@ -496,6 +606,7 @@ export function buildGasStation(scene, env) {
             } else { L.x += dx / d * sp * dt; L.z += dz / d * sp * dt; turnTo(Math.atan2(dx, dz), dt, 10); }
         }
         L.y = L.onBed ? L.y : (inShopXZ(L.x, L.z) ? FY : Y);
+        carryTick(dt);
         if (L.path.length) return;
         if (L.state === 'busy') { if (L.faceTo != null) turnTo(L.faceTo, dt, 5); if (clock >= L.until) { const f = L.after; L.after = null; L.state = 'idle'; L.anim = 'idle'; if (f) f(); } return; }
         if (L.state === 'cust') { custTick(dt); return; }
@@ -639,13 +750,24 @@ export function buildGasStation(scene, env) {
         if (near) door.hold = 1.4; else door.hold -= dt;
         const target = door.hold > 0 ? 1 : 0, prev = door.open;
         door.open += Math.sign(target - door.open) * Math.min(Math.abs(target - door.open), dt * 2.2);
-        if (prev < 0.08 && door.open >= 0.08 && door.foreign) ring();
+        if (prev < 0.08 && door.open >= 0.08 && door.foreign) { door.ringed = true; ring(false); }
+        else if (prev >= 0.08 && door.open < 0.08 && door.ringed) { door.ringed = false; ring(true); }
         if (door.open <= 0.001) door.foreign = false;
         doorG.rotation.y = door.open * 1.45;
-        if (bellAmp > 0.005) { bellT += dt; bell.rotation.z = Math.sin(bellT * 20) * bellAmp; bellAmp *= Math.exp(-dt * 1.6); } else bell.rotation.z = 0;
+        bellAmp = Math.max(bellAmp, Math.min(0.8, Math.abs(door.open - prev) / Math.max(dt, 0.001) * 0.5));
+        bellT += dt;
+        bells.forEach(function (b, i) { b.rotation.z = Math.sin(bellT * (17 + i * 2.5) + i) * bellAmp; b.rotation.x = Math.cos(bellT * (13 + i * 3)) * bellAmp * 0.5; });
+        bellAmp = bellAmp > 0.004 ? bellAmp * Math.exp(-dt * 2.2) : 0;
     }
-    function update(dt, ctx) {
-        dt = Math.min(Math.max(dt || 0.016, 0), 0.1); clock += dt;
+    let lastT = 0;
+    function update(_dt, ctx) {                  // chronomètre lui-même : peu importe ce que l'appelant passe en 1er argument
+        const nowS = (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000;
+        const dt = lastT ? nowS - lastT : 0.016; lastT = nowS;
+        if (dt < 0.0005) return;                // double appel dans la même image
+        tick(Math.min(dt, 0.1), ctx);
+    }
+    function tick(dt, ctx) {
+        clock += dt;
         PL = playerPos(ctx);
         doorTick(dt); vehicleTick(dt); louTick(dt); uiTick();
         const asleep = L.state === 'asleep', away = L.mode === 'away';
@@ -656,16 +778,17 @@ export function buildGasStation(scene, env) {
     // API pour le reste du jeu (avatar-body.js, society.js, outside.js)
     // ==========================================
     const api = {
-        update: update, config: cfg, catalog: GAS_CATALOG, ledger: ledger,
-        attach: function (h) { Object.assign(host, h || {}); return api; },      // { say(id,text,ms), charge(buyer,total,why)->bool, vehicles()->[{id,x,z,speed,isPlayer,tank,refuel}], visitors(), onSale(detail), player() }
-        controls: function (actor) { return !!actor && (actor.id === 'lou') && !actor.travel && (actor.job === 'gas' || /^gas/.test(String(actor.loc || ''))); },
+        update: update, tick: tick, config: cfg, catalog: GAS_CATALOG, ledger: ledger,
+        attach: function (h) { Object.assign(host, h || {}); return api; },
+        attachDefaults: function (h) { Object.keys(h || {}).forEach(function (k) { if (!host[k]) host[k] = h[k]; }); return api; },   // ne remplace pas ce que outside.js a déjà branché      // { say(id,text,ms), charge(buyer,total,why)->bool, vehicles()->[{id,x,z,speed,isPlayer,tank,refuel}], visitors(), onSale(detail), player() }
+        controls: function (actor) { return !actor || (!actor.travel && !actor.ride); },      // Lou est toujours à son poste (setMode('away') pour l'envoyer ailleurs)
         pose: function () { return { x: L.x, y: L.y, z: L.z, heading: normAng(L.heading), anim: L.state === 'moving' && !L.path.length ? 'idle' : L.anim, visible: L.visible }; },
         status: function () { return 'Lou (' + L.mode + ', ' + L.state + (L.cust ? ', serving a car' : '') + ', tired ' + Math.round(Math.min(1, L.fatigue) * 100) + '%).'; },
         setMode: setMode, wake: function () { wake('bell'); }, ring: ring,
         isAsleep: function () { return L.state === 'asleep'; },
         bed: bedPos,
         test: {                                                                    // tests dans la console (F12)
-            car: function (pump, isPlayer) { const p = pumpsW[pump || 0]; const v = { id: 'test' + Math.floor(Math.random() * 1e6), x: p.x + 2.2, z: p.z, speed: 0, isPlayer: !!isPlayer, tank: { cap: 50, level: 12 }, refuel: function (l) { console.log('[gas] +' + l + ' L'); } }; fake.push(v); return v.id; },
+            car: function (pump, isPlayer, heading) { const p = pumpsW[pump || 0]; const v = { id: 'test' + Math.floor(Math.random() * 1e6), x: p.x + 2.4, z: p.z, heading: heading == null ? 0 : heading, speed: 0, isPlayer: !!isPlayer, tank: { cap: 50, level: 8 } }; fake.push(v); return v.id; },
             leave: function () { fake.length = 0; }
         }
     };

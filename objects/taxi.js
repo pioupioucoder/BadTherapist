@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { loadMixamoAvatar } from './avatar-loader.js';
+import { loadMixamoAvatar } from '../avatar-loader.js';
 
 // ==========================================
 // BAD THERAPIST — LE TAXI D'OLIVER (taxi.js)

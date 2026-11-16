@@ -38,7 +38,18 @@ export const INTERIOR_X = 1200;
 // ── Evelyn (Mixamo) : dossier avatars/evelyn/ à côté de world_base.html ──
 const AVATAR_DIR = 'avatars/evelyn/';
 const AVATAR_MODEL = 'evelyn.fbx';
-const AVATAR_ANIMS = { sit: 'Sitting.fbx', sit_talk: 'Sitting Talking.fbx' };   // noms réels de tes fichiers
+// Animations d'Evelyn (noms réels de avatars/evelyn/). Les 2 premières suffisent pour la séance ; les autres servent à sa vie dans la maison.
+const AVATAR_ANIMS = {
+  sit: 'Sitting.fbx', sit_talk: 'Sitting Talking.fbx',
+  walk: 'Walking.fbx', sleep: 'Sleeping Idle.fbx',
+  stand: 'Standing Greeting.fbx',                     // « debout » : faute d'animation « debout qui attend », on prend celle-ci
+  openDoor: 'OpeningDoor.fbx', closeDoor: 'ClosingDoor.fbx'
+};
+const AVATAR_ANIMS_MIN = { sit: 'Sitting.fbx', sit_talk: 'Sitting Talking.fbx' };   // secours si une des autres ne se charge pas
+// Où elle dort (écart par rapport au centre du lit) : à régler selon l'animation « Sleeping Idle »
+const SLEEP_POSE = { x: 0, y: 0, z: 0, yaw: 0 };
+// Boutons d'action à l'écran (OPEN, SWITCH ON...) : false = on clique / touche directement les objets (curseur main)
+const BUTTONS = false;
 const AVATAR_HEIGHT = 1.7;
 const AVATAR_OFFSET = { x: 0, y: 0, z: 0 };     // à ajuster si elle n'est pas bien assise
 const AVATAR_YAW = 0;                           // 0 = elle regarde vers la porte de la pièce (vers le joueur)
@@ -299,7 +310,10 @@ export function buildWork(parent, opts) {
   // Pas de vraie lumière par pièce : aucune fuite à travers les murs, et rien à recompiler quand on allume.
 
   const WARM = new THREE.Color(1.0, 0.86, 0.62);
-  const E_OFF = 0.05, E_ON = 0.5;
+  const E_OFF = 0.03, E_ON = 0.46;
+  // Les murs ne renvoient que 28 % des lumières de la rue (porche, lampadaires) : il n'y a pas d'ombres dans ce jeu,
+  // donc sans ça le porche éclairerait toute la maison à travers les murs, même interrupteur éteint.
+  const ALB = 0.28;
   const REG = { waiting: [], corridor: [], session: [], bedroom: [] };
   const rcache = {};
 
@@ -307,17 +321,17 @@ export function buildWork(parent, opts) {
     o = o || {};
     const key = room + '|' + color + '|' + (o.r === undefined ? '' : o.r) + '|' + (o.mapId || '');
     if (rcache[key]) return rcache[key];
-    const m = new THREE.MeshStandardMaterial({ color: color, roughness: o.r === undefined ? 0.9 : o.r, metalness: o.m || 0 });
+    const m = new THREE.MeshStandardMaterial({ color: new THREE.Color(color).multiplyScalar(ALB), roughness: o.r === undefined ? 0.9 : o.r, metalness: o.m || 0 });
     if (o.map) { m.map = o.map; m.emissiveMap = o.map; m.userData.tile = o.tile || [1, 1]; }
-    REG[room].push({ mat: m, base: new THREE.Color(color) });
+    REG[room].push({ mat: m, base: new THREE.Color(color), k: 1 });
     rcache[key] = m;
     return m;
   }
 
   // Tableaux / affiches : une texture sur un matériau de pièce
   function paintMat(room, tex) {
-    const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8, map: tex, emissiveMap: tex });
-    REG[room].push({ mat: m, base: new THREE.Color(0xffffff) });
+    const m = new THREE.MeshStandardMaterial({ color: new THREE.Color(0xffffff).multiplyScalar(0.5), roughness: 0.8, map: tex, emissiveMap: tex });
+    REG[room].push({ mat: m, base: new THREE.Color(0xffffff), k: 1.7 });
     return m;
   }
 
@@ -387,8 +401,8 @@ export function buildWork(parent, opts) {
     geo.dispose();
   }
 
-  function addSphere(r, mats, x, y, z, sx, sy, sz) {
-    const geo = new THREE.SphereGeometry(r, 10, 8);
+  function addSphere(r, mats, x, y, z, sx, sy, sz, segs) {
+    const geo = new THREE.SphereGeometry(r, segs || 10, Math.max(6, Math.round((segs || 10) * 0.8)));
     if (sx !== undefined) geo.scale(sx, sy, sz);
     addGeo(geo, mats, x, y, z, 0);
     geo.dispose();
@@ -409,9 +423,29 @@ export function buildWork(parent, opts) {
   // Objet d'ameublement tourné de `yaw` autour de (x, z) : fb(largeur, hauteur, profondeur, matériau, dx, y, dz)
   function furn(x, z, yaw) {
     const c = Math.cos(yaw), s = Math.sin(yaw);
-    return function (w, hh, d, mat, lx, ly, lz) {
+    const fb = function (w, hh, d, mat, lx, ly, lz) {
       addBox(w, hh, d, mat, x + lx * c + lz * s, ly, z - lx * s + lz * c, yaw);
     };
+    fb.r = function (w, hh, d, r, mat, lx, ly, lz) {            // boîte aux arêtes arrondies (coussins, matelas...)
+      addRBox(w, hh, d, r, mat, x + lx * c + lz * s, ly, z - lx * s + lz * c, yaw);
+    };
+    return fb;
+  }
+
+  // Boîte aux arêtes arrondies (le long de z) : un cœur en croix + 4 cylindres d'angle
+  function addRBox(w, hh, d, r, mat, x, y, z, yaw) {
+    r = Math.min(r, w / 2 - 0.002, hh / 2 - 0.002);
+    yaw = yaw || 0;
+    const c = Math.cos(yaw), s = Math.sin(yaw);
+    addBox(w - 2 * r, hh, d, mat, x, y, z, yaw);
+    addBox(w, hh - 2 * r, d, mat, x, y, z, yaw);
+    const geo = new THREE.CylinderGeometry(r, r, d, 10);
+    geo.rotateX(Math.PI / 2);
+    [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(function (k) {
+      const lx = k[0] * (w / 2 - r), ly = k[1] * (hh / 2 - r);
+      addGeo(geo, mat, x + lx * c, y + ly, z - lx * s, yaw);
+    });
+    geo.dispose();
   }
 
   // ==========================================
@@ -790,15 +824,16 @@ export function buildWork(parent, opts) {
 
   // Neige accumulée contre les murs
   const lumpGeo = new THREE.SphereGeometry(1, 8, 5);
+  // (les congères restent à l'extérieur : le centre est à 1,5 m du mur et la plus grosse fait 0,9 m de rayon)
   for (let i = 0; i < 26; i++) {
     const t = i / 26 * Math.PI * 2;
-    const rx = (W / 2 + 0.7), rz = (D / 2 + 0.7);
-    const px = Math.cos(t) * rx + (rnd() - 0.5) * 0.6;
-    const pz = Math.sin(t) * rz + (rnd() - 0.5) * 0.6;
-    if (pz > FZ - 0.2 && Math.abs(px) < 2.4) continue;   // pas devant le porche
-    const hh = 0.25 + rnd() * 0.3;
+    const rx = (W / 2 + 1.5), rz = (D / 2 + 1.5);
+    const px = Math.cos(t) * rx + (rnd() - 0.5) * 0.5;
+    const pz = Math.sin(t) * rz + (rnd() - 0.5) * 0.5;
+    if (pz > FZ - 0.2 && Math.abs(px) < 3.2) continue;   // pas devant le porche
+    const hh = 0.22 + rnd() * 0.25;
     const lump = new THREE.Mesh(lumpGeo, mSnow);
-    lump.scale.set(0.9 + rnd() * 0.8, hh, 0.7 + rnd() * 0.5);
+    lump.scale.set(0.5 + rnd() * 0.4, hh, 0.5 + rnd() * 0.4);
     lump.position.set(px, hh * 0.3 - 0.04, pz);
     h.add(lump);
   }
@@ -831,6 +866,38 @@ export function buildWork(parent, opts) {
 
   const ITEMS = {};
   function addItem(id, o) { o.id = id; ITEMS[id] = o; return o; }
+
+  // Sièges : on s'assoit en cliquant dessus (zone de clic invisible autour du meuble)
+  const SITS = {};
+  let sitHook = null;
+  function addSit(id, o) {
+    o.id = id;
+    SITS[id] = o;
+    const hit = new THREE.Mesh(new THREE.BoxGeometry(o.hit.w, o.hit.h, o.hit.d), new THREE.MeshBasicMaterial());
+    hit.visible = false;
+    hit.position.set(o.hit.x, F + o.hit.h / 2, o.hit.z);
+    hit.userData.use = 'sit:' + id;
+    h.add(hit);
+    addItem('sit:' + id, {
+      rooms: o.rooms, x: o.x, z: o.z, range: 1.9,
+      enabled: function () { return !o.enabled || o.enabled(); },
+      label: function () { return 'SIT'; },
+      fn: function () { if (sitHook) sitHook(id); }
+    });
+  }
+
+  // Portes de placard, tiroirs : t va de 0 (fermé) à 1 (ouvert), apply(e) pose les pièces
+  const openables = [];
+  function addOpenable(id, o) {
+    const op = { id: id, t: 0, goal: 0, apply: o.apply };
+    openables.push(op);
+    addItem(id, {
+      rooms: o.rooms, x: o.x, z: o.z, range: o.range || 2.2,
+      label: function () { return op.goal ? 'CLOSE' : 'OPEN'; },
+      fn: function () { op.goal = op.goal ? 0 : 1; }
+    });
+    return op;
+  }
 
   // ==========================================
   // PORTES : battant pivotant, on voit à travers en direct, collision seulement quand elle est fermée
@@ -911,37 +978,72 @@ export function buildWork(parent, opts) {
     })();
   }
 
-  // Tableau d'Evelyn (peint à la volée ; si images/evelyn-tableau.jpg existe, c'est cette image qui s'affiche)
-  function paintingTex() {
-    const c = cv(320, 220), x = c.getContext('2d');
-    const sky = x.createLinearGradient(0, 0, 0, 130);
-    sky.addColorStop(0, '#1b2a4a'); sky.addColorStop(0.7, '#6a5a7a'); sky.addColorStop(1, '#e0a070');
-    x.fillStyle = sky; x.fillRect(0, 0, 320, 220);
-    x.fillStyle = '#f2e8c8'; x.beginPath(); x.arc(250, 48, 16, 0, 7); x.fill();
-    x.fillStyle = 'rgba(40,50,80,0.9)';
-    x.beginPath(); x.moveTo(0, 130); x.lineTo(70, 90); x.lineTo(130, 125); x.lineTo(200, 80); x.lineTo(320, 130); x.lineTo(320, 140); x.lineTo(0, 140); x.fill();
-    x.fillStyle = '#dfe6ee'; x.fillRect(0, 135, 320, 85);
-    x.fillStyle = 'rgba(120,140,170,0.35)'; for (let i = 0; i < 40; i++) x.fillRect(rnd() * 320, 140 + rnd() * 80, 20 + rnd() * 40, 2);
-    for (let i = 0; i < 14; i++) {                                   // sapins
-      const px = 10 + i * 24 + rnd() * 10, py = 150 + rnd() * 50, s = 18 + rnd() * 22;
-      x.fillStyle = '#0e1a22';
-      x.beginPath(); x.moveTo(px, py - s * 2.2); x.lineTo(px - s * 0.7, py); x.lineTo(px + s * 0.7, py); x.fill();
+  // Tableaux d'Evelyn : peints à la volée. Si images/evelynpic1.jpg ... evelynpic5.jpg existent, ce sont elles qui s'affichent.
+  //   evelynpic1 = le tableau de la chambre (paysage), evelynpic2..5 = les cadres du couloir (portrait)
+  const PIC_BASE = 'images/evelynpic';
+  function artTex(kind) {
+    const land = kind === 1;
+    const c = cv(land ? 320 : 220, land ? 220 : 290), x = c.getContext('2d'), W2 = c.width, H2 = c.height;
+    if (kind === 1) {                                                // crépuscule sur la neige
+      const sky = x.createLinearGradient(0, 0, 0, 130);
+      sky.addColorStop(0, '#1b2a4a'); sky.addColorStop(0.7, '#6a5a7a'); sky.addColorStop(1, '#e0a070');
+      x.fillStyle = sky; x.fillRect(0, 0, 320, 220);
+      x.fillStyle = '#f2e8c8'; x.beginPath(); x.arc(250, 48, 16, 0, 7); x.fill();
+      x.fillStyle = 'rgba(40,50,80,0.9)';
+      x.beginPath(); x.moveTo(0, 130); x.lineTo(70, 90); x.lineTo(130, 125); x.lineTo(200, 80); x.lineTo(320, 130); x.lineTo(320, 140); x.lineTo(0, 140); x.fill();
+      x.fillStyle = '#dfe6ee'; x.fillRect(0, 135, 320, 85);
+      for (let i = 0; i < 14; i++) {
+        const px = 10 + i * 24 + rnd() * 10, py = 150 + rnd() * 50, s2 = 18 + rnd() * 22;
+        x.fillStyle = '#0e1a22';
+        x.beginPath(); x.moveTo(px, py - s2 * 2.2); x.lineTo(px - s2 * 0.7, py); x.lineTo(px + s2 * 0.7, py); x.fill();
+      }
+      x.fillStyle = '#2a1c14'; x.fillRect(120, 150, 60, 38);
+      x.beginPath(); x.moveTo(114, 150); x.lineTo(150, 126); x.lineTo(186, 150); x.fill();
+      x.fillStyle = '#ffc060'; x.fillRect(132, 160, 14, 14); x.fillRect(156, 160, 14, 14);
+    } else if (kind === 2) {                                         // aplats abstraits
+      x.fillStyle = '#e9dcc0'; x.fillRect(0, 0, W2, H2);
+      const cols = ['#b5523b', '#2f4b6e', '#d6a84a', '#4e7a64'];
+      for (let i = 0; i < 4; i++) { x.fillStyle = cols[i]; x.fillRect(20 + i * 12, 30 + i * 52, 120 + (i % 2) * 40, 44); }
+      x.fillStyle = '#1c1a18'; x.beginPath(); x.arc(150, 80, 34, 0, 7); x.fill();
+      x.strokeStyle = '#1c1a18'; x.lineWidth = 4; x.beginPath(); x.moveTo(30, 250); x.lineTo(190, 190); x.stroke();
+    } else if (kind === 3) {                                         // phare dans la brume
+      const sky = x.createLinearGradient(0, 0, 0, H2); sky.addColorStop(0, '#9fb0b8'); sky.addColorStop(1, '#4a5c68');
+      x.fillStyle = sky; x.fillRect(0, 0, W2, H2);
+      x.fillStyle = '#2c3a44'; x.fillRect(0, 210, W2, 80);
+      x.fillStyle = '#e9e4da'; x.beginPath(); x.moveTo(95, 210); x.lineTo(125, 210); x.lineTo(118, 80); x.lineTo(102, 80); x.fill();
+      x.fillStyle = '#b5523b'; x.fillRect(100, 120, 20, 14); x.fillRect(98, 165, 24, 14);
+      x.fillStyle = '#2a2a2a'; x.fillRect(98, 66, 24, 14);
+      x.fillStyle = 'rgba(255,230,150,0.55)'; x.beginPath(); x.moveTo(110, 73); x.lineTo(220, 40); x.lineTo(220, 110); x.fill();
+    } else if (kind === 4) {                                         // lune sur l'eau
+      const sky = x.createLinearGradient(0, 0, 0, H2); sky.addColorStop(0, '#0f1a30'); sky.addColorStop(0.6, '#2a3a5a'); sky.addColorStop(1, '#101a28');
+      x.fillStyle = sky; x.fillRect(0, 0, W2, H2);
+      x.fillStyle = '#f0ead0'; x.beginPath(); x.arc(110, 90, 30, 0, 7); x.fill();
+      for (let i = 0; i < 12; i++) { x.fillStyle = 'rgba(240,234,208,' + (0.5 - i * 0.04) + ')'; x.fillRect(110 - 26 + i * 2, 170 + i * 9, 52 - i * 4, 3); }
+      x.fillStyle = '#05080e'; x.beginPath(); x.moveTo(0, 168); x.lineTo(60, 150); x.lineTo(120, 168); x.lineTo(220, 156); x.lineTo(220, 290); x.lineTo(0, 290); x.fill();
+      x.fillStyle = 'rgba(160,190,230,0.25)'; for (let i = 0; i < 16; i++) x.fillRect(rnd() * 200, 180 + rnd() * 100, 20 + rnd() * 40, 2);
+    } else {                                                         // vase et fleurs
+      x.fillStyle = '#d9c9a8'; x.fillRect(0, 0, W2, H2);
+      x.fillStyle = '#8a6a48'; x.fillRect(0, 215, W2, 75);
+      x.fillStyle = '#3f6a7a'; x.beginPath(); x.moveTo(85, 250); x.lineTo(135, 250); x.lineTo(145, 190); x.lineTo(75, 190); x.fill();
+      x.strokeStyle = '#3a5a34'; x.lineWidth = 3;
+      for (let i = 0; i < 7; i++) { const ex = 70 + i * 13, ey = 60 + (i % 3) * 22; x.beginPath(); x.moveTo(110, 192); x.lineTo(ex, ey); x.stroke();
+        x.fillStyle = ['#c9503c', '#e8c24a', '#d889a8'][i % 3]; x.beginPath(); x.arc(ex, ey, 15, 0, 7); x.fill(); }
     }
-    x.fillStyle = '#2a1c14'; x.fillRect(120, 150, 60, 38);          // chalet
-    x.beginPath(); x.moveTo(114, 150); x.lineTo(150, 126); x.lineTo(186, 150); x.fill();
-    x.fillStyle = '#ffc060'; x.fillRect(132, 160, 14, 14); x.fillRect(156, 160, 14, 14);
     return srgb(new THREE.CanvasTexture(c));
   }
+  function loadPic(mat, n) { loadInto(mat, [PIC_BASE + n + '.jpg', PIC_BASE + n + '.png', PIC_BASE + n + '.webp']); }
 
   function noticeTex() {
-    const c = cv(200, 260), x = c.getContext('2d');
-    x.fillStyle = '#efe6d2'; x.fillRect(0, 0, 200, 260);
-    x.strokeStyle = '#8a6a3a'; x.lineWidth = 6; x.strokeRect(6, 6, 188, 248);
-    x.fillStyle = '#3a2a1c'; x.textAlign = 'center';
-    x.font = 'bold 26px serif'; x.fillText('PLEASE', 100, 70); x.fillText('WAIT', 100, 102);
-    x.font = '16px serif'; x.fillStyle = '#5a4630';
-    x.fillText('Evelyn will call', 100, 150); x.fillText('you in shortly.', 100, 172);
-    x.fillText('Please keep your', 100, 205); x.fillText('phone silent.', 100, 227);
+    const c = cv(400, 200), x = c.getContext('2d');
+    x.fillStyle = '#efe6d2'; x.fillRect(0, 0, 400, 200);
+    x.strokeStyle = '#9a7a44'; x.lineWidth = 8; x.strokeRect(8, 8, 384, 184);
+    x.strokeStyle = '#9a7a44'; x.lineWidth = 2; x.strokeRect(20, 20, 360, 160);
+    x.fillStyle = '#3a2a1c'; x.textAlign = 'center'; x.textBaseline = 'middle';
+    x.font = 'bold 27px serif';
+    x.fillText('EVELYN, THE THERAPIST,', 200, 62);
+    x.fillText('WILL WELCOME YOU SOON.', 200, 98);
+    x.font = 'italic 24px serif'; x.fillStyle = '#6a5236';
+    x.fillText('Please wait.', 200, 146);
     return srgb(new THREE.CanvasTexture(c));
   }
 
@@ -970,13 +1072,12 @@ export function buildWork(parent, opts) {
 
   function armchair(room, x, z, yaw, mat) {
     const fb = furn(x, z, yaw), leg = rm(room, 0x1c1410, { r: 0.9 });
-    fb(0.62, 0.09, 0.6, mat, 0, F + 0.45, 0);
-    fb(0.62, 0.7, 0.09, mat, 0, F + 0.82, -0.28);
-    fb(0.08, 0.06, 0.55, mat, -0.36, F + 0.68, 0);
-    fb(0.08, 0.06, 0.55, mat, 0.36, F + 0.68, 0);
-    fb(0.07, 0.24, 0.07, mat, -0.36, F + 0.56, 0.1);
-    fb(0.07, 0.24, 0.07, mat, 0.36, F + 0.56, 0.1);
-    [[-0.27, -0.25], [0.27, -0.25], [-0.27, 0.25], [0.27, 0.25]].forEach(function (p) { fb(0.06, 0.42, 0.06, leg, p[0], F + 0.21, p[1]); });
+    [[-0.3, -0.26], [0.3, -0.26], [-0.3, 0.26], [0.3, 0.26]].forEach(function (p) { fb(0.06, 0.2, 0.06, leg, p[0], F + 0.1, p[1]); });
+    fb(0.72, 0.2, 0.66, mat, 0, F + 0.3, 0);                          // caisse
+    fb.r(0.5, 0.16, 0.56, 0.07, mat, 0, F + 0.48, 0.04);               // coussin d'assise
+    fb.r(0.62, 0.62, 0.2, 0.09, mat, 0, F + 0.8, -0.27);               // dossier
+    fb.r(0.16, 0.34, 0.66, 0.07, mat, -0.36, F + 0.55, 0);             // accoudoirs
+    fb.r(0.16, 0.34, 0.66, 0.07, mat, 0.36, F + 0.55, 0);
   }
 
   // Plinthes, sans traverser les portes. gaps = [[a, b], ...] le long du mur
@@ -1058,44 +1159,55 @@ export function buildWork(parent, opts) {
     addSwitch('bedroom', 4.2, Z_P2 - PT / 2, -1);
 
     // ═════════ SALLE D'ATTENTE ═════════
-    const sofa = rm('waiting', 0x4b5a5e, { r: 0.9 }), leatherW = rm('waiting', 0x5a3a2c, { r: 0.7 });
+    const sofaM = rm('waiting', 0x4b5a5e, { r: 0.95 }), sofaC = rm('waiting', 0x5f7176, { r: 0.95 }), leatherW = rm('waiting', 0x6a3f2c, { r: 0.7 });
+    const woodW = rm('waiting', 0x6a4a30, { r: 0.7 }), woodDarkW = rm('waiting', 0x1c1410, { r: 0.9 });
     rug('waiting', -3.8, 3.0, 2.8, 1.9, 0x6a3a3a);
     (function () {                                                    // canapé contre le mur gauche, face à +x
-      const fb = furn(-5.2, 3.0, Math.PI / 2);
-      fb(0.9, 0.4, 2.1, sofa, 0, F + 0.2, 0);
-      fb(0.9, 0.12, 2.1, rm('waiting', 0x5d6d72, { r: 0.9 }), 0, F + 0.45, 0.05);
-      fb(0.2, 0.55, 2.1, sofa, 0, F + 0.72, -0.4);
-      fb(0.82, 0.28, 0.18, sofa, 0, F + 0.55, -1.0);
-      fb(0.82, 0.28, 0.18, sofa, 0, F + 0.55, 1.0);
-      solid(-5.7, -4.75, 1.95, 4.05);
+      const fb = furn(-5.15, 3.0, Math.PI / 2);
+      fb(2.2, 0.12, 0.84, woodDarkW, 0, F + 0.06, 0);
+      fb(2.2, 0.26, 0.84, sofaM, 0, F + 0.25, 0);
+      fb.r(1.0, 0.2, 0.7, 0.07, sofaC, -0.5, F + 0.46, 0.06);
+      fb.r(1.0, 0.2, 0.7, 0.07, sofaC, 0.5, F + 0.46, 0.06);
+      fb.r(1.0, 0.5, 0.2, 0.09, sofaM, -0.5, F + 0.78, -0.32);
+      fb.r(1.0, 0.5, 0.2, 0.09, sofaM, 0.5, F + 0.78, -0.32);
+      fb.r(0.2, 0.36, 0.84, 0.08, sofaM, -1.1, F + 0.5, 0);
+      fb.r(0.2, 0.36, 0.84, 0.08, sofaM, 1.1, F + 0.5, 0);
+      solid(-5.6, -4.7, 1.9, 4.1);
     })();
+    addSit('sofaA', { x: -5.0, z: 2.5, dir: [1, 0], eye: 1.05, rooms: ['waiting'], stand: { x: 0.95, z: 0 }, hit: { w: 1.0, h: 1.0, d: 1.05, x: -5.15, z: 2.5 } });
+    addSit('sofaB', { x: -5.0, z: 3.5, dir: [1, 0], eye: 1.05, rooms: ['waiting'], stand: { x: 0.95, z: 0 }, hit: { w: 1.0, h: 1.0, d: 1.05, x: -5.15, z: 3.5 } });
     armchair('waiting', 5.1, 3.0, -Math.PI / 2, leatherW);
     solid(4.7, 5.5, 2.6, 3.4);
+    addSit('wArm', { x: 5.1, z: 3.0, dir: [-1, 0], eye: 1.05, rooms: ['waiting'], stand: { x: -0.95, z: 0 }, hit: { w: 0.9, h: 1.1, d: 0.9, x: 5.1, z: 3.0 } });
     (function () {                                                    // table basse + magazines
-      const fb = furn(-3.8, 3.0, 0), wd = rm('waiting', 0x6a4a30, { r: 0.7 });
-      fb(1.1, 0.05, 0.6, wd, 0, F + 0.43, 0);
-      [[-0.5, -0.25], [0.5, -0.25], [-0.5, 0.25], [0.5, 0.25]].forEach(function (p) { fb(0.05, 0.4, 0.05, wd, p[0], F + 0.2, p[1]); });
+      const fb = furn(-3.8, 3.0, 0);
+      fb.r(1.1, 0.06, 0.6, 0.02, woodW, 0, F + 0.43, 0);
+      [[-0.5, -0.25], [0.5, -0.25], [-0.5, 0.25], [0.5, 0.25]].forEach(function (p) { fb(0.05, 0.4, 0.05, woodW, p[0], F + 0.2, p[1]); });
       fb(0.3, 0.02, 0.22, rm('waiting', 0xb44a3a, { r: 0.9 }), -0.2, F + 0.465, 0.05);
       fb(0.28, 0.02, 0.2, rm('waiting', 0x3a5a8a, { r: 0.9 }), -0.18, F + 0.485, 0.04);
       solid(-4.4, -3.2, 2.65, 3.35);
     })();
     (function () {                                                    // plante
       addCyl(0.2, 0.15, 0.4, 12, rm('waiting', 0x7a4a34, { r: 0.9 }), -5.2, F + 0.2, 4.3);
-      addSphere(0.42, rm('waiting', 0x2f5a34, { r: 1 }), -5.2, F + 0.85, 4.3, 1, 1.2, 1);
-      addSphere(0.28, rm('waiting', 0x3a6a3c, { r: 1 }), -5.0, F + 1.2, 4.35, 1, 1, 1);
+      addSphere(0.42, rm('waiting', 0x2f5a34, { r: 1 }), -5.2, F + 0.85, 4.3, 1, 1.2, 1, 14);
+      addSphere(0.28, rm('waiting', 0x3a6a3c, { r: 1 }), -5.0, F + 1.2, 4.35, 1, 1, 1, 14);
       solid(-5.5, -4.9, 4.0, 4.6);
     })();
-    (function () {                                                    // portemanteau près de la porte
-      addCyl(0.03, 0.03, 1.8, 8, rm('waiting', 0x3a2a1c, { r: 0.8 }), 2.4, F + 0.9, 4.4);
-      addCyl(0.18, 0.2, 0.05, 12, rm('waiting', 0x3a2a1c, { r: 0.8 }), 2.4, F + 0.03, 4.4);
-      addBox(0.45, 0.9, 0.12, rm('waiting', 0x3f4a56, { r: 1 }), 2.4, F + 1.2, 4.4);
-      solid(2.15, 2.65, 4.15, 4.65);
+    (function () {                                                    // petite console + lampe, à droite de la porte d'entrée
+      addBox(0.9, 0.05, 0.36, woodW, 2.6, F + 0.8, 4.5);
+      addBox(0.05, 0.78, 0.32, woodW, 2.2, F + 0.4, 4.5); addBox(0.05, 0.78, 0.32, woodW, 3.0, F + 0.4, 4.5);
+      lampShade('waiting', 2.6, F + 1.1, 4.5, 0.1, 0.17, 0.22, 1.4);
+      addBox(0.05, 0.2, 0.05, woodDarkW, 2.6, F + 0.92, 4.5);
+      solid(2.1, 3.1, 4.3, 4.7);
     })();
-    (function () {                                                    // affiche + horloge, côté cloison
+    (function () {                                                    // pancarte d'accueil + horloge, côté cloison
       const pm = paintMat('waiting', noticeTex());
-      const poster = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.8), pm);
-      poster.position.set(-2.2, F + 1.7, Z_P1 + PT / 2 + 0.012);
+      const poster = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.55), pm);
+      poster.position.set(-2.3, F + 1.8, Z_P1 + PT / 2 + 0.012);
       h.add(poster);
+      const gold = rm('waiting', 0x9a7a44, { r: 0.5 });
+      addBox(1.18, 0.04, 0.03, gold, -2.3, F + 2.1, Z_P1 + PT / 2 + 0.014); addBox(1.18, 0.04, 0.03, gold, -2.3, F + 1.5, Z_P1 + PT / 2 + 0.014);
+      addBox(0.04, 0.64, 0.03, gold, -2.3 - 0.57, F + 1.8, Z_P1 + PT / 2 + 0.014); addBox(0.04, 0.64, 0.03, gold, -2.3 + 0.57, F + 1.8, Z_P1 + PT / 2 + 0.014);
       const clockGeo = new THREE.CylinderGeometry(0.22, 0.22, 0.05, 20);
       clockGeo.rotateX(Math.PI / 2);
       addGeo(clockGeo, rm('waiting', 0xe8e0cc, { r: 0.6 }), 0, F + 2.6, Z_P1 + PT / 2 + 0.03, 0);
@@ -1110,20 +1222,16 @@ export function buildWork(parent, opts) {
       addBox(1.3, 0.06, 0.4, bn, -4.8, F + 0.45, 1.02);
       addBox(0.05, 0.43, 0.36, bn, -5.38, F + 0.22, 1.02); addBox(0.05, 0.43, 0.36, bn, -4.22, F + 0.22, 1.02);
       solid(-5.45, -4.15, 0.82, 1.225);
+      addSit('bench', { x: -4.8, z: 1.0, dir: [0, -1], eye: 1.0, rooms: ['corridor'], stand: { x: 0, z: -0.8 }, hit: { w: 1.4, h: 0.9, d: 0.6, x: -4.8, z: 1.02 } });
       addBox(1.0, 0.05, 0.35, bn, 4.9, F + 0.8, -0.25);                // console + vase
       addBox(0.05, 0.78, 0.3, bn, 4.45, F + 0.4, -0.25); addBox(0.05, 0.78, 0.3, bn, 5.35, F + 0.4, -0.25);
       addCyl(0.07, 0.05, 0.28, 10, rm('corridor', 0x7a9aa8, { r: 0.4 }), 4.9, F + 0.97, -0.25);
       solid(4.4, 5.4, -0.425, -0.07);
     })();
-    // cadres : images/corridor1.jpg ... (comme corridor.js ; image de secours si absente)
-    [[-3.2, Z_P1 - PT / 2 - 0.012, 1, Math.PI], [3.2, Z_P1 - PT / 2 - 0.012, 2, Math.PI],
-     [0.2, Z_P2 + PT / 2 + 0.012, 3, 0], [-4.6, Z_P2 + PT / 2 + 0.012, 4, 0]].forEach(function (f) {
-      const fm = (function () {
-        const c = cv(64, 80), x = c.getContext('2d');
-        const gr = x.createLinearGradient(0, 0, 64, 80); gr.addColorStop(0, '#8a7a5a'); gr.addColorStop(1, '#5a4a2a');
-        x.fillStyle = gr; x.fillRect(0, 0, 64, 80);
-        return paintMat('corridor', srgb(new THREE.CanvasTexture(c)));
-      })();
+    // cadres du couloir : images/evelynpic2.jpg ... evelynpic5.jpg (sinon tableaux peints à la volée)
+    [[-3.2, Z_P1 - PT / 2 - 0.012, 2, Math.PI], [3.2, Z_P1 - PT / 2 - 0.012, 3, Math.PI],
+     [0.2, Z_P2 + PT / 2 + 0.012, 4, 0], [-4.6, Z_P2 + PT / 2 + 0.012, 5, 0]].forEach(function (f) {
+      const fm = paintMat('corridor', artTex(f[2]));
       const pic = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.8), fm);
       pic.position.set(f[0], F + 1.7, f[1]);
       pic.rotation.y = f[3];
@@ -1131,7 +1239,7 @@ export function buildWork(parent, opts) {
       const gold = rm('corridor', 0xb89040, { r: 0.5 }), dz = f[3] === 0 ? 0.012 : -0.012;
       addBox(0.7, 0.04, 0.03, gold, f[0], F + 2.12, f[1] + dz); addBox(0.7, 0.04, 0.03, gold, f[0], F + 1.28, f[1] + dz);
       addBox(0.04, 0.88, 0.03, gold, f[0] - 0.33, F + 1.7, f[1] + dz); addBox(0.04, 0.88, 0.03, gold, f[0] + 0.33, F + 1.7, f[1] + dz);
-      loadInto(fm, ['images/corridor' + f[2] + '.jpg', 'images/corridor' + f[2] + '.png', 'images/corridor' + f[2] + '.webp']);
+      loadPic(fm, f[2]);
     });
 
     // ═════════ SALLE DE SÉANCE ═════════
@@ -1142,16 +1250,19 @@ export function buildWork(parent, opts) {
     solid(CHAIR.x - 0.4, CHAIR.x + 0.4, CHAIR.z - 0.4, CHAIR.z + 0.4);
 
     (function () {                                                    // chaise du joueur (face à -z)
-      const fb = furn(SEAT.x, SEAT.z, Math.PI), mSeat = rm('session', 0x4a3322, { r: 0.8 });
-      fb(0.5, 0.06, 0.48, mSeat, 0, F + 0.45, 0);
-      fb(0.5, 0.5, 0.05, mSeat, 0, F + 0.74, -0.215);
-      [[-0.21, -0.2], [0.21, -0.2], [-0.21, 0.2], [0.21, 0.2]].forEach(function (p) { fb(0.05, 0.43, 0.05, woodDark, p[0], F + 0.215, p[1]); });
+      const fb = furn(SEAT.x, SEAT.z, Math.PI), mSeat = rm('session', 0x4a3322, { r: 0.8 }), cush = rm('session', 0x6a2f2f, { r: 0.9 });
+      fb(0.5, 0.05, 0.48, mSeat, 0, F + 0.44, 0);
+      fb.r(0.44, 0.07, 0.42, 0.03, cush, 0, F + 0.5, 0.01);
+      [[-0.21, -0.2], [0.21, -0.2], [-0.21, 0.2], [0.21, 0.2]].forEach(function (p) { fb(0.05, 0.42, 0.05, woodDark, p[0], F + 0.21, p[1]); });
+      [[-0.21, -0.2], [0.21, -0.2]].forEach(function (p) { fb(0.04, 0.5, 0.04, woodDark, p[0], F + 0.7, p[1] - 0.02); });   // montants du dossier
+      fb(0.46, 0.06, 0.04, mSeat, 0, F + 0.93, -0.22);
+      [-0.12, 0, 0.12].forEach(function (dx) { fb(0.05, 0.34, 0.025, mSeat, dx, F + 0.72, -0.22); });
       solid(SEAT.x - 0.32, SEAT.x + 0.32, SEAT.z - 0.32, SEAT.z + 0.32);
-      const hit = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1.1, 0.7), new THREE.MeshBasicMaterial());
-      hit.visible = false;
-      hit.position.set(SEAT.x, F + 0.55, SEAT.z);
-      hit.userData.use = 'seat';
-      h.add(hit);
+      addSit('seat', {
+        x: SEAT.x, z: SEAT.z, dir: [0, -1], eye: 1.15, rooms: ['session'], stand: { x: 0.8, z: 0 }, talk: true,
+        enabled: function () { return evelynHome(); },
+        hit: { w: 0.7, h: 1.1, d: 0.7, x: SEAT.x, z: SEAT.z }
+      });
     })();
 
     // bureau (la table devant Evelyn)
@@ -1177,6 +1288,7 @@ export function buildWork(parent, opts) {
     // fauteuil de lecture près du feu
     armchair('session', -4.6, -3.1, 2.5, rm('session', 0x4a2e2a, { r: 0.8 }));
     solid(-5.0, -4.2, -3.5, -2.7);
+    addSit('readArm', { x: -4.6, z: -3.1, dir: [Math.sin(2.5), Math.cos(2.5)], eye: 1.05, rooms: ['session'], stand: { x: 0.2, z: 0.95 }, hit: { w: 0.9, h: 1.1, d: 0.9, x: -4.6, z: -3.1 } });
 
     // ── étagère (mur gauche) ──
     const SH_X0 = IX0, SH_Z0 = SH.z0, SH_Z1 = SH.z1, SH_D = SH.d, ROW_H = 0.55, ROW_Y0 = F + 0.08;
@@ -1209,9 +1321,10 @@ export function buildWork(parent, opts) {
         const bx = SH_X0 + 0.04 + 0.11 + (isSlot ? 0.02 : 0);
         if (isSlot) {
           const col = '#3a3a3e';
-          const spine = new THREE.MeshStandardMaterial({ map: spineTexture(col, '#8a8a8a'), roughness: 0.8 });
-          const cover = new THREE.MeshStandardMaterial({ color: 0x3a3a3e, roughness: 0.85 });
-          const top = new THREE.MeshStandardMaterial({ color: 0xd9cdb0, roughness: 1 });
+          const spineMap = spineTexture(col, '#8a8a8a');
+          const spine = new THREE.MeshStandardMaterial({ map: spineMap, emissiveMap: spineMap, color: new THREE.Color(ALB, ALB, ALB), roughness: 0.8 });
+          const cover = new THREE.MeshStandardMaterial({ color: new THREE.Color(0x3a3a3e).multiplyScalar(ALB), roughness: 0.85 });
+          const top = new THREE.MeshStandardMaterial({ color: new THREE.Color(0xd9cdb0).multiplyScalar(ALB), roughness: 1 });
           const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.22, bh, thick), [spine, cover, top, top, cover, cover]);
           mesh.position.set(bx, y0 + bh / 2, z + thick / 2);
           mesh.userData.use = 'book';
@@ -1241,8 +1354,9 @@ export function buildWork(parent, opts) {
           const c = d.cover || {};
           const color = c.color || '#7c2431', accent = c.accent || '#d6ae5c';
           s.mats[0].map = spineTexture(color, accent);
+          s.mats[0].emissiveMap = s.mats[0].map;
           s.mats[0].needsUpdate = true;
-          s.mats[1].color.set(color);
+          s.mats[1].color.set(color).multiplyScalar(ALB);
           s.base.set(color);
           s.data = d;
         });
@@ -1283,44 +1397,102 @@ export function buildWork(parent, opts) {
 
     // ═════════ CHAMBRE D'EVELYN ═════════
     (function () {
-      const bw = rm('bedroom', 0xd4b090, { r: 0.8 }), mat = rm('bedroom', 0xf0e8de, { r: 1 }), pil = rm('bedroom', 0xf6f0e8, { r: 1 });
-      const plaid = rm('bedroom', 0xf0e6e0, { r: 1, map: blanketTex, tile: [0.8, 0.8], mapId: 'b' });
-      const bx0 = BED.x, hz0 = IZ0 + 0.05;                            // tête du lit contre le mur du fond
-      addBox(1.55, 0.7, 0.08, bw, bx0, F + 0.8, hz0 + 0.04);          // tête de lit
-      addBox(1.5, 0.22, 2.0, mat, bx0, F + 0.4, hz0 + 1.05);          // matelas
-      addBox(1.55, 0.16, 2.05, bw, bx0, F + 0.22, hz0 + 1.05);        // sommier
-      addBox(0.7, 0.14, 0.38, pil, bx0 - 0.35, F + 0.58, hz0 + 0.3);
-      addBox(0.7, 0.14, 0.38, pil, bx0 + 0.35, F + 0.58, hz0 + 0.3);
-      addBox(1.54, 0.06, 1.35, plaid, bx0, F + 0.53, hz0 + 1.45);     // plaid
-      solid(bx0 - 0.8, bx0 + 0.8, IZ0, IZ0 + 2.1);
-      // table de chevet
-      addBox(0.5, 0.55, 0.45, rm('bedroom', 0x7a5a3c, { r: 0.8 }), NIGHT.x, F + 0.28, NIGHT.z);
-      solid(NIGHT.x - 0.27, NIGHT.x + 0.27, NIGHT.z - 0.25, NIGHT.z + 0.25);
-      addBox(0.05, 0.22, 0.05, woodDark, NIGHT.x + 0.12, F + 0.66, NIGHT.z - 0.05);
-      lampShade('bedroom', NIGHT.x + 0.12, F + 0.86, NIGHT.z - 0.05, 0.08, 0.14, 0.18, 1.2);
-      // armoire contre la cloison
-      addBox(0.55, 2.1, 1.3, rm('bedroom', 0x6a5238, { r: 0.8 }), X_P3 + PT / 2 + 0.28, F + 1.05, -1.75);
-      addBox(0.02, 1.9, 0.02, rm('bedroom', 0x2a1a10), X_P3 + PT / 2 + 0.57, F + 1.05, -1.75);
-      solid(X_P3 + PT / 2, X_P3 + PT / 2 + 0.56, -2.4, -1.1);
+      const bx0 = BED.x, hz0 = IZ0 + 0.04;                            // tête du lit contre le mur du fond
+      const frameM = rm('bedroom', 0x7a5636, { r: 0.7 }), sheet = rm('bedroom', 0xeee6dc, { r: 1 });
+      const duvet = rm('bedroom', 0xf0e6e0, { r: 1, map: blanketTex, tile: [0.8, 0.8], mapId: 'b' });
+      const fold = rm('bedroom', 0xd8cdc6, { r: 1 }), pillowM = rm('bedroom', 0xf8f2ea, { r: 1 }), cushionM = rm('bedroom', 0x6f8aa6, { r: 1 });
+
+      // lit : pieds, cadre, tête de lit haute aux angles arrondis, pied de lit bas, matelas rebondi, couette, oreillers
+      [[-0.78, 0.04], [0.78, 0.04], [-0.78, 2.14], [0.78, 2.14]].forEach(function (p) { addBox(0.09, 0.2, 0.09, frameM, bx0 + p[0], F + 0.1, hz0 + p[1]); });
+      addBox(1.64, 0.16, 2.14, frameM, bx0, F + 0.28, hz0 + 1.09);
+      addRBox(1.74, 1.0, 0.08, 0.12, frameM, bx0, F + 0.82, hz0 + 0.04);
+      addRBox(1.68, 0.42, 0.07, 0.09, frameM, bx0, F + 0.5, hz0 + 2.14);
+      addRBox(1.54, 0.28, 2.04, 0.12, sheet, bx0, F + 0.5, hz0 + 1.08);             // matelas
+      addRBox(1.64, 0.15, 1.4, 0.07, duvet, bx0, F + 0.7, hz0 + 1.45);                // couette
+      addRBox(1.66, 0.1, 0.3, 0.05, fold, bx0, F + 0.77, hz0 + 0.82);                 // rabat
+      addSphere(0.3, pillowM, bx0 - 0.4, F + 0.72, hz0 + 0.4, 1.2, 0.4, 0.82, 16);
+      addSphere(0.3, pillowM, bx0 + 0.4, F + 0.72, hz0 + 0.4, 1.2, 0.4, 0.82, 16);
+      addSphere(0.2, cushionM, bx0, F + 0.76, hz0 + 0.62, 1.15, 0.45, 0.8, 14);
+      solid(bx0 - 0.85, bx0 + 0.85, IZ0, IZ0 + 2.2);
+
+      // table de chevet : caisson ouvert devant + tiroir qui coulisse
+      const nx = NIGHT.x, nz = NIGHT.z, nm = rm('bedroom', 0x7a5a3c, { r: 0.75 });
+      addBox(0.03, 0.56, 0.46, nm, nx - 0.235, F + 0.28, nz);
+      addBox(0.03, 0.56, 0.46, nm, nx + 0.235, F + 0.28, nz);
+      addBox(0.5, 0.56, 0.03, nm, nx, F + 0.28, nz - 0.215);
+      addBox(0.53, 0.04, 0.48, nm, nx, F + 0.58, nz);
+      addBox(0.44, 0.03, 0.42, nm, nx, F + 0.09, nz);
+      addBox(0.44, 0.02, 0.42, nm, nx, F + 0.33, nz);
+      addRBox(0.2, 0.2, 0.16, 0.03, rm('bedroom', 0x6a4a5a, { r: 0.9 }), nx - 0.1, F + 0.22, nz - 0.05);   // un livre rangé dans le casier du bas
+      solid(nx - 0.27, nx + 0.27, nz - 0.25, nz + 0.25);
+      addBox(0.05, 0.2, 0.05, woodDark, nx + 0.15, F + 0.7, nz - 0.1);
+      lampShade('bedroom', nx + 0.15, F + 0.9, nz - 0.1, 0.08, 0.14, 0.18, 1.2);
+      const drawer = new THREE.Group();
+      drawer.position.set(nx, F + 0.45, nz + 0.2);
+      h.add(drawer);
+      mbox(0.44, 0.15, 0.03, nm, 0, 0, 0.025, 0, drawer);                              // façade
+      mbox(0.04, 0.03, 0.04, mBrass, 0, 0.0, 0.06, 0, drawer);                          // bouton
+      mbox(0.4, 0.015, 0.34, nm, 0, -0.06, -0.15, 0, drawer);                           // fond
+      mbox(0.015, 0.1, 0.34, nm, -0.2, -0.01, -0.15, 0, drawer);
+      mbox(0.015, 0.1, 0.34, nm, 0.2, -0.01, -0.15, 0, drawer);
+      mbox(0.4, 0.1, 0.015, nm, 0, -0.01, -0.32, 0, drawer);
+      mbox(0.12, 0.012, 0.09, rm('bedroom', 0xe8e0cc, { r: 1 }), -0.08, -0.05, -0.12, 0.1, drawer);   // une photo
+      mbox(0.1, 0.02, 0.02, rm('bedroom', 0x3a2a20, { r: 0.8 }), 0.08, -0.05, -0.2, 0, drawer);       // un stylo
+      drawer.children.forEach(function (c) { c.userData.use = 'drawer'; });
+      const drawerOp = addOpenable('drawer', {
+        rooms: ['bedroom'], x: nx, z: nz + 0.2, range: 2.2,
+        apply: function (e) { drawer.position.z = nz + 0.2 + 0.28 * e; }
+      });
+
+      // armoire contre la cloison : caisson creux, deux portes battantes, penderie
+      const wm = rm('bedroom', 0x6a5238, { r: 0.8 }), WX0 = X_P3 + PT / 2, WX1 = WX0 + 0.56, WZ0 = -2.4, WZ1 = -1.1;
+      addBox(0.03, 2.1, WZ1 - WZ0, wm, WX0 + 0.015, F + 1.05, (WZ0 + WZ1) / 2);
+      addBox(WX1 - WX0, 2.1, 0.03, wm, (WX0 + WX1) / 2, F + 1.05, WZ0 + 0.015);
+      addBox(WX1 - WX0, 2.1, 0.03, wm, (WX0 + WX1) / 2, F + 1.05, WZ1 - 0.015);
+      addBox(WX1 - WX0, 0.04, WZ1 - WZ0, wm, (WX0 + WX1) / 2, F + 2.08, (WZ0 + WZ1) / 2);
+      addBox(WX1 - WX0, 0.08, WZ1 - WZ0, wm, (WX0 + WX1) / 2, F + 0.04, (WZ0 + WZ1) / 2);
+      addBox(WX1 - WX0 - 0.04, 0.03, WZ1 - WZ0 - 0.06, wm, (WX0 + WX1) / 2, F + 1.72, (WZ0 + WZ1) / 2);   // tablette
+      addBox(0.02, 0.02, WZ1 - WZ0 - 0.1, mMetal, (WX0 + WX1) / 2, F + 1.64, (WZ0 + WZ1) / 2);           // barre
+      const clothCols = [0x3f4a56, 0x8a3a3a, 0xd8cdb8, 0x4a5a46, 0x2a2a30, 0x7a6a8a, 0xb89a6a];
+      for (let i = 0; i < 7; i++) {
+        addBox(0.34, 0.78 + (i % 3) * 0.06, 0.05, rm('bedroom', clothCols[i], { r: 1 }), (WX0 + WX1) / 2, F + 1.2 - (i % 3) * 0.03, WZ0 + 0.14 + i * 0.16);
+      }
+      solid(WX0, WX1, WZ0, WZ1);
+      const wDoors = [];
+      [{ hz: WZ0, dir: 1, th: 1 }, { hz: WZ1, dir: -1, th: -1 }].forEach(function (d) {
+        const pv = new THREE.Group();
+        pv.position.set(WX1 + 0.005, F + 1.05, d.hz);
+        h.add(pv);
+        const leaf = mbox(0.025, 2.06, 0.64, wm, 0, 0, d.dir * 0.32, 0, pv);
+        const grip = mbox(0.03, 0.2, 0.03, mBrass, 0.02, 0, d.dir * 0.58, 0, pv);
+        pv.children.forEach(function (c) { c.userData.use = 'wardrobe'; });
+        wDoors.push({ pv: pv, th: d.th });
+      });
+      addOpenable('wardrobe', {
+        rooms: ['bedroom'], x: WX1 + 0.4, z: -1.75, range: 2.4,
+        apply: function (e) { wDoors.forEach(function (w) { w.pv.rotation.y = w.th * 1.95 * e; }); }
+      });
+
       rug('bedroom', 2.6, -2.7, 2.2, 1.6, 0x4a5a70);
-      // tableau au-dessus du lit
-      const pm = paintMat('bedroom', paintingTex());
+
+      // tableau au-dessus du lit : images/evelynpic1.jpg, sinon peinture à la volée
+      const pm = paintMat('bedroom', artTex(1));
       const pic = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.76), pm);
-      pic.position.set(bx0, F + 1.9, IZ0 + 0.03);
+      pic.position.set(bx0, F + 1.95, IZ0 + 0.03);
       h.add(pic);
       const gold = rm('bedroom', 0x9a7a3a, { r: 0.5 });
-      addBox(1.2, 0.07, 0.04, gold, bx0, F + 2.31, IZ0 + 0.02); addBox(1.2, 0.07, 0.04, gold, bx0, F + 1.49, IZ0 + 0.02);
-      addBox(0.07, 0.82, 0.04, gold, bx0 - 0.575, F + 1.9, IZ0 + 0.02); addBox(0.07, 0.82, 0.04, gold, bx0 + 0.575, F + 1.9, IZ0 + 0.02);
-      loadInto(pm, ['images/evelyn-tableau.jpg', 'images/evelyn-tableau.png']);
+      addBox(1.2, 0.07, 0.04, gold, bx0, F + 2.36, IZ0 + 0.02); addBox(1.2, 0.07, 0.04, gold, bx0, F + 1.54, IZ0 + 0.02);
+      addBox(0.07, 0.82, 0.04, gold, bx0 - 0.575, F + 1.95, IZ0 + 0.02); addBox(0.07, 0.82, 0.04, gold, bx0 + 0.575, F + 1.95, IZ0 + 0.02);
+      loadPic(pm, 1);
 
       // carnet intime sur la table de chevet
       const note = new THREE.Group();
-      note.position.set(NIGHT.x - 0.08, F + 0.575, NIGHT.z + 0.02);
+      note.position.set(nx - 0.08, F + 0.6, nz + 0.02);
       note.rotation.y = 0.35;
       note.userData.use = 'diary';
       h.add(note);
-      const nm = new THREE.MeshStandardMaterial({ color: 0x1f4a52, roughness: 0.6 });
-      note.add(new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.035, 0.28), nm));
+      const nmat = new THREE.MeshStandardMaterial({ color: 0x1f4a52, roughness: 0.6 });
+      note.add(new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.035, 0.28), nmat));
       const strip = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.037, 0.28), new THREE.MeshStandardMaterial({ color: 0xc8a24a, roughness: 0.4, metalness: 0.5 }));
       strip.position.x = 0.07;
       note.add(strip);
@@ -1328,7 +1500,7 @@ export function buildWork(parent, opts) {
       nhit.visible = false;
       note.add(nhit);
       addItem('diary', {
-        rooms: ['bedroom'], x: NIGHT.x, z: NIGHT.z, range: 2.4,
+        rooms: ['bedroom'], x: nx, z: nz, range: 2.4,
         label: function () { return 'READ NOTEBOOK'; },
         fn: function () { getEvelynJournal().open(); }
       });
@@ -1346,11 +1518,12 @@ export function buildWork(parent, opts) {
   let fireBonus = 0, firstLights = true;
   const pagesColor = new THREE.Color(0xd9cdb0);
   let interiorUpdate = null, bubbleOn = false;
+  let floorRiseFn = function () { return 0; };
 
   function applyRoom(room) {
     const s = E_OFF + (E_ON - E_OFF) * K[room] + (room === 'session' ? fireBonus : 0);
     const reg = REG[room];
-    for (let i = 0; i < reg.length; i++) reg[i].mat.emissive.copy(reg[i].base).multiply(WARM).multiplyScalar(s);
+    for (let i = 0; i < reg.length; i++) reg[i].mat.emissive.copy(reg[i].base).multiply(WARM).multiplyScalar(s * reg[i].k);
   }
 
   const bulbOff = new THREE.Color(0x3a3228), bulbOn = disp(1.0, 0.9, 0.68), _c = new THREE.Color();
@@ -1421,14 +1594,14 @@ export function buildWork(parent, opts) {
     } else if (lightRoom) {
       lightFade = Math.min(1, lightFade + dt / 0.25);
     }
-    followLight.intensity = lightRoom ? 0.85 * lightFade : 0;
+    followLight.intensity = lightRoom ? 1.6 * lightFade : 0;
   }
 
   // ==========================================
   // INTÉRIEUR VIVANT : Evelyn, livres, carnet, téléphone, clics, déplacements
   // ==========================================
 
-  let seated = false, zone = 'outside', raised = false, baseEye = null, curRoom = null;
+  let seated = false, seatSpot = null, zone = 'outside', raised = false, baseEye = null, curRoom = null;
   let hubActive = false, lastGreet = -1e9, hoverBook = -1, insideNow = false;
   const playerL = { x: 1e9, z: 1e9 };
   const hub = createHub(opts.action);
@@ -1474,27 +1647,37 @@ export function buildWork(parent, opts) {
 
     // ── avatar d'Evelyn, assise dans son fauteuil ──
     async function loadAvatar() {
-      const d = AVATAR_DIR, anims = {};
-      Object.keys(AVATAR_ANIMS).forEach(function (k) { anims[k] = d + AVATAR_ANIMS[k]; });
-      const ev = await loadMixamoAvatar({
-        model: d + AVATAR_MODEL,
-        textures: {
-          map: d + 'texture_diffuse.png', normalMap: d + 'texture_normal.png',
-          roughnessMap: d + 'texture_roughness.png', metalnessMap: d + 'texture_metallic.png'
-        },
-        animations: anims,
-        height: AVATAR_HEIGHT
-      });
+      const d = AVATAR_DIR;
+      function load(list) {
+        const anims = {};
+        Object.keys(list).forEach(function (k) { anims[k] = d + list[k]; });
+        return loadMixamoAvatar({
+          model: d + AVATAR_MODEL,
+          textures: {
+            map: d + 'texture_diffuse.png', normalMap: d + 'texture_normal.png',
+            roughnessMap: d + 'texture_roughness.png', metalnessMap: d + 'texture_metallic.png'
+          },
+          animations: anims,
+          height: AVATAR_HEIGHT
+        });
+      }
+      let ev;
+      try { ev = await load(AVATAR_ANIMS); }
+      catch (e) {
+        console.warn('[avatar] une animation de la vie d\'Evelyn ne charge pas, je garde seulement assise / assise qui parle', e);
+        ev = await load(AVATAR_ANIMS_MIN);
+      }
       evAvatar = ev;
       mixer = ev.mixer;
       avatar = new THREE.Group();
       avatar.add(ev.root);
-      avatar.position.set(CHAIR.x + AVATAR_OFFSET.x, F + AVATAR_OFFSET.y, CHAIR.z + AVATAR_OFFSET.z);
-      avatar.rotation.y = AVATAR_YAW;
+      avatar.position.set(EV.x + AVATAR_OFFSET.x, EV.y + AVATAR_OFFSET.y, EV.z + AVATAR_OFFSET.z);
+      avatar.rotation.y = EV.yaw;
       avatar.userData.use = 'therapist';
       h.add(avatar);
       window.BadTherapistAvatar = { ev: ev, group: avatar, actions: ev.actions, play: ev.play };   // pour régler à la main dans la console (F12)
-      ev.play(ev.actions.sit ? 'sit' : (ev.actions.idle ? 'idle' : 'default'));
+      EV.anim = '';
+      evAnim(EV.mode === 'sleep' ? 'sleep' : EV.mode === 'sit' ? 'sit' : 'stand');
     }
     function ensureAvatar() {
       if (!avatarPromise) avatarPromise = loadAvatar().catch(function (e) { avatarPromise = null; throw e; });
@@ -1505,11 +1688,12 @@ export function buildWork(parent, opts) {
     therapistHit.position.set(CHAIR.x, F + 0.95, CHAIR.z);
     therapistHit.userData.use = 'therapist';
     h.add(therapistHit);
+    // (la zone de clic suit Evelyn quand elle se déplace : voir evActorUpdate)
 
     // Livres : on les charge en même temps (loadBooks est défini avec l'étagère)
     reader = createBookReader();
     talk = createTherapistTalk({
-      onSpeak: function (on) { if (evAvatar && evAvatar.actions.sit_talk) evAvatar.play(on ? 'sit_talk' : 'sit'); },
+      onSpeak: function (on) { if (evAvatar && EV.mode === 'sit' && evAvatar.actions.sit_talk) { evAvatar.play(on ? 'sit_talk' : 'sit'); EV.anim = on ? 'sit_talk' : 'sit'; } },
       getWorld: function () {
         return [
           seated ? 'La personne est assise en face de toi.' : 'La personne est debout près de toi.',
@@ -1536,34 +1720,226 @@ export function buildWork(parent, opts) {
       setTimeout(function () { ensureAll().catch(function () { }); }, 800);
     }
 
-    // ── objets utilisables : assis, debout ──
-    addItem('seat', {
-      rooms: ['session'], x: SEAT.x, z: SEAT.z, range: 1.9,
-      enabled: function () { return seated || evelynHome(); },
-      label: function () { return seated ? 'STAND UP' : 'SIT'; },
-      fn: function () { if (seated) standUp(); else sitDown(); }
+
+    // ═════════════════════════════════════════════════════════════════
+    // EVELYN VIT DANS SA MAISON : marche, ouvre les portes, allume / éteint, écrit son carnet, dort, s'assoit
+    // ═════════════════════════════════════════════════════════════════
+    // Elle utilise ses animations Mixamo (avatars/evelyn/). Rien ne se déclenche tout seul : c'est life-sync.js (ou la console F12) qui décide.
+    //     BadTherapistHouse.evelyn.sleep()  .wake()  .sit()  .write('texte')  .light('bedroom', false)  .goTo('bed')  .stop()  .demo()
+    // ou, sans importer ce fichier :  window.dispatchEvent(new CustomEvent('badtherapist:evelyn-do', { detail: { action: 'write', text: '...' } }))
+
+    const EVN = {
+      armchair: { x: CHAIR.x, z: CHAIR.z }, s1: { x: -2.3, z: -3.3 }, s2: { x: -2.4, z: -1.6 }, sdoor: { x: -2.8, z: -1.05 },
+      c1: { x: -2.8, z: 0.4 }, c2: { x: 0, z: 0.4 }, c3: { x: 3.2, z: 0.4 },
+      b1: { x: 3.2, z: -1.15 }, b2: { x: 3.2, z: -2.3 }, bedside: { x: 3.3, z: -3.2 }, write: { x: 3.0, z: -3.8 }, bed: { x: BED.x, z: BED.z },
+      p1c: { x: 0, z: 0.85 }, p1w: { x: 0, z: 1.95 }, w2: { x: 0, z: 3.2 },
+      swSession: { x: -1.9, z: -1.05 }, swBedroom: { x: 4.2, z: -1.05 }, swCorridor: { x: 0.95, z: 0.85 }, swWaiting: { x: 1.3, z: 4.15 }
+    };
+    const EDGES = [
+      ['armchair', 's1'], ['s1', 's2'], ['s2', 'sdoor'], ['s2', 'swSession'], ['sdoor', 'c1', 'door:session'],
+      ['c1', 'c2'], ['c2', 'c3'], ['c3', 'b1', 'door:bedroom'], ['b1', 'b2'], ['b2', 'bedside'], ['bedside', 'bed'], ['b2', 'write'], ['b1', 'swBedroom'],
+      ['c2', 'p1c'], ['p1c', 'swCorridor'], ['p1c', 'p1w', 'door:p1'], ['p1w', 'w2'], ['w2', 'swWaiting']
+    ];
+    const EV = { node: 'armchair', mode: 'sit', x: CHAIR.x, z: CHAIR.z, y: F, yaw: AVATAR_YAW, anim: '', steps: [] };
+    const WALK_SPEED = 1.15;
+
+    function evRoute(from, to) {
+      const adj = {};
+      EDGES.forEach(function (e) { (adj[e[0]] = adj[e[0]] || []).push([e[1], e[2]]); (adj[e[1]] = adj[e[1]] || []).push([e[0], e[2]]); });
+      const prev = {}; prev[from] = null;
+      const q = [from];
+      while (q.length) {
+        const a = q.shift();
+        if (a === to) break;
+        (adj[a] || []).forEach(function (n) { if (!(n[0] in prev)) { prev[n[0]] = [a, n[1]]; q.push(n[0]); } });
+      }
+      if (!(to in prev)) return null;
+      const out = [];
+      let c = to;
+      while (prev[c]) { out.unshift([prev[c][0], c, prev[c][1]]); c = prev[c][0]; }
+      return out;
+    }
+
+    // animation par son nom (si elle n'existe pas : on garde la précédente)
+    function evAnim(name) {
+      if (!evAvatar || EV.anim === name) return;
+      if (!(evAvatar.actions && evAvatar.actions[name])) return;
+      evAvatar.play(name);
+      EV.anim = name;
+    }
+    function angDiff(a, b) { let d = (b - a) % (Math.PI * 2); if (d > Math.PI) d -= Math.PI * 2; if (d < -Math.PI) d += Math.PI * 2; return d; }
+
+    // Une étape = fonction appelée à chaque image tant qu'elle renvoie false
+    function stepWait(sec, anim, mid, midAt) {
+      let t = 0, fired = false;
+      return function (dt) {
+        if (t === 0 && anim) evAnim(anim);
+        t += dt;
+        if (mid && !fired && t >= (midAt || 0)) { fired = true; mid(); }
+        return t >= sec;
+      };
+    }
+    function stepFace(yaw) {
+      return function (dt) {
+        const d = angDiff(EV.yaw, yaw);
+        if (Math.abs(d) < 0.04) { EV.yaw = yaw; return true; }
+        EV.yaw += Math.sign(d) * Math.min(Math.abs(d), dt * 5);
+        return false;
+      };
+    }
+    function stepSet(fn) { return function () { fn(); return true; }; }
+    function stepWalk(a, b) {
+      const A = EVN[a], B = EVN[b];
+      return function (dt) {
+        evAnim('walk');
+        EV.mode = 'stand';
+        const dx = B.x - EV.x, dz = B.z - EV.z, d = Math.hypot(dx, dz);
+        if (d < 0.05) { EV.x = B.x; EV.z = B.z; EV.node = b; return true; }
+        const k = Math.min(1, WALK_SPEED * dt / d);
+        EV.x += dx * k; EV.z += dz * k;
+        const want = Math.atan2(dx, dz), da = angDiff(EV.yaw, want);
+        EV.yaw += Math.sign(da) * Math.min(Math.abs(da), dt * 7);
+        return false;
+      };
+    }
+    // « va à tel endroit » : se déploie au moment d'être joué (là où elle se trouve vraiment à ce moment-là)
+    function stepGoto(target) {
+      return function () {
+        const route = evRoute(EV.node, target);
+        if (!route) { console.warn('[Evelyn] pas de chemin de', EV.node, 'à', target); return true; }
+        const out = [];
+        if (EV.mode === 'sit' || EV.mode === 'sleep') {
+          const wasSleep = EV.mode === 'sleep';
+          out.push(stepSet(function () { if (wasSleep) { EV.x = EVN.bedside.x; EV.z = EVN.bedside.z; EV.y = F; EV.node = 'bedside'; } }));
+          out.push(stepWait(wasSleep ? 1.1 : 0.7, 'stand'));
+          out.push(stepSet(function () { EV.mode = 'stand'; }));
+        }
+        route.forEach(function (e) {
+          const door = e[2] && doors[e[2]];
+          if (door) {
+            out.push(stepFace(Math.atan2(EVN[e[1]].x - EVN[e[0]].x, EVN[e[1]].z - EVN[e[0]].z)));
+            out.push((function () {
+              let started = false, t = 0;
+              return function (dt) {
+                if (door.goal || door.openT > 0.5) return true;
+                if (!started) { started = true; evAnim('openDoor'); }
+                t += dt;
+                if (t > 0.6) door.goal = 1;
+                return t > 1.5 && door.openT > 0.6;
+              };
+            })());
+          }
+          out.push(stepWalk(e[0], e[1]));
+        });
+        EV.steps.splice.apply(EV.steps, [0, 1].concat(out));        // cette étape est remplacée par le trajet détaillé
+        return false;
+      };
+    }
+    function evPush() { for (let i = 0; i < arguments.length; i++) EV.steps.push(arguments[i]); return true; }
+    function stepPlace(node, yaw, mode, anim, y) {
+      return stepSet(function () {
+        EV.x = EVN[node].x; EV.z = EVN[node].z; EV.y = y === undefined ? F : y; EV.yaw = yaw; EV.mode = mode; EV.node = node; evAnim(anim);
+      });
+    }
+
+    const evelynApi = {
+      goTo: function (place) { if (!EVN[place]) return false; return evPush(stepGoto(place)); },
+      sit: function () {
+        return evPush(stepGoto('armchair'), stepFace(AVATAR_YAW), stepPlace('armchair', AVATAR_YAW, 'sit', 'sit'));
+      },
+      sleep: function () {
+        return evPush(stepGoto('bed'), stepSet(function () {
+          EV.x = BED.x + SLEEP_POSE.x; EV.z = BED.z + SLEEP_POSE.z; EV.y = F + 0.55 + SLEEP_POSE.y; EV.yaw = SLEEP_POSE.yaw; EV.mode = 'sleep'; EV.node = 'bed'; evAnim('sleep');
+        }));
+      },
+      wake: function () {
+        return evPush(stepSet(function () { }), stepGoto('bedside'), stepFace(Math.PI));
+      },
+      // ⚠ TEMPORAIRE : Mixamo n'a pas d'animation « écrire ». Pour l'instant elle écrit DEBOUT (animation « stand »).
+      // Quand tu auras une vraie animation d'écriture : ajoute-la dans AVATAR_ANIMS (write: '...') et remplace 'stand' ci-dessous.
+      write: function (text) {
+        return evPush(stepGoto('write'), stepFace(Math.PI), stepWait(1.4, 'stand'),
+          stepSet(function () { if (text) getEvelynJournal().write(text); }),     // sauvegardé tout de suite, comme ton carnet
+          stepWait(4.5, 'stand'));
+      },
+      erase: function (text) {
+        return evPush(stepGoto('write'), stepFace(Math.PI), stepWait(1.2, 'stand'),
+          stepSet(function () { getEvelynJournal().erase(text); }), stepWait(3, 'stand'));
+      },
+      // allumer = animation « ouvrir la porte », éteindre = « fermer la porte » (ce sont les animations dont elle dispose pour l'instant)
+      light: function (room, on) {
+        const sw = { waiting: 'swWaiting', corridor: 'swCorridor', session: 'swSession', bedroom: 'swBedroom' }[room];
+        if (!sw) return false;
+        return evPush(stepGoto(sw), stepFace(0), stepWait(1.5, on ? 'openDoor' : 'closeDoor', function () { setLight(room, !!on, 'evelyn'); }, 0.6));
+      },
+      stop: function () { EV.steps.length = 0; return true; },
+      where: function () { return { mode: EV.mode, node: EV.node, busy: EV.steps.length > 0, anim: EV.anim }; },
+      nodes: Object.keys(EVN),
+      demo: function () {                                           // petit tour pour voir toutes les animations
+        evelynApi.light('bedroom', true);
+        evelynApi.write('Demo : je note ça avant de dormir.');
+        evelynApi.light('bedroom', false);
+        evelynApi.sleep();
+        return true;
+      }
+    };
+    window.addEventListener('badtherapist:evelyn-do', function (ev) {
+      const d = (ev && ev.detail) || {};
+      if (d.action === 'sleep') evelynApi.sleep();
+      else if (d.action === 'wake') evelynApi.wake();
+      else if (d.action === 'sit') evelynApi.sit();
+      else if (d.action === 'write') evelynApi.write(d.text);
+      else if (d.action === 'erase') evelynApi.erase(d.text);
+      else if (d.action === 'light') evelynApi.light(d.room, d.on);
+      else if (d.action === 'goto') evelynApi.goTo(d.place);
+      else if (d.action === 'stop') evelynApi.stop();
     });
 
-    function sitDown() {
-      if (seated || !evelynHome()) return;
+    function evActorUpdate(dt) {
+      if (EV.steps.length) {
+        // plusieurs étapes instantanées d'affilée sont jouées dans la même image
+        for (let guard = 0; guard < 8 && EV.steps.length; guard++) {
+          if (EV.steps[0](dt)) EV.steps.shift(); else break;
+        }
+      }
+      if (avatar) {
+        avatar.position.set(EV.x + AVATAR_OFFSET.x, EV.y + AVATAR_OFFSET.y, EV.z + AVATAR_OFFSET.z);
+        avatar.rotation.y = EV.yaw;
+        therapistHit.position.set(EV.x, EV.y + 0.95, EV.z);
+      }
+    }
+
+    // ── objets utilisables : assis, debout ──
+    // On s'assoit en cliquant sur n'importe quel siège (canapé, fauteuils, banc, chaise de la séance)
+    function sitDown(id) {
+      const sp = SITS[id];
+      if (!sp || seated || (sp.enabled && !sp.enabled())) return;
       seated = true;
+      seatSpot = sp;
       talk.hideBubble(true);
-      if (opts.view) opts.view.set(Math.PI, -0.06);
-      setTimeout(function () {
-        if (seated && !talk.isOpen() && !reader.isOpen()) talk.open();           // la séance commence : Evelyn ouvre la discussion
-      }, 900);
+      if (opts.view) opts.view.set(Math.atan2(sp.dir[0], sp.dir[1]), -0.08);
+      if (sp.talk && EV.mode === 'sit') {
+        setTimeout(function () {
+          if (seated && seatSpot === sp && !talk.isOpen() && !reader.isOpen()) talk.open();   // la séance commence : Evelyn ouvre la discussion
+        }, 900);
+      }
     }
 
     function standUp(silent) {
       if (!seated) return;
+      const sp = seatSpot;
       seated = false;
-      const p = toParent(SEAT.x + 0.8, SEAT.z);
+      seatSpot = null;
+      const p = toParent(sp.x + sp.stand.x, sp.z + sp.stand.z);
       camera.position.x = origin.x + p.x;
       camera.position.z = origin.z + p.z;
       camera.position.y = (baseEye === null ? origin.y + gy + 1.7 : baseEye) + F;
-      talk.endSession();                                                          // ferme la boîte, Evelyn fait son bilan (mémoire)
-      if (!silent) talk.farewell();
+      if (sp.talk) {
+        talk.endSession();                                                        // ferme la boîte, Evelyn fait son bilan (mémoire)
+        if (!silent) talk.farewell();
+      }
     }
+    sitHook = function (id) { if (seated) standUp(); else sitDown(id); };
 
     // ── clic / survol (souris et doigt) ──
     const raycaster = new THREE.Raycaster();
@@ -1655,6 +2031,11 @@ export function buildWork(parent, opts) {
     }
 
     // hauteur du sol sous les pieds : porche et marches, puis plancher de la maison
+    floorRiseFn = function (px, pz) {
+      if (seated && seatSpot) return F + (seatSpot.eye - 1.7);     // assis : les yeux descendent
+      const l = fromParent(px, pz);
+      return riseAt(l.x, l.z);
+    };
     function riseAt(x, z) {
       if (Math.abs(x) < W / 2 - 0.05 && z > -D / 2 && z < D / 2) return F;
       if (Math.abs(x) <= 1.0 && z >= D / 2) {
@@ -1677,6 +2058,61 @@ export function buildWork(parent, opts) {
 
     // Livres (chargés avec l'étagère)
     function loadBooksAll() { return loadBooksFn ? loadBooksFn() : Promise.resolve(); }
+
+    // ── mémoire de position : si tu quittes le jeu dans la maison, tu reviens là où tu étais (pas devant la porte) ──
+    const POS_KEY = 'bt_house_pos';
+    let posTimer = 0, lastSaved = '', restoreDone = false;
+    const t0 = performance.now();
+
+    function getView() {
+      try {
+        if (opts.view && typeof opts.view.get === 'function') {
+          const v = opts.view.get();
+          if (v && typeof v.yaw === 'number') return { yaw: v.yaw, pitch: v.pitch || 0 };
+          if (Array.isArray(v)) return { yaw: v[0], pitch: v[1] || 0 };
+        }
+      } catch (e) { }
+      return { yaw: camera.rotation.y, pitch: camera.rotation.x };
+    }
+    function putPlayer(lx, lz, yaw, pitch) {
+      const p = toParent(lx, lz);
+      camera.position.x = origin.x + p.x;
+      camera.position.z = origin.z + p.z;
+      camera.position.y = (baseEye === null ? origin.y + gy + 1.7 : baseEye) + F;
+      if (opts.view && yaw !== undefined) opts.view.set(yaw, pitch || 0);
+      if (opts.onTeleport) opts.onTeleport();                // le monde recalcule la hauteur du joueur (outside.js : walkY)
+    }
+    function resetToEntrance() {
+      if (seated) standUp(true);
+      putPlayer(0, IZ1 - 0.9, Math.PI, 0);                  // dans la salle d'attente, face à l'intérieur
+      doors['door:front'].goal = 1;
+    }
+    function keepPosition(dt, l, dH) {
+      // 1) au démarrage : le monde remet peut-être le joueur devant la porte ; on le replace dans la maison
+      if (!restoreDone) {
+        if (performance.now() - t0 > 9000) restoreDone = true;
+        else {
+          let rec = null;
+          try { rec = JSON.parse(localStorage.getItem(POS_KEY) || 'null'); } catch (e) { }
+          if (!rec || !rec.inside) restoreDone = true;
+          else if (!insideNow && dH < 12 && l.z > D / 2 - 0.5) {
+            putPlayer(rec.x, rec.z, rec.yaw, rec.pitch);
+            doors['door:front'].goal = 1;
+            restoreDone = true;
+          }
+        }
+      }
+      // 2) en jeu : on retient où l'on est (une fois par seconde)
+      posTimer += dt;
+      if (posTimer < 1) return;
+      posTimer = 0;
+      if (!restoreDone) return;
+      let rec;
+      if (dH < 40 && insideNow) { const v = getView(); rec = { inside: true, x: +l.x.toFixed(2), z: +l.z.toFixed(2), yaw: +v.yaw.toFixed(3), pitch: +v.pitch.toFixed(3) }; }
+      else rec = { inside: false };
+      const j = JSON.stringify(rec);
+      if (j !== lastSaved) { lastSaved = j; try { localStorage.setItem(POS_KEY, j); } catch (e) { } }
+    }
 
     // ── mise à jour de l'intérieur, à chaque image ──
     interiorUpdate = function (dt, time) {
@@ -1707,7 +2143,7 @@ export function buildWork(parent, opts) {
       } else { zone = 'outside'; curRoom = null; }
 
       // entrer dans la salle de séance : Evelyn dit bonjour (une fois par minute au plus)
-      if (zone === 'session' && prevZone !== 'session' && !seated && evelynHome() && performance.now() - lastGreet > 45000) {
+      if (zone === 'session' && prevZone !== 'session' && !seated && evelynHome() && EV.mode === 'sit' && performance.now() - lastGreet > 45000) {
         lastGreet = performance.now();
         talk.greetStanding();
       }
@@ -1715,10 +2151,10 @@ export function buildWork(parent, opts) {
 
       // hauteur des yeux (porche, marches, plancher) et verrouillage assis
       if (seated) {
-        const sp = toParent(SEAT.x, SEAT.z - 0.02);
+        const sp = toParent(seatSpot.x, seatSpot.z - (seatSpot.talk ? 0.02 : 0));
         camera.position.x = origin.x + sp.x;
         camera.position.z = origin.z + sp.z;
-        camera.position.y = (baseEye === null ? origin.y + gy + 1.7 : baseEye) + F - 0.5;
+        camera.position.y = (baseEye === null ? origin.y + gy + 1.7 : baseEye) + F + (seatSpot.eye - 1.7);
       } else if (dH < 60) {
         const rise = riseAt(l.x, l.z);
         if (rise > 0.001) {
@@ -1744,6 +2180,17 @@ export function buildWork(parent, opts) {
 
       stepFollow(dt, zone);
       stepFire(time, zone);
+      evActorUpdate(dt);
+
+      // portes de placard, tiroir
+      for (let i = 0; i < openables.length; i++) {
+        const op = openables[i];
+        if (op.t === op.goal) continue;
+        op.t += Math.sign(op.goal - op.t) * Math.min(Math.abs(op.goal - op.t), dt / 0.5);
+        op.apply(op.t * op.t * (3 - 2 * op.t));
+      }
+
+      keepPosition(dt, l, dH);
 
       // Evelyn, livres, téléphone
       if (dH < 40) {
@@ -1755,10 +2202,12 @@ export function buildWork(parent, opts) {
           const target = (hoverBook === i && s.data) ? 0.55 : 0;
           s.glow += (target - s.glow) * Math.min(1, dt * 10);
           const sc = E_OFF + (E_ON - E_OFF) * K.session + fireBonus;
-          s.mats[0].emissive.copy(s.base).multiply(WARM).multiplyScalar(sc);
-          s.mats[1].emissive.copy(s.mats[0].emissive);
+          s.mats[0].emissive.setRGB(1, 1, 1).multiply(WARM).multiplyScalar(sc);          // le dos porte sa texture (emissiveMap)
+          s.mats[1].emissive.copy(s.base).multiply(WARM).multiplyScalar(sc);
           s.mats[2].emissive.copy(pagesColor).multiply(WARM).multiplyScalar(sc);
-          if (s.glow > 0.003) { s.mats[0].emissive.r += s.glow; s.mats[0].emissive.g += s.glow * 0.78; s.mats[0].emissive.b += s.glow * 0.4; s.mats[1].emissive.copy(s.mats[0].emissive); }
+          if (s.glow > 0.003) {
+            [s.mats[0], s.mats[1]].forEach(function (m) { m.emissive.r += s.glow; m.emissive.g += s.glow * 0.78; m.emissive.b += s.glow * 0.4; });
+          }
         }
         evPhone.update(dt, time);
       }
@@ -1782,14 +2231,17 @@ export function buildWork(parent, opts) {
       // bouton d'action : le plus proche gagne (portes, interrupteurs, cheminée, carnet, chaise)
       if (dH < 14) {
         if (!modalOpen() && !busyWorld()) {
-          const ids = Object.keys(ITEMS);
-          for (let i = 0; i < ids.length; i++) {
-            const it = ITEMS[ids[i]];
-            if (seated && it.id !== 'seat') continue;
-            if (it.rooms.indexOf(zone) === -1) continue;
-            if (it.enabled && !it.enabled()) continue;
-            const dd = Math.hypot(l.x - it.x, l.z - it.z);
-            if (dd <= it.range) hub.request(it.id, it.label(), it.fn, dd);
+          if (seated) {
+            hub.request('stand', 'STAND UP', function () { standUp(); }, 0);
+          } else if (BUTTONS) {
+            const ids = Object.keys(ITEMS);
+            for (let i = 0; i < ids.length; i++) {
+              const it = ITEMS[ids[i]];
+              if (it.rooms.indexOf(zone) === -1) continue;
+              if (it.enabled && !it.enabled()) continue;
+              const dd = Math.hypot(l.x - it.x, l.z - it.z);
+              if (dd <= it.range) hub.request(it.id, it.label(), it.fn, dd);
+            }
           }
         }
         hub.flush();
@@ -1808,6 +2260,10 @@ export function buildWork(parent, opts) {
       toggleLight: function (id, who) { return setLight(id, !getLights()[id], who); },
       journal: evJ,
       phone: evPhone,
+      evelyn: evelynApi,
+      resetPosition: function () { resetToEntrance(); },
+      use: function (id) { const it = ITEMS[id]; if (it && itemReach(it)) { it.fn(); return true; } return false; },   // ex. BadTherapistHouse.use('door:front') (tu dois être à côté)
+      items: function () { return Object.keys(ITEMS); },
       isInside: function () { return insideNow; },
       doors: function () { const o = {}; Object.keys(doors).forEach(function (k) { o[k] = doors[k].goal === 1; }); return o; },
       setDoor: function (id, open) { const d = doors['door:' + id] || doors[id]; if (d) d.goal = open ? 1 : 0; return !!d; },
@@ -1830,7 +2286,10 @@ export function buildWork(parent, opts) {
   return {
     group: g,
     colliders: WALL_RECTS.map(worldRect),
-    interior: NEAR ? { isInside: function () { return insideNow; }, update: function () { } } : null,
+    // À AJOUTER à la hauteur du terrain sous le joueur (marches du porche, plancher, assis). x, z dans le repère de la rue.
+    // outside.js l'utilise dans walkHeight : ainsi le monde lui-même monte les marches, sans que la hauteur « saute ».
+    floorRise: function (x, z) { return floorRiseFn(x, z); },
+    interior: NEAR ? { isInside: function () { return insideNow; }, update: function () { }, reset: function () { if (window.BadTherapistHouse) window.BadTherapistHouse.resetPosition(); } } : null,
     update: function (dt, time) {
 
       stepLights(dt, time);

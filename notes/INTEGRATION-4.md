@@ -1,56 +1,51 @@
-# INTEGRATION-4 — Station-service + Lou
+# INTEGRATION-4 — Station-service + Lou (v3)
 
-## Fichiers livrés
-- `places/gasstation.js` : remplace l'ancien. Magasin complet, pompes avec écrans, porte + cloche, Lou à son poste.
-- `engine/avatar-body.js` : ton fichier + Lou (`DEFS.lou`) + « poste » (la station pilote le corps de Lou).
+## Fichiers livrés (à copier)
+- `places/gasstation.js` : station complète (voir ci-dessous).
+- `engine/avatar-body.js` : **TA version** (Leon, police) + Lou. Remplace celui d'avant que je t'avais donné.
+- `objects/fuel.js` : réservoir d'essence commun à tous les véhicules (NOUVEAU).
 
-## Ce que contient le magasin
-- Rayons (food, snacks, car, supplies) + frigo boissons (mur ouest, fond lumineux), produits colorés (un seul draw call).
-- Comptoir, caisse (écran vert), machine à café, tabouret derrière le comptoir.
-- Bidons d'essence rouges : étagère près de la porte + pile dehors. Prix au rayon (bidon + essence majorée).
-- Arrière-boutique : lit, table de chevet avec lampe, caisses, tapis. Lou y dort.
-- Porte vitrée qui s'ouvre vers l'intérieur + cloche en laiton au-dessus. Cloche = son synthétisé (aucun fichier audio) + balancement.
-- Enseigne : OPEN / RING BELL (il dort) / CLOSED (mode away). Vitrines : on voit l'intérieur éclairé depuis dehors.
-- Prix très élevés (seul magasin ouvert, même la nuit) : `GAS_CONFIG.fuelPerLiter` et le catalogue en haut du fichier.
+## Pourquoi tu ne voyais pas Lou
+1. Ton avatar-body n'avait pas Lou (tu avais gardé ta version avec Leon). C'est corrigé : même fichier, Lou ajouté.
+2. Lou n'est pas enregistré dans `society.js` : maintenant il est **visible quand même** (le poste de la station le pilote sans acteur). Il ne pourra pas encore parler (API) tant qu'il n'est pas enregistré.
+3. Rien d'autre à brancher pour le voir : `gasstation.js` se chronomètre tout seul, et avatar-body lui donne la position du joueur et la liste des véhicules (taxi, bus, police).
 
-## Comment Lou vit (sans API)
-Modes choisis au hasard avec une fatigue : `register`, `pumps`, `tidy` (range les rayons), `rest` (assis sur le tabouret), `sleep` (lit), `away` (absent, enseigne CLOSED).
-- Il dort quand la fatigue monte, mais pas tout le temps ; il ne retourne pas chez lui : il dort dans le magasin.
-- Cloche (quelqu'un ouvre la porte) → il se réveille, court à la caisse, dit bonjour.
-- Voiture arrêtée à moins de 5,5 m d'une pompe → il vient, demande « How many liters? », sert (écran de la pompe qui compte), encaisse.
-  S'il dort, le moteur finit par le réveiller (8 s).
-- Joueur au volant : panneau 10 / 20 / 40 L / plein / nombre libre. Joueur au comptoir : bouton « Buy » → liste du catalogue.
-- L'API ne sert QUE quand on lui parle (clic sur Lou = avatar-brain.js, comme pour les autres).
+## Ce qui a changé dans la station
+- **Cloche** : lamelle de clochettes fixée EN HAUT DE LA PORTE (côté intérieur). Elles se balancent quand la porte bouge et tintent (« ting-a-ling ») à l'ouverture, plus doucement à la fermeture. Ça réveille Lou s'il dort.
+- **Pompes** : tuyau noir qui pend + pistolet rouge/gris sur son support. Écran 3 lignes (LITERS / PRICE / prix au litre) qui se remplit comme en vrai : le débit monte, puis ralentit à la fin.
+- **Service** : Lou va à la voiture → demande les litres → va chercher le pistolet à la pompe → l'amène à la trappe d'essence → pistolet dans le réservoir (clac) → plein → le rapporte → encaisse.
+  Il place le pistolet à la TRAPPE du véhicule (côté de la pompe), selon sa position et son cap. Si le tuyau n'arrive pas (plus de 6 m) : « Pull up closer to the pump. »
+- **Litres** : le joueur choisit (10 / 20 / 40 / plein / nombre libre) ; un avatar conducteur choisit lui-même (`v.wantLiters(libre)`, sinon 60–100 % du vide). Le plein s'arrête au réservoir plein. Bidons : au magasin (bouton « Buy » à la caisse).
+- Besoin d'essence : `objects/fuel.js` (capacités : voiture 50 L, taxi 55, police 60, bus 150 ; autonomie réglable `RANGE_METERS`).
 
-## À brancher (3 petits morceaux)
-1. **avatar-body.js** : remplacer par celui fourni. Lou est chargé dès que `R.actor('lou')` existe (voir « fichiers dont j'ai besoin »).
-2. **outside.js** : la station doit recevoir le joueur et les véhicules. Après `buildGasStation(...)` :
+## Brancher le réservoir dans les véhicules (j'ai besoin de leurs fichiers)
+Dans chaque véhicule (taxi, bus, police-car, vehicle) :
 ```js
-const gas = buildGasStation(scene, env);
-gas.attach({
-  vehicles: function () { /* [{ id, x, z, speed, isPlayer, tank:{cap,level}, refuel(l) }] */ return []; },
-  charge:   function (buyer, total, why) { return true; },   // brancher l'argent ici (false = refus)
-  say:      function (id, text, ms) { /* brancher les bulles de speech-bubbles.js ; sinon légende simple */ }
-});
-// dans la boucle : gas.update(dt, { camera })
+import { createTank } from './fuel.js';          // chemin à adapter
+this.tank = createTank({ type: 'taxi' });
+this.refuel = (l) => this.tank.add(l);
+this.fuelPort = { x: 0.95, y: 0.75, z: -1.5 };   // trappe (à régler par modèle)
+// à chaque image, quand il avance de d mètres : this.tank.consume(d); si this.tank.empty -> panne sèche
 ```
-3. **Tests console (F12)** : `BadTherapistGas.test.car(0)` (voiture PNJ), `.test.car(1, true)` (voiture du joueur : panneau des litres), `BadTherapistGas.setMode('sleep')`, `.ring()`, `.status()`.
-   Si le corps couché ne tombe pas bien sur le lit : `GAS_CONFIG.sleepHeading` et `sleepYOffset`.
+Tant que ce n'est pas fait, la station donne un réservoir factice (10–40 %) à chaque véhicule, donc le plein fonctionne déjà.
 
-## Fichiers dont j'ai besoin pour finir le branchement
-- `engine/society.js` + `engine/world-registry.js` : enregistrer Lou (acteur, métier, lieu « gas », objets : caisse, pompes, lit ; capacités : aller à la caisse / dormir / etc.) pour que son cerveau les connaisse. Aujourd'hui `controls()` suppose `actor.id === 'lou'` et `job === 'gas'` ou un lieu qui commence par « gas » : à confirmer.
-- `places/outside.js` : où appeler `update()` et d'où viennent la caméra et le taxi.
-- `taxi.js` + `objects/vehicle.js` (+ `objects/roadnet.js` si d'autres voitures roulent) : position, vitesse, réservoir pour la détection de voiture et `refuel()`.
-- `engine/speech-bubbles.js` : pour que ses phrases scriptées (litres, prix) passent par les vraies bulles.
-- `avatars/lou/brain/context.txt` (ton contexte actuel) et `avatars/lou/lou.fbx` si tu veux que je règle la hauteur/pose du sommeil.
-- Pour la monnaie du joueur : le fichier qui gère l'argent/l'inventaire (quand il existera). En attendant, chaque vente déclenche `window` event `bt-gas-sale` (détail : lignes, total).
+## taxi.js : le ranger dans `objects/`
+Le fichier est à la racine du projet (`taxi.js`). Pour le déplacer proprement il faut corriger ses `import` (`./` → `../`) et ceux qui l'importent.
+Commandes (depuis la racine) :
+```
+git mv taxi.js objects\taxi.js
+findstr /s /n /i "taxi.js" *.js *.html
+```
+Envoie-moi `taxi.js`, `places/outside.js` et chaque fichier que `findstr` liste : je te les rends corrigés.
 
-## Contexte court pour Lou (à fusionner dans avatars/lou/brain/context.txt)
-```
-nom: Lou
-metier: pompiste, tient seul la station-service (jour et nuit)
-tu es le seul magasin ouvert dans le coin, même la nuit : tes prix sont élevés.
-tu dors dans l'arriere-boutique quand tu ne rentres pas chez toi ; la cloche de la porte te reveille.
-tu vends l'essence (au litre), des bidons d'essence et les produits des rayons ; tu encaisses a la caisse.
-tu fais ce que tu veux de tes journees et de tes nuits.
-```
+## Tests dans la console (F12)
+`BadTherapistGas.test.car(0)` voiture PNJ à la pompe 0 · `.test.car(1, true)` voiture du joueur (panneau des litres) · `.test.car(1, false, 1.57)` cap de la voiture (radians) · `.setMode('sleep')` · `.ring()` · `.status()`
+Corps couché pas bien posé sur le lit : `BadTherapistGas.config.sleepHeading` / `.sleepYOffset`.
+
+## Fichiers dont j'ai encore besoin
+- `taxi.js`, `objects/vehicle.js`, `objects/bus.js`, `objects/police-car.js` : réservoir, trappe, `getPose()` (cap, vitesse), qui conduit (le joueur ou un avatar).
+- `places/outside.js` (et `places/index.js` si c'est lui qui construit la station) : appel de `update`, véhicules du joueur.
+- `engine/society.js` + `engine/world-registry.js` : enregistrer Lou (acteur, objets : caisse / pompes / lit, capacités) pour qu'il parle avec l'API et que les autres avatars le connaissent.
+- `engine/speech-bubbles.js` : pour que ses phrases (litres, prix) passent par les vraies bulles.
+- `avatars/lou/brain/context.txt` actuel, `places/store.js` (je ne sais pas ce que c'est : un autre magasin ?).
+- Le fichier d'argent/inventaire du joueur (quand il existera) : chaque vente envoie l'événement `bt-gas-sale` (litres, lignes du panier, total).

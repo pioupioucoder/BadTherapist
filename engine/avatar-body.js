@@ -8,6 +8,8 @@
 //     il monte et descend avec les animations « Entering Car » / « Exiting Car » s'il les a ;
 //   • marche en ligne droite entre deux lieux (animation walk), repos (idle) près du lieu, regarde le joueur s'il est proche ;
 //   • invisibles quand ils sont dans l'immeuble ou passagers du taxi.
+//   • Lou (station-service) : un « poste » (def.post = window.BadTherapistGas, places/gasstation.js) lui dit où il est et ce qu'il fait
+//     (caisse, pompes, lit, pistolet…). Il est visible même si society.js ne l'a pas encore enregistré (acteur absent).
 // Evelyn est ici comme les autres : chez elle on ne la voit pas dehors (son corps assis est dans therapist-house.js) ;
 // dès qu'elle sort, son corps de rue apparaît à la porte et marche.
 //
@@ -32,6 +34,10 @@ const DEFS = {
         dir: 'avatars/leon/', model: 'leon.fbx', height: 1.8, driver: true, vehicle: 'police',
         // son dossier : Driving, Entering Car, Exiting Car, Salute, SitTalking, StandingTalking, Walking (pas de Running : « run » absent = on marche)
         anims: { walk: 'Walking.fbx', sit: 'SitTalking.fbx', drive: 'Driving.fbx', talk: 'StandingTalking.fbx', greet: 'Salute.fbx', enter: 'Entering Car.fbx', exit: 'Exiting Car.fbx' }
+    },
+    lou: {
+        dir: 'avatars/lou/', model: 'lou.fbx', height: 1.75, post: 'BadTherapistGas',
+        anims: { walk: 'Walking.fbx', run: 'Running.fbx', sit: 'Sitting.fbx', talk: 'Talking.fbx', greet: 'Standing Greeting.fbx', work: 'FuelingAndSelling.fbx', sleep: 'Sleeping.fbx' }
     },
     pluie: {
         dir: 'avatars/pluie/', model: 'pluie.fbx', height: 1.68,
@@ -125,10 +131,42 @@ export function createBodies(scene, o) {
 
     function play(b, name) {
         if (!b.a || b.cur === name) return;
-        const key = b.a.actions && b.a.actions[name] ? name : (name === 'drive' || name === 'talk' ? 'idle' : null);
+        const key = b.a.actions && b.a.actions[name] ? name : (name === 'drive' || name === 'talk' || name === 'greet' || name === 'work' || name === 'sleep' ? 'idle' : null);
         if (!key || !b.a.actions[key]) return;
         b.cur = name;
         try { b.a.play(key); } catch (e) { /* animation absente : on garde la précédente */ }
+    }
+
+    // ----- poste (station-service) : c'est le lieu qui pilote le corps -----
+    function gasVehicles() {              // véhicules que la station peut servir : taxi, bus, voiture de police
+        const out = [];
+        Object.keys(vehicles).forEach(function (k) {
+            const V = vehicles[k]; if (!V || !V.getPose) return;
+            let p = null; try { p = V.getPose(); } catch (e) { p = null; }
+            if (!p || !isFinite(p.x)) return;
+            const h = p.heading != null ? p.heading : (p.yaw != null ? p.yaw : (p.ry != null ? p.ry : (p.rot != null ? p.rot : p.h)));
+            out.push({
+                id: k, x: p.x, z: p.z, heading: h,
+                speed: p.speed != null ? Math.abs(p.speed) : ((V.isMoving && V.isMoving()) ? 5 : 0),
+                isPlayer: !!(V.playerDriving || (V.isPlayerDriving && V.isPlayerDriving())),
+                tank: V.tank, refuel: V.refuel ? V.refuel.bind(V) : undefined, fuelPort: V.fuelPort, tankCap: V.tankCap
+            });
+        });
+        return out;
+    }
+    function wirePost(PS) {
+        if (PS._bodyWired) return; PS._bodyWired = true;
+        if (PS.attachDefaults) PS.attachDefaults({ player: function () { return camera.position; }, vehicles: gasVehicles });
+    }
+    function postStep(b, PS, dt, cam) {
+        const a = b.a, p = PS.pose();
+        b.grp.visible = !!p.visible;
+        if (!p.visible) { bubbleAt(b, false); return; }
+        b.x = p.x; b.z = p.z; b.heading = p.heading;
+        b.grp.position.set(p.x, p.y, p.z);
+        b.grp.rotation.y = p.heading;
+        if (Math.hypot(cam.x - p.x, cam.z - p.z) < FAR_NO_ANIM) { play(b, p.anim); a.update(dt); }
+        bubbleAt(b, true);
     }
 
     function seat(b, yes) {
@@ -162,7 +200,10 @@ export function createBodies(scene, o) {
 
         Object.keys(bodies).forEach(function (id) {
             const b = bodies[id], a = b.a, actor = R.actor(id);
-            if (!a || !actor) return;
+            if (!a) return;
+            const PS = b.def.post ? window[b.def.post] : null;
+            if (PS) wirePost(PS);
+            if (!actor) { if (PS && PS.controls && PS.controls(null)) postStep(b, PS, dt, cam); return; }     // pas d'acteur dans society : le poste le pilote quand même
 
             // 1. au volant ? (taxi pour Oliver, bus pour Violet)
             const V = b.def.vehicle ? vehicles[b.def.vehicle] : null;
@@ -201,6 +242,9 @@ export function createBodies(scene, o) {
             // 2. passager d'un véhicule : invisible
             const tr = actor.travel;
             if (actor.ride || (tr && tr.mode === 'vehicle')) { b.grp.visible = false; bubbleAt(b, false); return; }
+
+            // 2b. à son poste : le lieu dit où il est et ce qu'il fait
+            if (PS && !tr && PS.controls && PS.controls(actor)) { postStep(b, PS, dt, cam); return; }
 
             // 3. position
             const place = R.place(actor.loc);

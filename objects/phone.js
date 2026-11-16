@@ -21,8 +21,8 @@
 // Seules les couleurs (PHONE_THEMES) et le placement changent. Chaque téléphone est retrouvable par :
 //     window.BadTherapistPhones.player   (et window.BadTherapistPhone, comme avant)
 //     window.BadTherapistPhones.evelyn
-// Événements du joueur inchangés (badtherapist:phone-answer...). Ceux d'Evelyn sont préfixés :
-//     badtherapist:phone-evelyn-answer / -hangup / -dial
+// Événements : badtherapist:phone-answer / -hangup / -dial (detail.owner = 'player' ou 'evelyn').
+// Le téléphone d'Evelyn envoie aussi la version préfixée : badtherapist:phone-evelyn-answer / -hangup / -dial
 // Options : owner, theme (couleurs à la carte), parent, position, yaw, reachable(camera, worldPos), audible(distance)
 
 import * as THREE from 'three';
@@ -166,8 +166,12 @@ export function buildPhone(scene, opts) {
 
     function fire(name, detail) {
         handlers[name].forEach(function(fn) { try { fn(detail); } catch (e) { console.error('[phone]', e); } });
-        const evt = 'badtherapist:phone-' + (owner === 'player' ? '' : owner + '-') + name;
-        try { window.dispatchEvent(new CustomEvent(evt, { detail: Object.assign({ owner: owner }, detail || {}) })); } catch (e) {}
+        const det = Object.assign({ owner: owner }, detail || {});
+        // Le téléphone du joueur : badtherapist:phone-<nom>. Celui d'Evelyn envoie les DEUX :
+        //   badtherapist:phone-evelyn-<nom>  (pour ce qui ne concerne qu'elle)  et  badtherapist:phone-<nom>  avec detail.owner = 'evelyn'
+        // -> ce que ton phone-service.js fait déjà quand tu décroches / raccroches / composes marche donc aussi avec son téléphone.
+        try { window.dispatchEvent(new CustomEvent('badtherapist:phone-' + name, { detail: det })); } catch (e) {}
+        if (owner !== 'player') { try { window.dispatchEvent(new CustomEvent('badtherapist:phone-' + owner + '-' + name, { detail: det })); } catch (e) {} }
     }
 
     // ─── SONNERIE (générée, pas de fichier audio) ────────────────

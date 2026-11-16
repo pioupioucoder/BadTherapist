@@ -29,12 +29,15 @@ async function fetchText(path) {
 // (Avant : { content } et max_tokens -> le Worker lisait un message VIDE : l'avatar ne savait ni où il était ni quoi faire.)
 // Remplaçable : society.setLLM(async ({ system, user, id }) => '...texte...')
 async function defaultLLM(o) {
+    const NO_BRAIN = ['pluie', 'leon', 'violet', 'oliver', 'evelyn'];
+    if (NO_BRAIN.includes(o.id)) return '{"thought":"","actions":[{"do":"wait"}]}';
     const cfg = THERAPIST_CONFIG || {};
     if (!cfg.proxyUrl) throw new Error('pas de proxyUrl dans therapist-config.js');
     const body = {
         system: o.system,
         messages: [{ role: 'user', text: o.user }],
         temperature: 0.9,
+        // ... la suite inchangée
         maxOutputTokens: 1000,                 // gpt-oss compte sa réflexion dedans : ne pas descendre
         reasoningEffort: cfg.reasoningEffort || 'low',
         avatar: o.id

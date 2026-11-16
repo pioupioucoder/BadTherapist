@@ -30,6 +30,7 @@
         book:      'bt_journal',          // le livre du tiroir
         evelynBook: 'bt_evelyn_journal',  // le carnet intime d'Evelyn (journal.js, mêmes règles que le livre du tiroir)
         houseLights: 'bt_house_lights',   // interrupteurs de la maison d'Evelyn (therapist-house.js) : { pièce: allumée ? }
+        housePos:  'bt_house_pos',        // où tu étais dans la maison d'Evelyn quand tu as quitté le jeu (therapist-house.js)
         evelyn:    'bt_evelyn_memory',    // mémoire d'Evelyn (séances : therapist-memory.js + « mind » : avatar-mind.js)
         pluie:     'bt_pluie_memory',     // mémoire de Pluie (avatar-mind.js)
         oliver:    'bt_oliver_memory'     // mémoire d'Oliver (avatar-mind.js). Nouvel avatar : ajoute ICI une ligne 'bt_<id>_memory'
@@ -68,6 +69,7 @@
         book:   function (o) { return !!(o && Array.isArray(o.pages)); },
         evelynBook:  function (o) { return !!(o && Array.isArray(o.pages)); },
         houseLights: function (o) { return !!(o && typeof o === 'object' && !Array.isArray(o)); },
+        housePos:    function (o) { return !!(o && typeof o === 'object' && !Array.isArray(o)); },
         evelyn: function (o) { return !!(o && typeof o === 'object' && !Array.isArray(o) && o.v); },
         pluie:  function (o) { return !!(o && typeof o === 'object' && !Array.isArray(o)); },
         oliver: function (o) { return !!(o && typeof o === 'object' && !Array.isArray(o)); }

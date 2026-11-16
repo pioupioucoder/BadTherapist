@@ -1,11 +1,11 @@
 // therapist-ai.js – Evelyn parle.
 //   • une boîte de dialogue pixel (texte lettre par lettre + « blip »), SEULEMENT quand le joueur est assis ;
-//   • une bulle au-dessus de sa tête quand le joueur est debout : c'est l'IA qui la dit, pas une phrase toute faite ;
-//   • l'accueil de la séance est aussi écrit par l'IA : présentation + prénom (1re fois), remerciements pour l'appel et l'attente ;
+//   • une bulle au-dessus de sa tête quand le joueur est debout (phrases de lines.json ; IA seulement si cfg.aiBubbles) ;
+//   • l'accueil de la séance (IA seulement si cfg.aiGreeting, sinon lines.json) ;
 //   • un minuteur INVISIBLE : Evelyn connaît la durée prévue, conclut seule, réclame son tarif, fixe quand rappeler le patient ;
 //   • le téléphone : openCall() (utilisé par evelyn-phone.js) pour les appels qu'elle passe elle-même ;
 //   • SA MÉMOIRE (therapist-memory.js) : elle décide de ce qu'elle retient, oublie, veut, de ses habitudes, de son agenda ;
-//   • si l'IA ne répond pas : on réessaie, puis on le dit au joueur. On n'invente JAMAIS une réplique à sa place.
+//   • ÉCONOMIE DE QUOTA : une seule tentative par appel, et pause automatique après une erreur 429/502/503/504.
 //
 // Contexte (qui elle est)  : avatars/<avatar>/brain/context.txt  (les lignes qui commencent par # sont ignorées)
 // Dernier recours / textes : avatars/<avatar>/brain/lines.json
@@ -38,7 +38,7 @@ const CSS = `
 .btt-bubble::after{content:"";position:absolute;left:50%;bottom:-13px;margin-left:-8px;border-left:8px solid transparent;border-right:8px solid transparent;border-top:10px solid #f2f2f2}
 `;
 
-// Dernier recours seulement (bulle, premier accueil) si l'IA est totalement hors service, et textes d'interface
+// Phrases de secours / d'interface (utilisées quand l'IA est coupée ou hors service)
 const DEFAULT_LINES = {
     greeting: 'Hello.',
     greetingReturning: ['Hello again.'],
@@ -146,8 +146,6 @@ const REFLECT_RULES = [
     `- memory : même format que d'habitude. Tu peux fusionner les doublons et supprimer ce qui est périmé.`
 ].join('\n');
 
-const sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
-
 export function createTherapistTalk(opts) {
     opts = opts || {};
     const cfg = Object.assign({}, THERAPIST_CONFIG, opts.config || {});
@@ -184,7 +182,7 @@ export function createTherapistTalk(opts) {
             fetch(cfg.linesFile).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }),
             // le monde commun à tous les avatars : facultatif, ignoré s'il n'existe pas
             cfg.worldFile ? fetch(cfg.worldFile).then(function (r) { return r.ok ? r.text() : ''; }).catch(function () { return ''; }) : Promise.resolve(''),
-            // therapist-secret.js : optionnel, jamais poussé sur GitHub (voir therapist-config.js)
+            // therapist-secret.js : optionnel, jamais poussé sur GitHub
             import('./therapist-secret.js').then(function (m) { return m.GROQ_API_KEY || ''; }).catch(function () { return ''; })
         ]).then(function (r) {
             // les lignes qui commencent par # sont tes notes à toi : l'IA ne les voit pas
@@ -412,14 +410,12 @@ export function createTherapistTalk(opts) {
         if (!key) throw new Error('aucune clé Groq');
 
         const messages = [{ role: 'system', content: system }].concat(turns.map(function (m) {
-            // ses anciennes répliques sont renvoyées au même format JSON que celui qu'on lui demande
             return m.role === 'user'
                 ? { role: 'user', content: m.text }
                 : { role: 'assistant', content: JSON.stringify({ say: m.text }) };
         }));
 
         const body = { model: cfg.model, messages: messages, temperature: cfg.temperature, max_tokens: cfg.maxOutputTokens };
-        // gpt-oss « réfléchit » avant de répondre et ces tokens comptent dans max_tokens : on garde ça court
         if (/gpt-oss/i.test(cfg.model || '')) body.reasoning_effort = cfg.reasoningEffort || 'low';
 
         const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -435,15 +431,17 @@ export function createTherapistTalk(opts) {
         return text;
     }
 
-    // Réessaie quelques fois (le Worker essaie déjà plusieurs clés / cerveaux de son côté)
-    async function ask(system, turns, tries) {
-        let err;
-        const n = tries || 3;
-        for (let i = 0; i < n; i++) {
-            try { return await callLLM(system, turns); }
-            catch (e) { err = e; if (i < n - 1) await sleep(900 * (i + 1)); }
+    // UNE SEULE tentative par appel (chaque essai consomme du quota).
+    // Après une erreur de quota ou de panne, l'IA est mise en pause : plus aucun appel pendant ce temps.
+    let aiPausedUntil = 0;
+    async function ask(system, turns) {
+        if (Date.now() < aiPausedUntil) throw new Error('IA en pause');
+        try { return await callLLM(system, turns); }
+        catch (e) {
+            const m = /proxy (429|502|503|504)/.exec(String(e && e.message));
+            if (m) aiPausedUntil = Date.now() + (m[1] === '429' ? 10 : 2) * 60000;
+            throw e;
         }
-        throw err;
     }
 
     function parseJSON(raw) {
@@ -513,7 +511,6 @@ export function createTherapistTalk(opts) {
         if (!knowsThem) {
             S.push('Vous ne vous connaissez pas : c\'est votre toute première rencontre.');
         } else {
-            // Même rappel des FAITS au téléphone et en face à face (avant, l'appel n'en recevait aucun : d'où le « bonjour » de première fois)
             S.push('Vous vous êtes déjà parlé : ' + (m.sessions || 0) + ' séance(s) et ' + (m.calls || 0) + ' appel(s) jusqu\'ici (voir tes notes).');
             S.push(known ? 'Son prénom est ' + known + '.' : 'Tu ne connais pas encore son prénom.');
             if (m.lastSession) S.push('La dernière fois : ' + m.lastSession);
@@ -533,12 +530,12 @@ export function createTherapistTalk(opts) {
             await load();
             const lines = transcript.map(function (m) { return (m.role === 'user' ? 'LA PERSONNE : ' : 'TOI : ') + m.text; });
             if (kind === 'call') lines.unshift('[Cette conversation a eu lieu au téléphone.]');
-            // le Worker coupe chaque message à 2000 caractères : on envoie la conversation en plusieurs morceaux, pour qu'elle la relise en entier
+            // on envoie la conversation en plusieurs morceaux, pour qu'elle la relise en entier
             const turns = [];
             let cur = '';
             lines.forEach(function (l) {
-                l = l.slice(0, 1800);
-                if (cur && cur.length + l.length + 1 > 1800) { turns.push({ role: 'user', text: cur }); cur = ''; }
+                l = l.slice(0, 1400);
+                if (cur && cur.length + l.length + 1 > 1400) { turns.push({ role: 'user', text: cur }); cur = ''; }
                 cur += (cur ? '\n' : '') + l;
             });
             if (cur) turns.push({ role: 'user', text: cur });
@@ -563,8 +560,7 @@ export function createTherapistTalk(opts) {
         'hm hmm none nope yeah yep fine well because never mind not just tired sorry bien mal peut etre être').split(' ');
     const NAME_WORD = "[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'’-]{1,19}";
 
-    // Le joueur donne son prénom : on le note nous-mêmes (« my name is Sam », « je m'appelle Sam », « I'm Sam »,
-    // ou un simple « Sam » en réponse à sa question). Evelyn peut toujours le corriger ensuite.
+    // Le joueur donne son prénom : on le note nous-mêmes. Evelyn peut toujours le corriger ensuite.
     function learnName(msg) {
         if (Mem.get().playerName) return;
         let name = '';
@@ -686,7 +682,7 @@ export function createTherapistTalk(opts) {
         });
     }
 
-    // la bulle disparaît ; si le joueur est toujours debout, elle reparlera (au plus 2 fois, pour ne pas épuiser l'IA)
+    // la bulle disparaît ; si le joueur est toujours debout, elle reparlera (au plus 2 fois)
     function softHide() {
         clearTimeout(bubTimer);
         clearTimeout(repeatTimer);
@@ -723,7 +719,7 @@ export function createTherapistTalk(opts) {
         return '';
     }
 
-    // C'est l'IA qui parle ; une phrase toute faite n'est qu'un dernier recours si elle est vraiment hors service
+    // Phrase de lines.json par défaut ; l'IA seulement si cfg.aiBubbles est true
     async function speakBubble(kind) {
         if (bubBusy || isOpenFlag) return;
         bubBusy = true;
@@ -731,9 +727,9 @@ export function createTherapistTalk(opts) {
         let answered = false;      // l'IA a répondu (même par un silence) : pas de phrase de secours
         try {
             await load();
-            if (canAsk()) {
+            if (cfg.aiBubbles && canAsk()) {
                 const sys = systemPrompt('bubble', bubbleSituation(kind));
-                const r = parseReply(await ask(sys, [{ role: 'user', text: '[' + kind + ']' }], 2));
+                const r = parseReply(await ask(sys, [{ role: 'user', text: '[' + kind + ']' }]));
                 text = r.say.slice(0, 140);
                 answered = true;
             }
@@ -868,11 +864,11 @@ export function createTherapistTalk(opts) {
         const first = firstMeeting();
         console.info('[therapist] mémoire lue : ' + Mem.get().sessions + ' séance(s), prénom « ' + (Mem.get().playerName || '?') + ' », première rencontre : ' + first);
         const pend = Mem.get().pending.length ? Mem.get().pending.slice() : null;   // séance précédente jamais résumée
-        const ai = canAsk();
+        const ai = canAsk() && !!cfg.aiGreeting;
         let greet = '';
         const stopDots = ai ? thinking() : null;
         try {
-            if (pend) await reflect(pend, 'session');
+            if (pend && cfg.reflectOnOpen) await reflect(pend, 'session');
             if (ai) { sessionStart = Date.now(); plannedMin = cfg.sessionMinutes || 30; greet = await greetBrain(first); }
         } catch (e) {
             console.warn('[therapist] accueil par l\'IA impossible :', e && e.message ? e.message : e);
@@ -881,7 +877,7 @@ export function createTherapistTalk(opts) {
         if (stopDots) stopDots();
         if (!isOpenFlag) return;
 
-        // Dernier recours seulement : l'IA est vraiment hors service
+        // Phrase de lines.json (ou de l'IA si cfg.aiGreeting)
         if (!greet) greet = first ? pickLine('greeting') : pickLine('greetingReturning');
         sessionStart = Date.now();
         plannedMin = cfg.sessionMinutes || 30;
@@ -929,7 +925,7 @@ export function createTherapistTalk(opts) {
         if (!canAsk()) return { answered: false };
         let raw = '', obj = null;
         try {
-            raw = await ask(systemPrompt('dial'), [{ role: 'user', text: '[La personne compose ton numéro. Ton téléphone sonne.]' }], 2);
+            raw = await ask(systemPrompt('dial'), [{ role: 'user', text: '[La personne compose ton numéro. Ton téléphone sonne.]' }]);
             obj = parseJSON(raw);
         } catch (e) {
             console.warn('[therapist] appel entrant : IA indisponible :', e && e.message ? e.message : e);
@@ -969,11 +965,10 @@ export function createTherapistTalk(opts) {
     // Le patient n'a pas décroché : à appeler depuis le code du téléphone quand une sonnerie reste sans réponse
     function callMissed() { Mem.noteMissedCall(); }
 
-    // Evelyn, seule, se demande si elle veut appeler. À appeler de temps en temps quand le joueur n'est pas en séance
-    // (par exemple toutes les 10 à 15 minutes de jeu). Si elle veut : son appel est programmé dans ~30 s et
-    // Mem.callDue() devient vrai, donc le téléphone sonne par le même chemin que d'habitude.
+    // Evelyn, seule, se demande si elle veut appeler (désactivé par défaut : cfg.aiImpulse)
     let lastConsider = 0;
     async function considerCall(extra) {
+        if (!cfg.aiImpulse) return null;
         if (isOpenFlag || reflecting || mode !== 'session') return null;
         const m = Mem.get();
         if (m.nextCall && m.nextCall.dueAt <= Date.now()) return null;           // un appel est déjà dû
@@ -982,7 +977,7 @@ export function createTherapistTalk(opts) {
         await load();
         if (!canAsk()) return null;
         try {
-            const raw = await ask(systemPrompt('impulse', extra), [{ role: 'user', text: '[Tu es seule. Rien ne se passe.]' }], 1);
+            const raw = await ask(systemPrompt('impulse', extra), [{ role: 'user', text: '[Tu es seule. Rien ne se passe.]' }]);
             const obj = parseJSON(raw);
             if (!obj) return null;
             Mem.applyOps(obj.memory);

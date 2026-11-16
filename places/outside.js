@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { buildWork } from './therapist-house.js'
 import { buildForest } from './forest.js';
 import { createTruck } from '../objects/vehicle.js';
-import { createTaxi } from '../taxi.js';
+import { createTaxi } from '../objects/taxi.js';
 import { createRoadNet } from '../objects/roadnet.js';
 import { createBus } from '../objects/bus.js';
 import { attachBusLine } from '../engine/bus-line.js';
@@ -505,7 +505,8 @@ return {
   // la hauteur du sol et les collisions de la maison
   main: main,
   entranceMeshes: imm.entranceMeshes,
-  walkHeight: function (x, z) { return (bus && bus.isInside()) ? bus.floorY() : SH.walkHeight(x, z); },   // dans le bus : le plancher du bus
+  // dans le bus : le plancher du bus ; sinon le terrain + la hauteur du porche / du plancher de la maison d'Evelyn
+  walkHeight: function (x, z) { return (bus && bus.isInside()) ? bus.floorY() : SH.walkHeight(x, z) + work.floorRise(x, z); },
   terrainHeight: SH.terrainH,
   colliders: places ? work.colliders.concat(places.rects) : work.colliders,
   workSpot: WORK_SPOT,
@@ -545,7 +546,7 @@ return {
         const tc = collideAll(camera.position.x, camera.position.z, 0.3);
         camera.position.x = tc[0];
         camera.position.z = tc[1];
-        const target = 1.7 + SH.walkHeight(camera.position.x, camera.position.z);
+        const target = 1.7 + SH.walkHeight(camera.position.x, camera.position.z) + work.floorRise(camera.position.x, camera.position.z);
         walkY = walkY === null ? target : walkY + (target - walkY) * Math.min(1, dt * 9);
         camera.position.y = walkY;
         if (ctx.snow) ctx.snow.setBaseY(walkY - 1.7);
