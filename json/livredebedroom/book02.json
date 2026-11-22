@@ -1,0 +1,9 @@
+{
+  "title": "Livre de test 2",
+  "author": "À remplacer",
+  "cover": { "color": "#2c3e50", "accent": "#c9b37a", "textColor": "#e6dcc0", "symbol": "eye", "image": "" },
+  "pages": [
+    "Page 1.\n\nDeuxième livre de test.",
+    "Page 2.\n\nAjoute book03.json, book04.json… pour en avoir d'autres sur l'étagère."
+  ]
+}

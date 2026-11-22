@@ -1,0 +1,9 @@
+{
+  "title": "Livre de test 1",
+  "author": "À remplacer",
+  "cover": { "color": "#7c2431", "accent": "#d6ae5c", "textColor": "#e8d6a8", "symbol": "moon", "image": "" },
+  "pages": [
+    "Page 1.\n\nCeci est un livre de test. Remplace ce texte par le contenu de ton livre.",
+    "Page 2.\n\nChaque élément de la liste « pages » est une page du livre."
+  ]
+}
