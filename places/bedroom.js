@@ -6,7 +6,7 @@ import { buildTV } from '../objects/tv.js';
 // ==========================================
 // BAD THERAPIST — LA CHAMBRE (places/bedroom.js)
 // ==========================================
-// Uniquement la chambre : murs, lit, télévision, porte, table de chevet, téléphone, monologues.
+// Uniquement la chambre : murs, lit, télévision, porte, table de chevet, téléphone.
 // Ce qui relie la chambre au reste de l'immeuble (couloir, ascenseur, hall, rue, collisions du joueur,
 // sauvegarde) est dans apartment.js. La vue par la fenêtre est dans windowview.js.
 
@@ -555,137 +555,10 @@ export function buildBedroom(scene, o) {
         anchor: nightstand.group
     });
 
-    // ─── MONOLOGUES CONTEXTUELS ──────────────────────────────────────
-    let monologueData = null;
-    let lastMonologueTime = 0;
-    const monologueCooldown = 5000;
-    let currentMonologueZone = null;
-
-    function loadMonologueData() {
-        const url = 'monologues.json';
-        fetch(url)
-            .then(response => {
-                if (!response.ok) throw new Error('HTTP ' + response.status);
-                return response.json();
-            })
-            .then(data => {
-                monologueData = data;
-                console.log('📜 Monologues chargés :', Object.keys(monologueData).length, 'zones');
-            })
-            .catch(err => {
-                console.warn('⚠️ Échec du chargement des monologues, utilisation de données par défaut.', err);
-                monologueData = {
-                    "bed": [
-                        "Ce lit semble confortable...",
-                        "Un endroit pour se reposer.",
-                        "Les rêves m'attendent ici."
-                    ],
-                    "bookshelf": [
-                        "Des livres anciens...",
-                        "La connaissance est dans ces pages.",
-                        "Je me sens attiré par cette étagère."
-                    ],
-                    "tv": [
-                        "Un vieux téléviseur...",
-                        "Les images dansent sur l'écran.",
-                        "Que de souvenirs."
-                    ],
-                    "greenboard": [
-                        "Un tableau vert avec une enquête...",
-                        "Des indices sont écrits ici.",
-                        "Je devrais regarder de plus près."
-                    ],
-                    "carton": [
-                        "Un carton avec une note.",
-                        "Que cache ce carton ?",
-                        "Il y a quelque chose d'écrit."
-                    ]
-                };
-                console.log('📜 Utilisation des monologues par défaut.');
-            });
-    }
-    loadMonologueData();
-
-    const zones = [
-        { id: 'bed', position: window._bedPosition || new THREE.Vector3(-7, 0, 0.8), radius: 2.5 },
-        { id: 'tv', position: window._tvPosition || new THREE.Vector3(-7, 0, 7.2), radius: 2.5 },
-    ];
-
-    function showContextualMonologue(zoneId) {
-        if (!monologueData) return;
-        const texts = monologueData[zoneId];
-        if (!texts || texts.length === 0) return;
-        const now = performance.now();
-        if (now - lastMonologueTime < monologueCooldown) return;
-        lastMonologueTime = now;
-
-        const index = Math.floor(Math.random() * texts.length);
-        const text = texts[index];
-
-        const container = document.createElement('div');
-        container.id = 'contextMonologue';
-        container.style.cssText = `
-            position: fixed;
-            bottom: 120px;
-            left: 50%;
-            transform: translateX(-50%);
-            max-width: 80%;
-            background: rgba(0, 0, 0, 0.75);
-            color: #f0e8d0;
-            padding: 14px 28px;
-            border-radius: 12px;
-            font-family: 'Georgia', serif;
-            font-size: 18px;
-            line-height: 1.6;
-            text-align: center;
-            backdrop-filter: blur(6px);
-            border: 1px solid #6a5a3a;
-            box-shadow: 0 4px 30px rgba(0,0,0,0.5);
-            z-index: 999;
-            pointer-events: none;
-            opacity: 0;
-            transition: opacity 0.6s ease;
-        `;
-        container.textContent = text;
-        document.body.appendChild(container);
-
-        requestAnimationFrame(() => {
-            container.style.opacity = '1';
-        });
-
-        setTimeout(() => {
-            container.style.opacity = '0';
-            setTimeout(() => {
-                if (container.parentNode) container.remove();
-            }, 600);
-        }, 4000);
-    }
-
-    function updateMonologue(cameraPos) {
-        if (!monologueData) return;
-        let zoneFound = null;
-        for (let zone of zones) {
-            const dx = cameraPos.x - zone.position.x;
-            const dz = cameraPos.z - zone.position.z;
-            const dist = Math.sqrt(dx*dx + dz*dz);
-            if (dist < zone.radius) {
-                zoneFound = zone.id;
-                break;
-            }
-        }
-        if (zoneFound && zoneFound !== currentMonologueZone) {
-            currentMonologueZone = zoneFound;
-            showContextualMonologue(zoneFound);
-        } else if (!zoneFound) {
-            currentMonologueZone = null;
-        }
-    }
-
     return {
         update(dt, time) {
             nightstand.update(dt, time);
             phone.update(dt, time);
-            updateMonologue(camera.position);
         }
     };
 }

@@ -3,7 +3,7 @@ import * as THREE from 'three';
 // ==========================================
 // ILLUSION — LA TÉLÉ (objects/tv.js)
 // ==========================================
-// Télé vintage + lecteur de disquettes sous la télé + table avec la boîte de disquettes.
+// Télé vintage + lecteur de disquettes sous la télé + étagère à disquettes.
 // Chaque dossier de /videos = une disquette (liste dynamique via videos.php).
 // Utilisation : buildTV(scene, { camera, canvas });
 
@@ -477,13 +477,13 @@ export function buildTV(scene, o) {
         window._nextVideo = nextVideo;
         window._prevVideo = prevVideo;
 
-        // ── LECTEUR DE DISQUETTES (sous la télé) + TABLE AVEC BOÎTE EN CARTON ──
-        // Chaque dossier de /videos = une disquette 3,5" rangée dans la boîte. Survol = on lit le nom du dossier.
+        // ── LECTEUR DE DISQUETTES (sous la télé) + ÉTAGÈRE À DISQUETTES ──
+        // Chaque dossier de /videos = une disquette 3,5" rangée dans l'étagère. Survol = on lit le nom du dossier.
         // Clic sur une disquette = elle glisse dans le lecteur et la télé joue ses vidéos (au hasard).
         // Clic sur la disquette insérée ou sur le bouton du lecteur = éjection.
         (function buildFloppySystem() {
             const DRIVE = { x: 0, y: 0.45, zFront: 0.32, fx: -0.10 };   // lecteur 0,9 × 0,22 × 0,5 posé sur l'étagère (dessus à 0,56)
-            const TABLE = { x: -1.6, zFront: 0.55, h: 0.62 };           // petite table de salon vintage
+            const TABLE = { x: -1.6, zFront: 0.55, h: 0.62 };           // étagère à disquettes (repère des disquettes)
             const FW = 0.22, FT = 0.014;
             const flatQuat = new THREE.Quaternion();
             const boxQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, Math.PI, 0, 'YXZ'));
@@ -552,38 +552,122 @@ export function buildTV(scene, o) {
             }
             group.add(drive);
 
-            // ─ Table + boîte en carton ─
+            // ─ Étagère en bois à disquettes (style vintage, sans chichi) ─
+            // Montants pleins, 2 étagères, plateau qui déborde, tablier devant avec le ruban orange
+            // (sensibilisation à l'automutilation), petit bac incliné sur le dessus pour les disquettes.
             const tableGroup = new THREE.Group();
             tableGroup.userData.box = true;
             group.add(tableGroup);
-            const woodMat = new THREE.MeshLambertMaterial({ color: 0x3a2412 });
-            const cardMat = new THREE.MeshLambertMaterial({ color: 0xb48a54 });
+
+            const grainTex = (function () {
+                const c = document.createElement('canvas');
+                c.width = 256; c.height = 256;
+                const x = c.getContext('2d');
+                x.fillStyle = '#6f4526'; x.fillRect(0, 0, 256, 256);
+                for (let i = 0; i < 170; i++) {
+                    const dark = Math.random() < 0.55;
+                    x.fillStyle = (dark ? 'rgba(38,18,6,' : 'rgba(170,115,65,') + (0.05 + Math.random() * 0.14) + ')';
+                    x.fillRect(0, Math.random() * 256, 256, 1 + Math.random() * 3);
+                }
+                const t = new THREE.CanvasTexture(c);
+                t.wrapS = t.wrapT = THREE.RepeatWrapping;
+                return t;
+            })();
+            const woodMat = new THREE.MeshLambertMaterial({ map: grainTex, color: 0xc8a483 });
+            const woodDarkMat = new THREE.MeshLambertMaterial({ map: grainTex, color: 0x8c6a4e });
+            const backMat = new THREE.MeshLambertMaterial({ color: 0x2a1a0e });
+
+            // Ruban orange (sensibilisation à l'automutilation) dessiné sur canvas, fond transparent
+            const ribbonTex = (function () {
+                const c = document.createElement('canvas');
+                c.width = 128; c.height = 128;
+                const x = c.getContext('2d');
+                x.lineJoin = 'round'; x.lineCap = 'round';
+                function path() {
+                    x.beginPath();
+                    x.moveTo(36, 118);
+                    x.lineTo(80, 54);
+                    x.bezierCurveTo(94, 34, 84, 10, 64, 10);
+                    x.bezierCurveTo(44, 10, 34, 34, 48, 54);
+                    x.lineTo(92, 118);
+                }
+                path(); x.strokeStyle = '#b85400'; x.lineWidth = 26; x.stroke();
+                path(); x.strokeStyle = '#ff8a1c'; x.lineWidth = 17; x.stroke();
+                return new THREE.CanvasTexture(c);
+            })();
+            const ribbonMat = new THREE.MeshLambertMaterial({ map: ribbonTex, transparent: true, alphaTest: 0.1 });
+
+            // Profil (z, y) extrudé sur la largeur → cale et joues en pente du bac
+            function profileMesh(pts, width, cx, mat) {
+                const sh = new THREE.Shape();
+                sh.moveTo(pts[0][0], pts[0][1]);
+                for (let i = 1; i < pts.length; i++) sh.lineTo(pts[i][0], pts[i][1]);
+                sh.lineTo(pts[0][0], pts[0][1]);
+                const g = new THREE.ExtrudeGeometry(sh, { depth: width, bevelEnabled: false });
+                g.rotateY(-Math.PI / 2);
+                g.translate(cx + width / 2, 0, 0);
+                const m = new THREE.Mesh(g, mat);
+                m.castShadow = true; m.receiveShadow = true;
+                tableGroup.add(m);
+                return m;
+            }
+
             function rebuildTable(n) {
                 while (tableGroup.children.length) tableGroup.remove(tableGroup.children[0]);
-                const D = Math.max(0.32, n * 0.05 + 0.16), H = 0.10, W = 0.30;
-                const TD = D + 0.14, TW = 0.52;
+                const D = Math.max(0.30, n * 0.05 + 0.14);       // profondeur du bac à disquettes
+                const W = 0.28;                                   // largeur du bac
+                const cx = TABLE.x;
+                const bf = TABLE.zFront - 0.04;                   // face avant du bac
+                const zB = bf - D;                                // fond du bac
+                const tz = bf - D / 2;
+                const slope = 0.012 / 0.05;                       // même pente que les disquettes (slot)
+                const z0 = TABLE.zFront - 0.11;
+                const yr = z => TABLE.h + 0.006 + (z0 - z) * slope;
+                const yBase = TABLE.h - 0.05;                     // dessus de l'étagère
+
                 const add = (mat, w, h, d, x, y, z) => {
                     const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
                     m.position.set(x, y, z);
                     m.castShadow = true; m.receiveShadow = true;
                     tableGroup.add(m);
+                    return m;
                 };
-                const tz = TABLE.zFront + 0.04 - TD / 2;
-                add(woodMat, TW, 0.04, TD, TABLE.x, TABLE.h - 0.02, tz);
-                [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(s => {
-                    add(woodMat, 0.045, TABLE.h - 0.04, 0.045, TABLE.x + s[0] * (TW / 2 - 0.04), (TABLE.h - 0.04) / 2, tz + s[1] * (TD / 2 - 0.04));
+
+                // Étagère : montants, fond, 2 étagères, plateau, tablier, plinthe
+                const BW = 0.44, BD = D + 0.08, T = 0.022;
+                const zFront = tz + BD / 2, zBack = tz - BD / 2;
+                const hTop = yBase - 0.03;                        // dessous du plateau
+                [-1, 1].forEach(s => add(woodMat, T, hTop, BD, cx + s * (BW / 2 - T / 2), hTop / 2, tz));
+                add(backMat, BW - 2 * T, hTop, 0.01, cx, hTop / 2, zBack + 0.005);
+                const inner = BW - 2 * T;
+                add(woodMat, inner, 0.02, BD - 0.01, cx, 0.10, tz + 0.005);   // étagère du bas
+                add(woodMat, inner, 0.02, BD - 0.01, cx, 0.33, tz + 0.005);   // étagère du milieu
+                add(woodDarkMat, inner, 0.05, 0.02, cx, 0.025, zFront - 0.03); // plinthe en retrait
+                add(woodMat, BW + 0.05, 0.03, BD + 0.04, cx, yBase - 0.015, tz + 0.01); // plateau qui déborde
+                add(woodMat, inner, 0.11, 0.02, cx, hTop - 0.055, zFront - 0.01);      // tablier
+
+                // Ruban orange sur le tablier
+                const ribbon = new THREE.Mesh(new THREE.PlaneGeometry(0.095, 0.095), ribbonMat);
+                ribbon.position.set(cx, hTop - 0.055, zFront + 0.0015);
+                tableGroup.add(ribbon);
+
+                // Quelques livres sur l'étagère du milieu
+                const bookCols = [0x6b2a2a, 0x2c3e50, 0x5a5a3a, 0x7a5a2a, 0x3a4a3a];
+                const bookH = [0.19, 0.15, 0.17, 0.13, 0.18];
+                bookCols.forEach((col, i) => {
+                    const bw = 0.035 + (i % 2) * 0.008;
+                    add(new THREE.MeshLambertMaterial({ color: col }), bw, bookH[i], BD - 0.10,
+                        cx - inner / 2 + 0.03 + i * 0.045, 0.34 + bookH[i] / 2, tz);
                 });
-                const bf = TABLE.zFront - 0.04;          // face avant de la boîte
-                const y0 = TABLE.h;
-                add(cardMat, W, 0.006, D, TABLE.x, y0 + 0.003, bf - D / 2);
-                add(cardMat, W, H, 0.008, TABLE.x, y0 + H / 2, bf);
-                add(cardMat, W, H, 0.008, TABLE.x, y0 + H / 2, bf - D);
-                add(cardMat, 0.008, H, D, TABLE.x - W / 2, y0 + H / 2, bf - D / 2);
-                add(cardMat, 0.008, H, D, TABLE.x + W / 2, y0 + H / 2, bf - D / 2);
-                const lab = new THREE.Mesh(new THREE.PlaneGeometry(0.24, 0.06),
-                    new THREE.MeshBasicMaterial({ map: textTex(256, 64, '#b48a54', '#3a2410', 'bold 30px "Courier New", monospace', 'DISQUETTES', 34) }));
-                lab.position.set(TABLE.x, y0 + 0.05, bf + 0.0045);
-                tableGroup.add(lab);
+
+                // Bac incliné sur le plateau (cale + joues + fond)
+                profileMesh([[bf, yBase], [zB, yBase], [zB, yr(zB)], [bf, yr(bf)]], W, cx, woodDarkMat);
+                [-1, 1].forEach(s => {
+                    profileMesh([[bf + 0.01, yBase], [zB - 0.018, yBase], [zB - 0.018, yr(zB) + 0.12], [bf + 0.01, yr(bf) + 0.05]],
+                        0.018, cx + s * (W / 2 + 0.009), woodMat);
+                });
+                const yBT = yr(zB) + 0.20;
+                add(woodMat, W + 0.036, yBT - yBase, 0.018, cx, (yBT + yBase) / 2, zB - 0.009);
             }
 
             // ─ Disquette 3,5" (coin coupé, volet métallique, étiquette) ─
