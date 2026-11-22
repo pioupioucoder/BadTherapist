@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#101010">
-<link rel="icon" type="image/png" href="/BadTherapist/images/logo.png?v=2">
-<title>Bad Therapist</title>
+<link rel="icon" type="image/png" href="images/logo.png?v=2">
+<title>Illusion</title>
 
 <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
 <script src="save-data.js"></script>
@@ -185,7 +185,7 @@ h1 {
 
 .glitch-e::before,
 .glitch-e::after {
-    content: "E";
+    content: attr(data-c);
     position: absolute;
     inset: 0;
     opacity: 0;
@@ -557,7 +557,7 @@ nav a:hover::before {
 <main id="game-menu" class="hidden">
     <div class="menu-content">
 
-        <h1>BAD<br>TH<span class="glitch-e">E</span>RAPIST</h1>
+        <h1>ILLU<span class="glitch-e" data-c="S">S</span>ION</h1>
 
         <div class="divider"></div>
 

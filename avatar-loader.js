@@ -77,7 +77,21 @@ function fixClip(model, clip, label) {
 // Tout avatar chargé pendant le démarrage retient automatiquement l'écran de chargement (loader.js) :
 // un nouvel avatar, quel que soit le fichier qui le charge, est donc prêt avant que le jeu s'affiche.
 let holdSeq = 0;
+
+// Avatars désactivés (SKIP_AVATARS dans loader.js) : on ne touche NI au dossier avatars/ NI au réseau.
+// On rend un avatar vide (groupe invisible, aucune animation) pour que le reste du jeu continue normalement.
+function emptyAvatar() {
+    const root = new THREE.Group();
+    const model = new THREE.Group();
+    root.add(model);
+    return {
+        root: root, model: model, mixer: new THREE.AnimationMixer(model), actions: {},
+        play: function () { return false; }, update: function () { }, disabled: true
+    };
+}
+
 export async function loadMixamoAvatar(opts) {
+    if (window.BTLoad && window.BTLoad.skipAvatars) return emptyAvatar();
     // clé UNIQUE à chaque appel : si le même avatar est demandé deux fois (ex. evelyn par avatar-body ET par therapist-house),
     // le premier à finir ne doit pas libérer l'écran de chargement pendant que l'autre charge encore
     const key = 'avatar:' + (opts && opts.model) + '#' + (++holdSeq);
