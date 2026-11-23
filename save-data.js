@@ -33,7 +33,8 @@
         housePos:  'bt_house_pos',        // où tu étais dans la maison d'Evelyn quand tu as quitté le jeu (therapist-house.js)
         evelyn:    'bt_evelyn_memory',    // mémoire d'Evelyn (séances : therapist-memory.js + « mind » : avatar-mind.js)
         pluie:     'bt_pluie_memory',     // mémoire de Pluie (avatar-mind.js)
-        oliver:    'bt_oliver_memory'     // mémoire d'Oliver (avatar-mind.js). Nouvel avatar : ajoute ICI une ligne 'bt_<id>_memory'
+        oliver:    'bt_oliver_memory',    // mémoire d'Oliver (avatar-mind.js). Nouvel avatar : ajoute ICI une ligne 'bt_<id>_memory'
+        tv:        'bt_tv_state'          // la télé de la chambre (tv.js) : { isOn, volume, disk } = allumée ? + dernière disquette
     };
 
     // valeurs écrites dans l'export quand il n'y a encore rien
@@ -72,7 +73,8 @@
         housePos:    function (o) { return !!(o && typeof o === 'object' && !Array.isArray(o)); },
         evelyn: function (o) { return !!(o && typeof o === 'object' && !Array.isArray(o) && o.v); },
         pluie:  function (o) { return !!(o && typeof o === 'object' && !Array.isArray(o)); },
-        oliver: function (o) { return !!(o && typeof o === 'object' && !Array.isArray(o)); }
+        oliver: function (o) { return !!(o && typeof o === 'object' && !Array.isArray(o)); },
+        tv:     function (o) { return !!(o && typeof o === 'object' && !Array.isArray(o)); }
     };
 
     // ─── Profil de CETTE page ───────────────────────────────────────

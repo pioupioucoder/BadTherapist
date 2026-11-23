@@ -5,6 +5,7 @@ import { buildElevator } from './elevator.js';
 import { buildGroundFloor } from './rdc.js';
 import { createWindowView } from './windowview.js';
 import { buildBedroom, addBedroomColliders, WALL_H, HALF_D, BEDROOM_SPAWN } from './bedroom.js';
+import './dreambedroom.js';   // le rêve (window.BadTherapistDream), appelé quand le joueur s'endort
 
 // ==========================================
 // BAD THERAPIST — L'IMMEUBLE HABITÉ (places/apartment.js)
@@ -138,6 +139,7 @@ export function buildWorld(scene, opts) {
     // Son de la télé selon l'endroit : plein volume dans la chambre, étouffé et plus faible
     // dans le couloir, très léger dans l'ascenseur (s'il est à l'étage de la chambre), rien ailleurs.
     function tvAudioTarget() {
+        if (bedroom.isSleeping()) return { gain: 0, cut: 600 };     // on dort : la télé se tait
         const px = camera.position.x, pz = camera.position.z;
         if (px < 100) {
             if (elevator.isInsideCab(px, pz)) {
@@ -270,13 +272,24 @@ export function buildWorld(scene, opts) {
         physics: physics,
         windowView: windowView,
         floorNumber: FLOOR_NUMBER,
-        corridorWallMaterial: corridor.wallMaterial
+        corridorWallMaterial: corridor.wallMaterial,
+        // Quand les yeux sont fermés : on entre dans le rêve (places/dreambedroom.js) ; au réveil on revient ici
+        onSleep: function() {
+            if (window.BadTherapistDream && window.BadTherapistDream.enter) {
+                window.BadTherapistDream.enter(function() { bedroom.wakeUp(); });
+            } else {
+                bedroom.wakeUp();
+            }
+        }
     });
 
     // ─── RETOUR ──────────────────────────────────────────────────
     return {
         // On gère nous-mêmes la hauteur (étages, ascenseur, collines de la rue)
         controlsHeight: true,
+
+        // Pendant qu'on s'allonge / dort / se réveille, world_base ne doit plus piloter la caméra
+        get controlsLocked() { return bedroom.isSleeping(); },
 
         // En conduisant, world_base ne déplace plus le joueur à pied
         isDriving() {
@@ -296,6 +309,11 @@ export function buildWorld(scene, opts) {
         // Sauvegarde de position : étage + "dans la rue ou non".
         // false = ne pas sauvegarder maintenant (dans la cabine d'ascenseur)
         getSaveState() {
+            if (bedroom.isSleeping()) {
+                // Pendant le rêve on sauvegarde où on est dans le rêve ; pendant le coucher / le réveil, rien
+                const d = window.BadTherapistDream && window.BadTherapistDream.getState();
+                return d ? { level: playerLevel, street: false, dream: d } : false;
+            }
             if (elevator.isInsideCab(camera.position.x, camera.position.z)) return false;
             if (street.isDriving ? street.isDriving() : (street.truck && street.truck.isDriving())) return false;
             if (street.work && street.work.interior && street.work.interior.isInside()) return false;
@@ -316,6 +334,11 @@ export function buildWorld(scene, opts) {
             lastX = null; lastZ = null;
             snapY = true;
             if (playerLevel === 0 && x < 100) rdc.door.setOpen(false);
+            // Sauvegardé pendant un rêve : on se rendort dans la chambre et on reprend le rêve où on l'avait laissé
+            if (extra && extra.dream && window.BadTherapistDream && !bedroom.isSleeping()) {
+                bedroom.resumeSleep();
+                window.BadTherapistDream.enter(function() { bedroom.wakeUp(); }, extra.dream);
+            }
         },
 
         update(dt, time) {
@@ -337,7 +360,8 @@ export function buildWorld(scene, opts) {
                     lastX = null; lastZ = null;
                     snapY = true;
                 }
-                updatePlayerPhysics(dt);
+                if (bedroom.isSleeping()) { lastX = null; lastZ = null; snapY = true; }
+                else updatePlayerPhysics(dt);
                 if (truck) truck.update(dt, playerLevel === 0 && camera.position.x > 100);
             }
             if (window.BadTherapistSociety) BadTherapistSociety.reportPlayer({ level: playerLevel, inCab: elevator.isInsideCab(camera.position.x, camera.position.z), roomZ: camera.position.z, street: camera.position.x > 100 ? { x: camera.position.x - STREET_DX, z: camera.position.z - STREET_Z } : null });

@@ -928,6 +928,7 @@ const worldPath = WORLD_FILES[worldFile] || worldFile;
 
 let camYaw = 0;
 let camPitch = 0;
+let wasLocked = false;   // le monde peut verrouiller les commandes (on dort : places/bedroom.js)
 
 // ==========================================
 // GARDE-FOU FBX : un même fichier n'est téléchargé et décodé qu'UNE seule fois (les copies suivantes sont
@@ -1336,7 +1337,10 @@ function savePosition(dt) {
   if (saveClock < 1) return;
   saveClock = 0;
 
-  const key = JSON.stringify(currentPose());
+  // (clé = position + état du monde : dans le rêve la caméra ne bouge pas, mais l'état du rêve oui)
+  let worldKey = '';
+  try { if (world && typeof world.getSaveState === 'function') worldKey = JSON.stringify(world.getSaveState()); } catch (error) {}
+  const key = JSON.stringify(currentPose()) + worldKey;
   if (key === lastSaved) return;
 
   lastSaved = key;
@@ -1892,10 +1896,22 @@ function animate() {
 
   skyUniforms.uTime.value = clock.elapsedTime;
 
-  // CAMERA ROTATION
+  // CAMERA ROTATION (verrouillée pendant qu'on s'allonge / dort / se réveille)
 
-  camera.rotation.y = camYaw;
-  camera.rotation.x = camPitch;
+  const locked = !!(world && world.controlsLocked);
+  if (locked) {
+    wasLocked = true;
+  } else if (wasLocked) {
+    // Fin du verrouillage : on reprend la direction où la chambre a laissé la caméra
+    wasLocked = false;
+    camera.rotation.z = 0;
+    camYaw = camera.rotation.y;
+    camPitch = THREE.MathUtils.clamp(camera.rotation.x, -1, 1);
+  }
+  if (!locked) {
+    camera.rotation.y = camYaw;
+    camera.rotation.x = camPitch;
+  }
 
   // FORWARD / BACKWARD
 
@@ -1920,7 +1936,7 @@ function animate() {
   // Au volant, c'est le monde (le camion) qui déplace la caméra
   const driving = !!(world && typeof world.isDriving === 'function' && world.isDriving());
 
-  if (!driving) {
+  if (!driving && !locked) {
     camera.position.addScaledVector(
       forward, -input.ly * 6.5 * dt
     );
@@ -1938,13 +1954,15 @@ function animate() {
 
   // RIGHT JOYSTICK CAMERA ROTATION
 
-  camYaw -= jRx * 1.8 * dt;
+  if (!locked) {
+    camYaw -= jRx * 1.8 * dt;
 
-  camPitch = THREE.MathUtils.clamp(
-    camPitch - jRy * 1.2 * dt,
-    -1,
-    1
-  );
+    camPitch = THREE.MathUtils.clamp(
+      camPitch - jRy * 1.2 * dt,
+      -1,
+      1
+    );
+  }
 
   // COORDINATES
 
@@ -1983,7 +2001,8 @@ function animate() {
   savePosition(dt);
 
   const tr0 = performance.now();
-  renderer.render(scene, camera);
+  // Pendant le rêve (places/dreambedroom.js) un canvas plein écran couvre le jeu : inutile de le dessiner dessous
+  if (!(window.BadTherapistDream && window.BadTherapistDream.active)) renderer.render(scene, camera);
   const tRender = performance.now() - tr0;
 
   // --- Mesure : gels, diagnostic, résolution adaptative
