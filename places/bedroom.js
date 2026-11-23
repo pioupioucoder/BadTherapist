@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { buildNightstand } from '../objects/nightstand.js';
 import { buildPhone } from '../objects/phone.js';
 import { buildTV } from '../objects/tv.js';
+import { buildComputer } from '../objects/computer.js';
 
 // ==========================================
 // BAD THERAPIST — LA CHAMBRE (places/bedroom.js)
@@ -1322,16 +1323,34 @@ export function buildBedroom(scene, o) {
             lever.rotation.x = dark ? (2 * Math.PI) / 3 : Math.PI / 3;      // éteint : le levier pointe vers le bas
         }
 
+        function applyLook() {
+            ambient.intensity = baseAmbient * (1 - 0.85 * eCur);
+            windowGlow.intensity = baseGlow * (1 - 0.9 * eCur);
+            redGlow.intensity = 0.9 * eCur;
+            for (let i = 0; i < surfMats.length; i++) surfMats[i].opacity = eCur;
+            group.visible = k > 0.001;
+        }
+
+        // Pour la sauvegarde : lire l'état, et le rétablir d'un coup au chargement (sans animation).
+        // Les coulures sont alors déjà arrivées au bout (la lumière est éteinte « depuis un moment »).
+        function isDark() { return dark; }
+        function setDark(v) {
+            v = !!v;
+            if (v === dark) return;
+            dark = v;
+            lever.rotation.x = dark ? (2 * Math.PI) / 3 : Math.PI / 3;
+            if (dark) { ensureBuilt(); darkClock = 90; }
+            k = dark ? 1 : 0;
+            eCur = k;
+            applyLook();
+        }
+
         function update(dt) {
             const target = dark ? 1 : 0;
             if (k !== target) {
                 k += Math.sign(target - k) * Math.min(Math.abs(target - k), dt / 0.8);
                 eCur = k * k * (3 - 2 * k);
-                ambient.intensity = baseAmbient * (1 - 0.85 * eCur);
-                windowGlow.intensity = baseGlow * (1 - 0.9 * eCur);
-                redGlow.intensity = 0.9 * eCur;
-                for (let i = 0; i < surfMats.length; i++) surfMats[i].opacity = eCur;
-                group.visible = k > 0.001;
+                applyLook();
             }
             if (dark) darkClock += dt;
             for (let i = 0; i < dripMats.length; i++) {
@@ -1354,7 +1373,7 @@ export function buildBedroom(scene, o) {
         canvas.addEventListener('click', function(ev) { if (overSwitch(ev)) toggle(); });
         canvas.addEventListener('mousemove', function(ev) { hoverTarget = overSwitch(ev) ? 1 : 0; });
 
-        return { update: update, toggle: toggle };
+        return { update: update, toggle: toggle, isDark: isDark, setDark: setDark };
     })();
 
     // ─── TÉLÉVISION (objects/tv.js) ──────────────────────────────
@@ -1450,16 +1469,39 @@ export function buildBedroom(scene, o) {
         anchor: nightstand.group
     });
 
+    // ─── ORDINATEUR VINTAGE + CHAISE (objects/computer.js) ───
+    const computer = buildComputer(scene, {
+        camera: camera,
+        canvas: canvas,
+        physics: physics,
+        level: FLOOR_NUMBER,
+        seatX: 6.56,
+        seatZ: 6.39,
+        wallX: ROOM_W / 2,
+        // Clé d'API YouTube Data v3 (limitée à cette API + ton site dans Google Cloud) : colle-la entre les guillemets.
+        youtubeApiKey: 'AIzaSyBCNkd7216eruVPBk12ddz9Lq902h8G6_Q',
+        // Permet à l'ordinateur de noter quand tu dors / éteins la lumière (affiché dans « Recent activity »)
+        isSleeping: function() { return bed.isSleeping(); },
+        isDark: function() { return scare.isDark(); },
+        canUse: function() { return !bed.isSleeping(); }
+    });
+
     return {
         update(dt, time) {
             bed.update(dt, time);
             scare.update(dt);
             nightstand.update(dt, time);
             phone.update(dt, time);
+            computer.update(dt, time);
         },
         // Pour apartment.js : bloquer la marche pendant qu'on dort, réveil au retour du rêve
         isSleeping: function() { return bed.isSleeping(); },
+        // Vrai quand le joueur est assis a l ordinateur (objects/computer.js)
+        isBusy: function() { return computer.isUsing(); },
         wakeUp: function() { bed.wakeUp(); },
-        resumeSleep: function() { bed.resumeSleep(); }
+        resumeSleep: function() { bed.resumeSleep(); },
+        // Interrupteur : état sauvegardé par apartment.js (getSaveState / applySaveState)
+        isDark: function() { return scare.isDark(); },
+        setDark: function(v) { scare.setDark(v); }
     };
 }

@@ -312,12 +312,12 @@ export function buildWorld(scene, opts) {
             if (bedroom.isSleeping()) {
                 // Pendant le rêve on sauvegarde où on est dans le rêve ; pendant le coucher / le réveil, rien
                 const d = window.BadTherapistDream && window.BadTherapistDream.getState();
-                return d ? { level: playerLevel, street: false, dream: d } : false;
+                return d ? { level: playerLevel, street: false, dream: d, lights: bedroom.isDark() } : false;
             }
             if (elevator.isInsideCab(camera.position.x, camera.position.z)) return false;
             if (street.isDriving ? street.isDriving() : (street.truck && street.truck.isDriving())) return false;
             if (street.work && street.work.interior && street.work.interior.isInside()) return false;
-            return { level: playerLevel, street: camera.position.x > 100 };
+            return { level: playerLevel, street: camera.position.x > 100, lights: bedroom.isDark() };
         },
 
         applySaveState(extra, pose) {
@@ -334,6 +334,8 @@ export function buildWorld(scene, opts) {
             lastX = null; lastZ = null;
             snapY = true;
             if (playerLevel === 0 && x < 100) rdc.door.setOpen(false);
+            // Interrupteur de la chambre : lumière éteinte + inscriptions, comme on l'avait laissé
+            if (extra && extra.lights !== undefined) bedroom.setDark(!!extra.lights);
             // Sauvegardé pendant un rêve : on se rendort dans la chambre et on reprend le rêve où on l'avait laissé
             if (extra && extra.dream && window.BadTherapistDream && !bedroom.isSleeping()) {
                 bedroom.resumeSleep();
