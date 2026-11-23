@@ -24,7 +24,7 @@ import * as THREE from 'three';
 //   computer.update(dt, time);   computer.isUsing();
 //
 // YouTube: the app shows the latest videos + shorts of 2 channels and a playlist (YouTube Data API v3).
-//   Pass  youtubeApiKey  in the options (key restricted to YouTube Data API v3 + your site).
+//   Pass  youtubeProxy  in the options: URL of the Cloudflare Worker (worker.js) that holds the API key.
 //   Channels / playlist: YT_CHANNELS / YT_PLAYLIST below (or options youtubeChannels / youtubePlaylist).
 //   The feed refreshes by itself while the game is open: new video -> badge on the YouTube icon + small bubble.
 // Activity: the desktop remembers what the player did (door, lights, bed, TV, books, PC) and shows it,
@@ -72,7 +72,7 @@ export function buildComputer(scene, o) {
     const seatZ = o.seatZ != null ? o.seatZ : SEAT_Z;
     const wallX = o.wallX != null ? o.wallX : WALL_X;
     const eyeH = o.eyeHeight || 1.7;
-    const YT_KEY = o.youtubeApiKey || '';
+    const YT_PROXY = (o.youtubeProxy || '').replace(/\/+$/, '');   // URL of the Cloudflare Worker (it holds the API key)
     const YT_CHANNELS = o.youtubeChannels || YT_CHANNELS_DEFAULT;
     const YT_PLAYLIST = o.youtubePlaylist != null ? o.youtubePlaylist : YT_PLAYLIST_DEFAULT;
     const deskCx = wallX - DESK_D / 2 - 0.01;
@@ -387,9 +387,8 @@ export function buildComputer(scene, o) {
     }
 
     // ═════════ YOUTUBE DATA (2 channels + 1 playlist, refreshed while the game is open) ═════════
-    const API = 'https://www.googleapis.com/youtube/v3/';
     function api(path) {
-        return fetch(API + path + (path.indexOf('?') < 0 ? '?' : '&') + 'key=' + encodeURIComponent(YT_KEY))
+        return fetch(YT_PROXY + '/' + path)
             .then(function(r) { return r.json().then(function(j) { if (!r.ok || j.error) throw new Error('api'); return j; }); });
     }
     function isoSec(d) {
@@ -432,7 +431,7 @@ export function buildComputer(scene, o) {
         }));      // no durations: everything shows as a normal video
     }
     function refreshFeed() {
-        if (!YT_KEY || yt.loading) return;
+        if (!YT_PROXY || yt.loading) return;
         yt.loading = true; yt.lastFetch = Date.now();
         const chans = Promise.all(YT_CHANNELS.map(function(h) {
             return resolveChannel(h).then(function(ch) {
@@ -590,7 +589,7 @@ export function buildComputer(scene, o) {
         order = order.filter(function(x) { return x !== id; }); order.push(id);
         startOpen = false; dirty = true; updateTarget();
         logAct(id === 'youtube' ? 'Opened YouTube' : 'Opened the terminal', 300000);
-        if (id === 'youtube' && YT_KEY && Date.now() - yt.lastFetch > 45000) refreshFeed();
+        if (id === 'youtube' && YT_PROXY && Date.now() - yt.lastFetch > 45000) refreshFeed();
     }
     function closeApp(id) {
         apps[id].open = false; apps[id].min = false;
@@ -745,7 +744,7 @@ export function buildComputer(scene, o) {
         return l;
     }
     function emptyMsg(page) {
-        if (!YT_KEY) return 'YouTube is not available right now.';
+        if (!YT_PROXY) return 'YouTube is not available right now.';
         if (page === 'playlist') return yt.plErr ? 'Playlist unavailable.' : (yt.loading ? 'Loading…' : 'This playlist is empty.');
         if (yt.err) return 'Could not load videos.';
         return yt.loading || !yt.lastFetch ? 'Loading…' : 'Nothing here yet.';
@@ -1276,7 +1275,7 @@ export function buildComputer(scene, o) {
         glow.intensity = 0.45 * (1 + 0.03 * Math.sin(tm * 9));
 
         // Runs whether or not anyone sits at the PC (the monitor in the room shows it too)
-        if (YT_KEY && !document.hidden && Date.now() - yt.lastFetch > YT_REFRESH_MS) refreshFeed();
+        if (YT_PROXY && !document.hidden && Date.now() - yt.lastFetch > YT_REFRESH_MS) refreshFeed();
         pollT += dt; if (pollT > 2) { pollT = 0; pollWorld(); }
         if (yt.toast && Date.now() - yt.toast.at > 7000) { yt.toast = null; dirty = true; }
         if (yt.videos.length && isYtVisible()) markSeen();

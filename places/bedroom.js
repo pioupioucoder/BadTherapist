@@ -1478,8 +1478,8 @@ export function buildBedroom(scene, o) {
         seatX: 6.56,
         seatZ: 6.39,
         wallX: ROOM_W / 2,
-        // Clé d'API YouTube Data v3 (limitée à cette API + ton site dans Google Cloud) : colle-la entre les guillemets.
-        youtubeApiKey: 'AIzaSyBCNkd7216eruVPBk12ddz9Lq902h8G6_Q',
+        // URL de ton Cloudflare Worker (worker.js), qui garde la clé YouTube secrète. Exemple : 'https://bt-youtube.xxx.workers.dev'
+        youtubeProxy: 'https://bt-youtube.kristenanjavidy.workers.dev',
         // Permet à l'ordinateur de noter quand tu dors / éteins la lumière (affiché dans « Recent activity »)
         isSleeping: function() { return bed.isSleeping(); },
         isDark: function() { return scare.isDark(); },
