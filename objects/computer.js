@@ -43,7 +43,8 @@ const STATE_KEY = 'bt_computer_state';          // account, channels, last video
 const YT_CHANNELS_DEFAULT = ['@call-me-zephyr', '@soukokudarling'];
 const YT_PLAYLIST_DEFAULT = 'PLL8LEFp1JNvg';    // must be a PUBLIC playlist (full id, starts with PL)
 const YT_REFRESH_MS = 3 * 60 * 1000;            // feed refresh while the game is open
-const YT_PER_CHANNEL = 12;                      // latest uploads kept per channel
+const YT_PER_CHANNEL = 50;                      // latest uploads fetched per channel at each refresh (older ones: Load more)
+const SHOW_FIRST = 2, SHOW_STEP = 4;             // a list shows 2 items; "Show more" adds 4, "Show less" goes back to 2
 const SHORT_MAX_SEC = 180;                      // <= 3 min counts as a short (approximate)
 const TERM_GREEN = '#33ff66';
 const WIN_USER = 'Evelyn';
@@ -327,7 +328,7 @@ export function buildComputer(scene, o) {
     const yt = {
         account: st.account && st.account.name ? st.account : null,
         page: 'home', menu: false, error: '', busy: false,
-        videos: [], playlist: [], loading: false, err: '', plErr: '', lastFetch: 0,
+        videos: [], playlist: [], chNext: {}, plNext: undefined, moreBusy: false, shown: {}, loading: false, err: '', plErr: '', lastFetch: 0,
         scroll: 0, maxScroll: 0, filter: null, watch: null, fresh: {}, toast: null
     };
     function saveAccount() { st.account = yt.account; saveState(); }
@@ -422,35 +423,79 @@ export function buildComputer(scene, o) {
     function addDurations(list) {
         const ids = []; list.forEach(function(v) { if (ids.indexOf(v.id) < 0) ids.push(v.id); });
         if (!ids.length) return Promise.resolve();
-        return api('videos?part=contentDetails&maxResults=50&id=' + ids.slice(0, 50).join(',')).then(function(j) {
-            const map = {}; (j.items || []).forEach(function(i) { map[i.id] = isoSec(i.contentDetails && i.contentDetails.duration); });
-            list.forEach(function(v) { v.dur = map[v.id] || 0; v.short = v.dur > 0 && v.dur <= SHORT_MAX_SEC; });
-        }).catch(function() {});      // no durations: everything shows as a normal video
+        const chunks = []; for (let i = 0; i < ids.length; i += 50) chunks.push(ids.slice(i, i + 50));
+        return Promise.all(chunks.map(function(ch) {
+            return api('videos?part=contentDetails&maxResults=50&id=' + ch.join(',')).then(function(j) {
+                const map = {}; (j.items || []).forEach(function(i) { map[i.id] = isoSec(i.contentDetails && i.contentDetails.duration); });
+                list.forEach(function(v) { if (map[v.id] != null) { v.dur = map[v.id]; v.short = v.dur > 0 && v.dur <= SHORT_MAX_SEC; } });
+            }).catch(function() {});
+        }));      // no durations: everything shows as a normal video
     }
     function refreshFeed() {
         if (!YT_KEY || yt.loading) return;
         yt.loading = true; yt.lastFetch = Date.now();
         const chans = Promise.all(YT_CHANNELS.map(function(h) {
             return resolveChannel(h).then(function(ch) {
-                return api('playlistItems?part=snippet,contentDetails&maxResults=' + YT_PER_CHANNEL + '&playlistId=' + ch.uploads)
-                    .then(function(j) { return { ch: ch, items: j.items || [] }; });
+                return api('channels?part=statistics&id=' + ch.id)
+                    .then(function(j) { const it = j.items && j.items[0]; if (it && it.statistics) ch.count = +it.statistics.videoCount; }, function() {})
+                    .then(function() { return api('playlistItems?part=snippet,contentDetails&maxResults=' + YT_PER_CHANNEL + '&playlistId=' + ch.uploads); })
+                    .then(function(j) { return { ch: ch, items: j.items || [], next: j.nextPageToken || '' }; });
             }).catch(function() { return null; });
         }));
-        const pl = YT_PLAYLIST ? api('playlistItems?part=snippet,contentDetails&maxResults=25&playlistId=' + encodeURIComponent(YT_PLAYLIST))
-            .then(function(j) { yt.plErr = ''; return (j.items || []).map(function(it) { return toVideo(it, null); }).filter(Boolean); })
+        const pl = YT_PLAYLIST ? api('playlistItems?part=snippet,contentDetails&maxResults=50&playlistId=' + encodeURIComponent(YT_PLAYLIST))
+            .then(function(j) { yt.plErr = ''; if (yt.plNext === undefined) yt.plNext = j.nextPageToken || ''; return (j.items || []).map(function(it) { return toVideo(it, null); }).filter(Boolean); })
             .catch(function() { yt.plErr = 'fetch'; return null; }) : Promise.resolve([]);
         Promise.all([chans, pl]).then(function(res) {
             const raw = []; let complete = true;
-            res[0].forEach(function(r) { if (!r) { complete = false; return; } r.items.forEach(function(it) { const v = toVideo(it, r.ch); if (v) raw.push(v); }); });
+            res[0].forEach(function(r) { if (!r) { complete = false; return; } if (yt.chNext[r.ch.id] === undefined) yt.chNext[r.ch.id] = r.next; r.items.forEach(function(it) { const v = toVideo(it, r.ch); if (v) raw.push(v); }); });
             if (!raw.length && !complete) throw new Error('fetch');
-            const plist = res[1] || yt.playlist;
             return addDurations(raw.concat(res[1] || [])).then(function() {
-                raw.sort(function(a, b) { return b.at - a.at; });
-                yt.videos = raw; yt.playlist = plist; yt.err = '';
+                const merge = function(old, fresh) {      // keep what "Load more" already brought in
+                    const by = {}; old.forEach(function(v) { by[v.id] = v; }); fresh.forEach(function(v) { by[v.id] = v; });
+                    return Object.keys(by).map(function(k) { return by[k]; });
+                };
+                yt.videos = merge(yt.videos, raw).sort(function(a, b) { return b.at - a.at; });
+                if (res[1]) yt.playlist = merge(yt.playlist, res[1]).sort(function(a, b) { return b.at - a.at; });
+                yt.err = '';
                 onFeed(complete);
             });
         }).catch(function() { if (!yt.videos.length) yt.err = 'fetch'; })
           .then(function() { yt.loading = false; dirty = true; });
+    }
+    function moreAvailable(page) {
+        if (page === 'playlist') return !!yt.plNext;
+        return st.channels.some(function(c) { return yt.chNext[c.id] && (!yt.filter || yt.filter === c.id); });
+    }
+    function loadMore(page) {
+        if (yt.moreBusy || !moreAvailable(page)) return;
+        yt.moreBusy = true; dirty = true;
+        const done = function() { yt.moreBusy = false; dirty = true; };
+        if (page === 'playlist') {
+            api('playlistItems?part=snippet,contentDetails&maxResults=50&pageToken=' + encodeURIComponent(yt.plNext) + '&playlistId=' + encodeURIComponent(YT_PLAYLIST)).then(function(j) {
+                const add = (j.items || []).map(function(it) { return toVideo(it, null); }).filter(Boolean);
+                yt.plNext = j.nextPageToken || '';
+                return addDurations(add).then(function() {
+                    yt.playlist = yt.playlist.concat(add.filter(function(v) { return !yt.playlist.some(function(x) { return x.id === v.id; }); })).sort(function(a, b) { return b.at - a.at; });
+                });
+            }).catch(function() {}).then(done);
+            return;
+        }
+        const chs = st.channels.filter(function(c) { return yt.chNext[c.id] && (!yt.filter || yt.filter === c.id); });
+        Promise.all(chs.map(function(ch) {
+            return api('playlistItems?part=snippet,contentDetails&maxResults=50&pageToken=' + encodeURIComponent(yt.chNext[ch.id]) + '&playlistId=' + ch.uploads).then(function(j) {
+                yt.chNext[ch.id] = j.nextPageToken || '';
+                return (j.items || []).map(function(it) { return toVideo(it, ch); }).filter(Boolean);
+            }).catch(function() { return []; });
+        })).then(function(lists) {
+            const add = [].concat.apply([], lists).filter(function(v) { return !yt.videos.some(function(x) { return x.id === v.id; }); });
+            return addDurations(add).then(function() {
+                const ids = add.map(function(v) { return v.id; });       // old videos are never "new"
+                st.known = ids.concat(st.known).slice(-2000);
+                st.seen = ids.concat(st.seen).slice(-2000); seenSet = new Set(st.seen);
+                saveState();
+                yt.videos = yt.videos.concat(add).sort(function(a, b) { return b.at - a.at; });
+            });
+        }).catch(function() {}).then(done);
     }
     function unseenCount() { let n = 0; yt.videos.forEach(function(v) { if (!seenSet.has(v.id)) n++; }); return n; }
     function isYtVisible() { return S.phase === 'using' && topApp() === 'youtube' && !!yt.account; }
@@ -458,7 +503,7 @@ export function buildComputer(scene, o) {
         const fresh = yt.videos.filter(function(v) { return !seenSet.has(v.id); });
         if (!fresh.length) return;
         fresh.forEach(function(v) { yt.fresh[v.id] = true; seenSet.add(v.id); });
-        st.seen = Array.from(seenSet).slice(-300); seenSet = new Set(st.seen);
+        st.seen = Array.from(seenSet).slice(-2000); seenSet = new Set(st.seen);
         saveState(); dirty = true;
     }
     function onFeed(complete) {
@@ -472,7 +517,7 @@ export function buildComputer(scene, o) {
         const fresh = yt.videos.filter(function(v) { return !known.has(v.id); });
         if (fresh.length) {
             fresh.forEach(function(v) { st.known.push(v.id); logAct((v.short ? 'New short from ' : 'New video from ') + v.channel, 1000); });
-            st.known = st.known.slice(-300);
+            st.known = st.known.slice(-2000);
             saveState();
             if (!isYtVisible()) {
                 const f = fresh[0];
@@ -705,10 +750,10 @@ export function buildComputer(scene, o) {
         if (yt.err) return 'Could not load videos.';
         return yt.loading || !yt.lastFetch ? 'Loading…' : 'Nothing here yet.';
     }
-    function drawGrid(list, ax, ay, aw, ah, msg) {
+    function drawGrid(list, ax, ay, aw, ah, msg, more, less) {
         if (!list.length) { txt(msg, ax + aw / 2, ay + ah / 2, '22px ' + UI, '#8a8a8a', 'center'); yt.maxScroll = 0; return; }
-        const cols = 3, gap = 16, cw = Math.floor((aw - gap * (cols + 1)) / cols), th = Math.round(cw * 9 / 16), chh = th + 62;
-        const total = Math.ceil(list.length / cols) * (chh + gap) + gap;
+        const cols = 2, gap = 16, cw = Math.floor((aw - gap * (cols + 1)) / cols), th = Math.round(cw * 9 / 16), chh = th + 62;
+        const rowsN = Math.ceil(list.length / cols), total = rowsN * (chh + gap) + gap + (more || less ? 64 : 0);
         yt.maxScroll = Math.max(0, total - ah);
         yt.scroll = Math.max(0, Math.min(yt.scroll, yt.maxScroll));
         ctx.save(); ctx.beginPath(); ctx.rect(ax, ay, aw, ah); ctx.clip();
@@ -725,6 +770,20 @@ export function buildComputer(scene, o) {
             wrapLines(v.title, cw - 4, 'bold 14px ' + UI, 2).forEach(function(l, k) { txt(l, cx + 2, cy + th + 16 + k * 18, 'bold 14px ' + UI, '#fff'); });
             txt(fit(v.channel + (v.at ? '  ·  ' + ago(v.at) : ''), cw - 4, '13px ' + UI), cx + 2, cy + th + 52, '13px ' + UI, '#9a9a9a');
         });
+        if (more || less) {
+            const btns = [];
+            if (less) btns.push(['Show less', less]);
+            if (more) btns.push(['Show more', more]);
+            const bw = 170, tw = btns.length * bw + (btns.length - 1) * 16, by = ay + gap + rowsN * (chh + gap) - yt.scroll;
+            btns.forEach(function(b, i) {
+                const bx = ax + (aw - tw) / 2 + i * (bw + 16);
+                if (by + 40 <= ay || by >= ay + ah) return;
+                const hy = Math.max(by, ay), hh = Math.min(by + 40, ay + ah) - hy;
+                const hb = hit(bx, hy, bw, hh, b[1]);
+                ctx.fillStyle = hb ? '#3a3a3a' : '#272727'; rr(bx, by, bw, 40, 20); ctx.fill();
+                txt(yt.moreBusy && b[0] === 'Show more' ? 'Loading…' : b[0], bx + bw / 2, by + 20, '15px ' + UI, '#fff', 'center');
+            });
+        }
         ctx.restore();
         if (yt.maxScroll > 0) {
             [[-1, 96], [1, 48]].forEach(function(b) {
@@ -747,9 +806,7 @@ export function buildComputer(scene, o) {
             ctx.fillStyle = 'hsl(' + hueOf(ch.title) + ',55%,42%)'; ctx.beginPath(); ctx.arc(x + 46, y + 42, 28, 0, Math.PI * 2); ctx.fill();
             txt(ch.title.charAt(0).toUpperCase(), x + 46, y + 43, 'bold 24px ' + UI, '#fff', 'center');
             txt(ch.title, x + 92, y + 30, 'bold 20px ' + UI, '#fff');
-            const mine = yt.videos.filter(function(v) { return v.chId === ch.id; });
-            const nS = mine.filter(function(v) { return v.short; }).length;
-            txt(ch.handle + '  ·  ' + (mine.length - nS) + ' videos, ' + nS + ' shorts', x + 92, y + 58, '14px ' + UI, '#9a9a9a');
+            txt(ch.handle + (ch.count != null ? '  ·  ' + ch.count + ' videos and shorts' : ''), x + 92, y + 58, '14px ' + UI, '#9a9a9a');
         });
     }
     function drawWatch(mx0, my0) {
@@ -813,7 +870,10 @@ export function buildComputer(scene, o) {
                 txt('✕', mx0 + cwid - 6, my0 + 26, '14px ' + UI, '#cfcfcf', 'right');
                 gy += 48; gh -= 48;
             }
-            drawGrid(listFor(yt.page), mx0, gy, mw, gh, emptyMsg(yt.page));
+            const full = listFor(yt.page), key = yt.page + '|' + (yt.filter || ''), n = yt.shown[key] || SHOW_FIRST, pg = yt.page;
+            drawGrid(full.slice(0, n), mx0, gy, mw, gh, emptyMsg(yt.page),
+                (n < full.length || moreAvailable(pg)) ? function() { yt.shown[key] = n + SHOW_STEP; if (yt.shown[key] > full.length && moreAvailable(pg)) loadMore(pg); } : null,
+                n > SHOW_FIRST ? function() { yt.shown[key] = SHOW_FIRST; yt.scroll = 0; } : null);
         }
 
         if (yt.menu) {
@@ -1075,7 +1135,7 @@ export function buildComputer(scene, o) {
 
     // Full-screen overlay: the PC screen fills the player's screen (the camera is never touched)
     const overlay = document.createElement('div');
-    overlay.style.cssText = 'position:fixed;left:0;top:0;width:100%;height:100%;background:#000;z-index:40;display:none';
+    overlay.style.cssText = 'position:fixed;left:0;top:0;width:100%;height:100%;background:#000;z-index:15;display:none';
     scr.style.cssText = 'position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:block';
     overlay.appendChild(scr);
     const frame = document.createElement('iframe');
@@ -1085,10 +1145,17 @@ export function buildComputer(scene, o) {
     frame.setAttribute('title', 'YouTube player');
     overlay.appendChild(frame);
     document.body.appendChild(overlay);
+    // The game's own buttons stay on screen and usable while seated: the PC screen takes the free area between them
     function layout() {
-        const k = Math.min(window.innerWidth / W, window.innerHeight / H);
+        const bar = document.getElementById('hud');
+        const top = document.getElementById('topHud') ? 62 : 0;
+        const bot = bar && bar.offsetHeight ? bar.offsetHeight : 0;
+        const availH = Math.max(100, window.innerHeight - top - bot);
+        const k = Math.min(window.innerWidth / W, availH / H);
         scr.style.width = Math.floor(W * k) + 'px';
         scr.style.height = Math.floor(H * k) + 'px';
+        scr.style.top = Math.round(top + availH / 2) + 'px';
+        hud.style.bottom = (bot ? Math.max(8, Math.round((bot - 36) / 2)) : 22) + 'px';
     }
     window.addEventListener('resize', function() { layout(); dirty = true; });
 
@@ -1099,6 +1166,7 @@ export function buildComputer(scene, o) {
         overlay.style.display = 'block';
         hud.style.display = 'block';
         S.phase = 'using';
+        st.seated = true; saveState();
         updateTarget();
         logAct('Sat at the computer', 600000);
         dirty = true;
@@ -1109,12 +1177,13 @@ export function buildComputer(scene, o) {
         hud.style.display = 'none';
         startOpen = false; yt.menu = false; stopVideo();
         S.phase = 'idle';
+        st.seated = false; saveState();
         updateTarget();
         mx = my = -1; dirty = true;
     }
 
     // While seated, the game gets no keys/clicks (ZQSD must not walk the player)
-    function inHud(e) { return e.target === hud; }
+    function inHud(e) { return e.target === hud || !!(e.target && e.target.closest && e.target.closest('#homeButton, #topHud, .hud-panel, #actionBtn')); }
     function pointerToScreen(ev) {
         const r = scr.getBoundingClientRect();
         const x = (ev.clientX - r.left) / r.width, y = (ev.clientY - r.top) / r.height;
@@ -1149,7 +1218,7 @@ export function buildComputer(scene, o) {
     ['mousedown', 'click', 'dblclick', 'mousemove', 'pointerdown', 'touchstart'].forEach(function(t) { window.addEventListener(t, onPointerEvt, true); });
 
     window.addEventListener('wheel', function(e) {
-        if (S.phase !== 'using') return;
+        if (S.phase !== 'using' || inHud(e)) return;
         e.stopImmediatePropagation(); e.preventDefault();
         if (topApp() === 'youtube' && yt.account && !yt.watch) { yt.scroll += e.deltaY; dirty = true; }
     }, { capture: true, passive: false });
@@ -1231,6 +1300,7 @@ export function buildComputer(scene, o) {
     }
 
     drawScreen();
+    if (st.seated) setTimeout(function() { if (S.phase === 'idle' && !(o.canUse && !o.canUse())) sit(); }, 400);
 
     return {
         group: group,
