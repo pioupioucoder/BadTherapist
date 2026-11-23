@@ -640,12 +640,12 @@ export function buildBedroom(scene, o) {
 
 
     // ─── INTERRUPTEUR + CHAMBRE « MAUDITE » ─────────────────────────
-    // Un interrupteur sur le mur d'entrée, du côté de la poignée de la porte (x > 0).
-    // Un clic : la chambre devient sombre et des inscriptions rouges écarlates, avec des coulures,
-    // apparaissent partout (murs, plafond, sol). Ça ne clignote pas. Un autre clic : retour à la normale.
-    // Les inscriptions ne sont dessinées qu'au premier clic (puis gardées).
+    // Un interrupteur ancien (bakélite brune + laiton) sur le mur d'entrée, du côté de la poignée de la porte.
+    // Un clic : la chambre devient sombre et des inscriptions rouges, des coulures, des mains, des yeux, des pas
+    // apparaissent partout (murs, plafond, sol). Rien ne clignote. Un autre clic : retour à la normale.
+    // Tout est dessiné au premier clic seulement (puis gardé).
     const scare = (function() {
-        let dark = false, k = 0, built = false;
+        let dark = false, k = 0, built = false, hover = 0, hoverTarget = 0, eCur = 0, darkClock = 0;
         const group = new THREE.Group();
         group.visible = false;
         scene.add(group);
@@ -657,21 +657,53 @@ export function buildBedroom(scene, o) {
         redGlow.position.set(0, 2.6, 4);
         scene.add(redGlow);
 
-        // ── L'interrupteur (visible même dans le noir : matériau sans éclairage)
-        const plateMat = new THREE.MeshBasicMaterial({ color: 0xd8d0c0 });
-        const rockerMat = new THREE.MeshBasicMaterial({ color: 0xf2ece0 });
-        const plateOn = new THREE.Color(0xd8d0c0), plateOff = new THREE.Color(0x7a2424);
-        const rockerOn = new THREE.Color(0xf2ece0), rockerOff = new THREE.Color(0xb04040);
+        // ── L'interrupteur : bakélite brune, anneau et levier en laiton (éclairé comme le reste de la chambre)
         const SW_X = 1.05, SW_Y = 1.25;
-        const plate = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.14, 0.012), plateMat);
-        plate.position.set(SW_X, SW_Y, 0.036);
-        scene.add(plate);
-        const rocker = new THREE.Mesh(new THREE.BoxGeometry(0.034, 0.06, 0.02), rockerMat);
-        rocker.position.set(SW_X, SW_Y, 0.046);
-        rocker.rotation.x = -0.3;                      // lumière allumée : bascule vers le haut
-        scene.add(rocker);
+        const baseMat = new THREE.MeshPhongMaterial({ color: 0x3a281c, shininess: 18, specular: 0x221810 });
+        const brassMat = new THREE.MeshPhongMaterial({ color: 0xa88a45, shininess: 55, specular: 0x7a6030 });
+        const slotMat = new THREE.MeshLambertMaterial({ color: 0x1d130b });
+        const sw = new THREE.Group();
+        sw.position.set(SW_X, SW_Y, 0.026);
+        scene.add(sw);
+        function disc(r0, r1, h, z, mat) {
+            const m = new THREE.Mesh(new THREE.CylinderGeometry(r0, r1, h, 28), mat);
+            m.rotation.x = Math.PI / 2;
+            m.position.z = z;
+            sw.add(m);
+            return m;
+        }
+        disc(0.07, 0.075, 0.018, 0.009, baseMat);
+        disc(0.052, 0.056, 0.012, 0.024, brassMat);
+        disc(0.031, 0.031, 0.006, 0.03, slotMat);
+        [-1, 1].forEach(function(s) {
+            const sc = new THREE.Mesh(new THREE.CylinderGeometry(0.007, 0.007, 0.006, 10), brassMat);
+            sc.rotation.x = Math.PI / 2;
+            sc.position.set(0, s * 0.064, 0.021);
+            sw.add(sc);
+        });
+        const lever = new THREE.Group();
+        lever.position.z = 0.03;
+        lever.rotation.x = Math.PI / 3;                  // allumé : le levier pointe vers le haut
+        sw.add(lever);
+        const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.011, 0.075, 10), brassMat);
+        stem.position.y = 0.0375;
+        lever.add(stem);
+        const knob = new THREE.Mesh(new THREE.SphereGeometry(0.017, 12, 10), brassMat);
+        knob.position.y = 0.078;
+        lever.add(knob);
+        // Zone de clic invisible, bien plus large que l'interrupteur
+        const hitBox = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.36, 0.14), new THREE.MeshBasicMaterial({ visible: false }));
+        hitBox.position.set(0, 0, 0.05);
+        sw.add(hitBox);
 
-        // ── Dessin des inscriptions
+        // Dans le noir l'interrupteur garde une faible lueur rouge ; au survol de la souris il s'éclaire doucement
+        function tint() {
+            const e = eCur, h = hover;
+            baseMat.emissive.setRGB(0.2 * e + 0.2 * h, 0.045 * e + 0.12 * h, 0.04 * e + 0.05 * h);
+            brassMat.emissive.setRGB(0.3 * e + 0.3 * h, 0.07 * e + 0.2 * h, 0.05 * e + 0.08 * h);
+        }
+
+        // ── Générateur pseudo-aléatoire (mêmes inscriptions à chaque partie)
         function rng(seed) {
             let a = seed >>> 0;
             return function() {
@@ -682,21 +714,32 @@ export function buildBedroom(scene, o) {
                 return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
             };
         }
-        const TEXTS = ['Zephyr', 'I love you', 'I love you Zephyr', 'I love Zephyr'];
-        const COLS = ['#a80016', '#c8101f', '#e01a2b', '#7d0010', '#d4152a'];
+        const COLS = ['#b3001b', '#cf0f22', '#e8202f', '#8f0012', '#5a0009', '#ff3040', '#d4152a'];
         const FONT = '"Segoe Script","Bradley Hand","Brush Script MT","Comic Sans MS",cursive';
+        const pick = function(r, arr) { return arr[(r() * arr.length) | 0]; };
 
+        // ── Briques de dessin
+        let CUR = null;   // { list, ctx } : coulures de la surface en cours, dessinées sur un calque à part (animé par un shader)
+        function addDrip(x, y, dx, len, lw, col) {
+            CUR.list.push({ x: x, y: y, dx: dx, len: len, lw: lw });
+            const c = CUR.ctx;                    // même dessin que les anciennes coulures : trait de la couleur de la lettre + goutte ronde au bout
+            c.save();
+            c.strokeStyle = col; c.fillStyle = col; c.lineWidth = lw; c.lineCap = 'butt';
+            c.beginPath(); c.moveTo(x, y); c.lineTo(x + dx, y + len); c.stroke();
+            c.beginPath(); c.arc(x + dx, y + len, lw * 0.85, 0, Math.PI * 2); c.fill();
+            c.restore();
+        }
         function drip(ctx, x, y, size, col, r) {
             const len = size * (0.4 + r() * 2.6);
             const lw = Math.max(2, size * (0.03 + r() * 0.04));
             const dx = (r() - 0.5) * lw * 0.6;
+            if (CUR) { addDrip(x, y, dx, len, lw, col); return; }
             ctx.save();
             ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = lw; ctx.lineCap = 'round';
             ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + dx, y + len); ctx.stroke();
             ctx.beginPath(); ctx.arc(x + dx, y + len, lw * 0.85, 0, Math.PI * 2); ctx.fill();
             ctx.restore();
         }
-
         function splat(ctx, x, y, rad, col, r) {
             ctx.save();
             ctx.fillStyle = col;
@@ -708,48 +751,6 @@ export function buildBedroom(scene, o) {
             }
             ctx.restore();
         }
-
-        // Écriture tremblante, lettre par lettre (taille, inclinaison et ligne de base irrégulières)
-        function scrawl(ctx, text, x, y, size, ang, col, r, gravity) {
-            ctx.save();
-            ctx.translate(x, y);
-            ctx.rotate(ang);
-            ctx.font = 'bold ' + size + 'px ' + FONT;
-            ctx.textBaseline = 'alphabetic';
-            ctx.fillStyle = col; ctx.strokeStyle = col; ctx.lineJoin = 'round';
-            ctx.shadowColor = col; ctx.shadowBlur = size * 0.06;
-            let cx = 0;
-            const drips = [];
-            for (const ch of text) {
-                const w = ctx.measureText(ch).width;
-                const jy = (r() - 0.5) * size * 0.14;
-                ctx.save();
-                ctx.translate(cx + w / 2, jy);
-                ctx.rotate((r() - 0.5) * 0.35);
-                ctx.scale(1, 0.9 + r() * 0.3);
-                ctx.lineWidth = size * 0.045;
-                ctx.fillText(ch, -w / 2, 0);
-                ctx.strokeText(ch, -w / 2, 0);
-                ctx.restore();
-                if (ch !== ' ' && r() < 0.5) drips.push([cx + w * (0.2 + r() * 0.6), jy + size * 0.06]);
-                cx += w * (0.85 + r() * 0.2);
-            }
-            // trait rageur sous ou à travers le texte
-            if (r() < 0.4) {
-                ctx.shadowBlur = 0; ctx.lineWidth = size * 0.05; ctx.lineCap = 'round';
-                ctx.beginPath();
-                const yy = r() < 0.5 ? size * 0.18 : -size * 0.25;
-                ctx.moveTo(-size * 0.1, yy);
-                for (let i = 1; i <= 7; i++) ctx.lineTo(cx * i / 7, yy + (r() - 0.5) * size * 0.2);
-                ctx.stroke();
-            }
-            ctx.restore();
-            if (gravity) {   // coulures : toujours vers le bas du mur, quelle que soit l'inclinaison du texte
-                const ca = Math.cos(ang), sa = Math.sin(ang);
-                drips.forEach(function(d) { drip(ctx, x + ca * d[0] - sa * d[1], y + sa * d[0] + ca * d[1], size, col, r); });
-            }
-        }
-
         function zigzag(ctx, x, y, len, size, ang, col, r) {
             ctx.save();
             ctx.translate(x, y); ctx.rotate(ang);
@@ -761,38 +762,427 @@ export function buildBedroom(scene, o) {
             ctx.restore();
         }
 
-        // Une surface = un canvas. wm × hm en mètres ; holes = rectangles à laisser vides [u0, v0, u1, v1] (mètres, depuis le coin haut-gauche)
-        function makeSurface(wm, hm, cw, ch, seed, o) {
+        // Une lettre tremblante (légèrement tournée, étirée, décalée)
+        function glyph(ctx, ch, w, size, r, mode) {
+            ctx.save();
+            ctx.translate(0, (r() - 0.5) * size * 0.14);
+            ctx.rotate((r() - 0.5) * 0.35);
+            ctx.scale(1, 0.9 + r() * 0.3);
+            if (mode === 'thin') {
+                ctx.lineWidth = Math.max(1, size * 0.022); ctx.strokeText(ch, -w / 2, 0);
+            } else {
+                ctx.lineWidth = size * 0.045;
+                ctx.fillText(ch, -w / 2, 0);
+                ctx.strokeText(ch, -w / 2, 0);
+                if (mode === 'double') { ctx.translate(size * 0.025, size * 0.02); ctx.fillText(ch, -w / 2, 0); }
+            }
+            ctx.restore();
+        }
+
+        // Écrit un texte centré en (cx, cy). o.mode : 'fill' | 'thin' | 'double'
+        function scrawl(S, text, cx, cy, size, ang, col, o) {
+            const ctx = S.ctx, r = S.r;
+            ctx.save();
+            ctx.font = 'bold ' + size + 'px ' + FONT;
+            ctx.textBaseline = 'alphabetic';
+            const total = ctx.measureText(text).width * 0.92;
+            const ca = Math.cos(ang), sa = Math.sin(ang);
+            const ox = cx - (ca * total / 2 + sa * 0.3 * size), oy = cy - (sa * total / 2 - ca * 0.3 * size);
+            ctx.translate(ox, oy);
+            ctx.rotate(ang);
+            ctx.globalAlpha = o.alpha || 1;
+            ctx.fillStyle = col; ctx.strokeStyle = col; ctx.lineJoin = 'round';
+            ctx.shadowColor = col; ctx.shadowBlur = o.mode === 'thin' ? 0 : size * 0.05;
+            let x = 0;
+            const drips = [];
+            for (const ch of text) {
+                const w = ctx.measureText(ch).width;
+                ctx.save();
+                ctx.translate(x + w / 2, 0);
+                glyph(ctx, ch, w, size, r, o.mode);
+                ctx.restore();
+                if (ch !== ' ' && o.drips && r() < 0.38) drips.push([x + w * (0.2 + r() * 0.6), size * 0.08]);
+                x += w * (0.85 + r() * 0.2);
+            }
+            if (o.strike && r() < o.strike) {             // trait rageur à travers le texte
+                ctx.shadowBlur = 0; ctx.lineWidth = size * 0.05; ctx.lineCap = 'round';
+                ctx.beginPath();
+                const yy = -size * 0.25 + r() * size * 0.4;
+                ctx.moveTo(-size * 0.1, yy);
+                for (let i = 1; i <= 7; i++) ctx.lineTo(x * i / 7, yy + (r() - 0.5) * size * 0.2);
+                ctx.stroke();
+            }
+            ctx.restore();
+            drips.forEach(function(d) {   // les coulures tombent toujours vers le bas du mur
+                drip(ctx, ox + ca * d[0] - sa * d[1], oy + sa * d[0] + ca * d[1], size * 0.8, col, r);
+            });
+            return total;
+        }
+
+        // Place un texte sans trop chevaucher les autres (un léger chevauchement reste possible)
+        function putText(S, text, sizeM, o) {
+            o = o || {};
+            const r = S.r, size = sizeM * S.ppm;
+            S.ctx.save(); S.ctx.font = 'bold ' + size + 'px ' + FONT;
+            const w = S.ctx.measureText(text).width * 0.92;
+            S.ctx.restore();
+            const rad = Math.hypot(w, size * 1.15) / 2 * 0.8;
+            const ang = o.ang !== undefined ? o.ang : (S.free ? r() * Math.PI * 2 : (r() - 0.5) * 0.5);
+            let cx = o.x, cy = o.y;
+            if (cx === undefined) {
+                let ok = false;
+                for (let t = 0; t < 70 && !ok; t++) {
+                    cx = r() * S.W; cy = r() * S.H;
+                    ok = S.fits(cx, cy, rad);
+                }
+                if (!ok) return false;
+            }
+            scrawl(S, text, cx, cy, size, ang, o.col || pick(r, COLS), {
+                mode: o.mode || 'fill', alpha: o.alpha, drips: o.drips !== undefined ? o.drips : S.gravity, strike: o.strike !== undefined ? o.strike : 0.25
+            });
+            S.placed.push({ x: cx, y: cy, r: rad });
+            return true;
+        }
+
+        const PHRASES = ['I love you', 'I love you', 'Zephyr', 'Zephyr', 'I love Zephyr', 'I love you Zephyr'];
+        // Remplit les espaces libres : surtout du petit/moyen texte lisible, quelques gros
+        function fillTexts(S, n, minM, maxM) {
+            const r = S.r;
+            for (let i = 0; i < n; i++) {
+                const sz = minM + (maxM - minM) * Math.pow(r(), 2.2);
+                const q = r();
+                putText(S, pick(r, PHRASES), sz, { mode: q < 0.65 ? 'fill' : q < 0.85 ? 'thin' : 'double', alpha: 0.72 + r() * 0.28 });
+            }
+        }
+
+        function heart(S, x, y, s, col) {
+            const ctx = S.ctx, r = S.r;
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.rotate((r() - 0.5) * 0.25);
+            ctx.strokeStyle = col; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+            ctx.shadowColor = col; ctx.shadowBlur = s * 0.04;
+            for (let p = 0; p < 4; p++) {                 // repassé plusieurs fois, comme au feutre
+                ctx.lineWidth = s * (0.035 + r() * 0.03);
+                ctx.beginPath();
+                for (let i = 0; i <= 48; i++) {
+                    const t = i / 48 * Math.PI * 2;
+                    const hx = 16 * Math.pow(Math.sin(t), 3);
+                    const hy = -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t));
+                    const px = hx / 17 * s * 0.5 + (r() - 0.5) * s * 0.03, py = hy / 17 * s * 0.5 + (r() - 0.5) * s * 0.03;
+                    if (i) ctx.lineTo(px, py); else ctx.moveTo(px, py);
+                }
+                ctx.stroke();
+            }
+            ctx.lineWidth = s * 0.04;                     // une estafilade en travers
+            ctx.beginPath();
+            ctx.moveTo(-s * 0.55, -s * 0.3);
+            for (let i = 1; i <= 6; i++) ctx.lineTo(-s * 0.55 + s * 1.1 * i / 6, -s * 0.3 + s * 0.7 * i / 6 + (r() - 0.5) * s * 0.1);
+            ctx.stroke();
+            ctx.restore();
+            S.placed.push({ x: x, y: y, r: s * 0.55 });
+            if (S.gravity) for (let i = 0; i < 3; i++) drip(ctx, x + (r() - 0.5) * s * 0.3, y + s * 0.4, s * 0.5, col, r);
+        }
+
+        // Main : paume étroite, quatre doigts effilés avec leurs plis, pouce, traînée du bras
+        // et du sang qui coule des bouts de doigts. mirror = main inversée.
+        function hand(S, x, y, s, ang, col, mirror) {
+            const ctx = S.ctx, r = S.r;
+            const ca = Math.cos(ang), sa = Math.sin(ang), mx = mirror ? -1 : 1;
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.rotate(ang);
+            if (mirror) ctx.scale(-1, 1);
+            ctx.fillStyle = col; ctx.strokeStyle = col; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+            ctx.shadowColor = col; ctx.shadowBlur = s * 0.025;
+
+            // traînée du poignet / de l'avant-bras vers le bas
+            const g = ctx.createLinearGradient(0, s * 0.45, 0, s * 1.8);
+            g.addColorStop(0, col); g.addColorStop(1, 'rgba(120,0,16,0)');
+            ctx.save();
+            ctx.globalAlpha = 0.6; ctx.fillStyle = g; ctx.shadowBlur = 0;
+            ctx.beginPath(); ctx.moveTo(-0.15 * s, 0.45 * s); ctx.lineTo(0.15 * s, 0.45 * s);
+            ctx.lineTo(0.2 * s, 1.8 * s); ctx.lineTo(-0.2 * s, 1.8 * s); ctx.fill();
+            ctx.restore();
+
+            // paume
+            ctx.beginPath();
+            ctx.moveTo(-0.14 * s, 0.62 * s);
+            ctx.bezierCurveTo(-0.27 * s, 0.4 * s, -0.27 * s, 0.1 * s, -0.24 * s, -0.08 * s);
+            ctx.lineTo(0.24 * s, -0.08 * s);
+            ctx.bezierCurveTo(0.29 * s, 0.1 * s, 0.24 * s, 0.4 * s, 0.14 * s, 0.62 * s);
+            ctx.closePath(); ctx.fill();
+
+            // doigt effilé : base (x0,y0), longueur, largeur base → bout, inclinaison
+            function finger(x0, y0, len, w0, w1, bend) {
+                const tx = x0 + bend * len, ty = y0 - len;
+                ctx.beginPath();
+                ctx.moveTo(x0 - w0 / 2, y0);
+                ctx.quadraticCurveTo((x0 + tx) / 2 - w0 / 2 * 0.9, (y0 + ty) / 2, tx - w1 / 2, ty);
+                ctx.arc(tx, ty, w1 / 2, Math.PI, 0, false);
+                ctx.quadraticCurveTo((x0 + tx) / 2 + w0 / 2 * 0.9, (y0 + ty) / 2, x0 + w0 / 2, y0);
+                ctx.closePath(); ctx.fill();
+                return [tx, ty];
+            }
+            // index, majeur, annulaire, auriculaire
+            const spec = [[0.175, 0.52, 0.1, 0.07, 0.05], [0.065, 0.6, 0.1, 0.07, 0.02], [-0.05, 0.55, 0.095, 0.068, -0.03], [-0.165, 0.42, 0.085, 0.06, -0.08]];
+            const tips = [];
+            spec.forEach(function(f) {
+                const len = f[1] * s * (0.96 + r() * 0.08), bend = f[4] + (r() - 0.5) * 0.06;
+                const t = finger(f[0] * s, -0.06 * s, len, f[2] * s, f[3] * s, bend);
+                tips.push(t);
+            });
+            // pouce, plus court et plus large, écarté
+            const th = finger(0.2 * s, 0.34 * s, 0.4 * s, 0.12 * s, 0.09 * s, 0.62);
+            tips.push(th);
+
+            // plis des doigts et lignes de la paume : traits sombres (sang qui a séché dans les creux)
+            ctx.shadowBlur = 0;
+            ctx.strokeStyle = 'rgba(55,0,8,0.55)'; ctx.lineWidth = s * 0.011;
+            spec.forEach(function(f, i) {
+                [0.33, 0.66].forEach(function(q) {
+                    const cx = f[0] * s + f[4] * f[1] * s * q, cy = -0.06 * s - f[1] * s * q, w = f[2] * s * 0.36;
+                    ctx.beginPath(); ctx.moveTo(cx - w, cy); ctx.quadraticCurveTo(cx, cy + s * 0.012, cx + w, cy); ctx.stroke();
+                });
+            });
+            ctx.beginPath(); ctx.moveTo(-0.2 * s, 0.1 * s); ctx.quadraticCurveTo(0, 0.2 * s, 0.22 * s, 0.05 * s); ctx.stroke();   // ligne de cœur
+            ctx.beginPath(); ctx.moveTo(0.08 * s, 0.04 * s); ctx.quadraticCurveTo(0.0 * s, 0.28 * s, 0.1 * s, 0.5 * s); ctx.stroke(); // ligne de vie
+            ctx.restore();
+
+            // du sang coule des bouts de doigts (en repère mur : toujours vers le bas)
+            if (S.gravity) {
+                tips.forEach(function(t, i) {
+                    if (r() < 0.75) {
+                        const lx = t[0] * mx;
+                        drip(ctx, x + ca * lx - sa * t[1], y + sa * lx + ca * t[1], s * (0.45 + r() * 0.5), col, r);
+                    }
+                });
+                drip(ctx, x + ca * 0.05 * s * mx - sa * 0.6 * s, y + sa * 0.05 * s * mx + ca * 0.6 * s, s * 0.9, col, r);   // poignet
+            }
+            S.placed.push({ x: x, y: y - 0.05 * s, r: 0.8 * s });
+        }
+
+        function eye(S, x, y, s, col) {
+            const ctx = S.ctx, r = S.r;
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+            ctx.shadowColor = col; ctx.shadowBlur = s * 0.04;
+            for (let p = 0; p < 3; p++) {
+                const j = (r() - 0.5) * s * 0.08;
+                ctx.lineWidth = s * (0.035 + r() * 0.03);
+                ctx.beginPath(); ctx.moveTo(-s, j);
+                ctx.quadraticCurveTo(0, -s * 0.8 + j, s, j);
+                ctx.quadraticCurveTo(0, s * 0.8 + j, -s, j);
+                ctx.stroke();
+            }
+            ctx.lineWidth = s * 0.05;
+            ctx.beginPath(); ctx.arc(0, 0, s * 0.34, 0, Math.PI * 2); ctx.stroke();
+            ctx.beginPath(); ctx.arc(0, 0, s * 0.17, 0, Math.PI * 2); ctx.fill();
+            ctx.lineWidth = s * 0.035;
+            for (let i = 0; i < 9; i++) {                 // cils
+                const a = -Math.PI * (0.15 + 0.7 * i / 8);
+                ctx.beginPath(); ctx.moveTo(Math.cos(a) * s * 0.85, Math.sin(a) * s * 0.55);
+                ctx.lineTo(Math.cos(a) * s * 1.1, Math.sin(a) * s * 0.85); ctx.stroke();
+            }
+            ctx.restore();
+            S.placed.push({ x: x, y: y, r: s * 1.1 });
+            if (S.gravity) { drip(ctx, x - s * 0.1, y + s * 0.5, s * 0.9, col, r); drip(ctx, x + s * 0.3, y + s * 0.45, s * 0.6, col, r); }
+        }
+
+        function tally(S, x, y, s, groups, col) {         // traits de comptage : combien de jours ?
+            const ctx = S.ctx, r = S.r;
+            ctx.save();
+            ctx.strokeStyle = col; ctx.lineCap = 'round'; ctx.lineWidth = s * 0.07;
+            ctx.shadowColor = col; ctx.shadowBlur = s * 0.04;
+            for (let g = 0; g < groups; g++) {
+                const gx = x + (g % 4) * s * 1.35, gy = y + Math.floor(g / 4) * s * 1.5;
+                for (let i = 0; i < 4; i++) {
+                    ctx.beginPath(); ctx.moveTo(gx + i * s * 0.28, gy + (r() - 0.5) * s * 0.06);
+                    ctx.lineTo(gx + i * s * 0.28 + (r() - 0.5) * s * 0.06, gy + s); ctx.stroke();
+                }
+                ctx.beginPath(); ctx.moveTo(gx - s * 0.12, gy + s * 0.85); ctx.lineTo(gx + s * 0.95, gy + s * 0.12); ctx.stroke();
+            }
+            ctx.restore();
+            S.placed.push({ x: x + s * 2, y: y + s * 0.8, r: s * (1.5 + Math.min(groups, 4) * 0.2) });
+        }
+
+        // Le même texte recopié ligne après ligne, de plus en plus déglingué (« punition »)
+        function lines(S, text, cx, y0, rows, sizeM, col) {
+            const r = S.r, size = sizeM * S.ppm;
+            for (let i = 0; i < rows; i++) {
+                const m = i / (rows - 1 || 1);
+                const w = scrawl(S, text, cx + (r() - 0.5) * m * size * 1.2, y0 + i * size * 1.25, size * (1 + m * 0.35), (r() - 0.5) * m * 0.22, col,
+                    { mode: 'fill', alpha: 0.95 - m * 0.2, drips: i === rows - 1 || r() < 0.2, strike: 0.1 + m * 0.4 });
+                S.placed.push({ x: cx, y: y0 + i * size * 1.25, r: w / 2 * 0.8 });
+            }
+        }
+
+        // Texte en cercle / en spirale. r1 === r0 : cercle ; sinon spirale qui s'ouvre vers l'extérieur
+        function ringText(S, text, cx, cy, r0, r1, sizeM, col, turns) {
+            const ctx = S.ctx, r = S.r, size = sizeM * S.ppm;
+            ctx.save();
+            ctx.font = 'bold ' + size + 'px ' + FONT;
+            ctx.fillStyle = col; ctx.strokeStyle = col; ctx.lineJoin = 'round';
+            ctx.shadowColor = col; ctx.shadowBlur = size * 0.04;
+            let th = r() * 6.28, rad = r0 * S.ppm, i = 0;
+            const R0 = r0 * S.ppm, R1 = r1 * S.ppm, end = th + Math.PI * 2 * (turns || 1);
+            while (th < end && i < 2500) {
+                const ch = text[i % text.length]; i++;
+                const w = ctx.measureText(ch).width;
+                if (ch !== ' ') {
+                    ctx.save();
+                    ctx.translate(cx + Math.cos(th) * rad, cy + Math.sin(th) * rad);
+                    ctx.rotate(th + Math.PI / 2);
+                    glyph(ctx, ch, w, size, r, 'fill');
+                    ctx.restore();
+                }
+                const dth = (w * 0.9) / Math.max(rad, 1);
+                th += dth;
+                rad = R0 + (R1 - R0) * ((th - (end - Math.PI * 2 * (turns || 1))) / (Math.PI * 2 * (turns || 1)));
+            }
+            ctx.restore();
+            S.placed.push({ x: cx, y: cy, r: Math.max(R0, R1) });
+        }
+
+        // Pas nus de (x0,y0) à (x1,y1) (pixels), pied gauche / pied droit
+        function footprints(S, x0, y0, x1, y1, step, col, wob) {
+            const ctx = S.ctx, r = S.r, ppm = S.ppm;
+            const L = Math.hypot(x1 - x0, y1 - y0), n = Math.floor(L / step);
+            const hd = Math.atan2(y1 - y0, x1 - x0), nx = -Math.sin(hd), ny = Math.cos(hd);
+            for (let i = 0; i <= n; i++) {
+                const t = i * step, side = i % 2 ? 1 : -1;
+                const off = side * 0.11 * ppm + Math.sin(i * 0.7) * wob * ppm;
+                const px = x0 + Math.cos(hd) * t + nx * off, py = y0 + Math.sin(hd) * t + ny * off;
+                ctx.save();
+                ctx.translate(px, py);
+                ctx.rotate(hd + Math.PI / 2 + (r() - 0.5) * 0.25);
+                ctx.globalAlpha = 0.9 - (i / (n + 1)) * 0.45;   // l'empreinte s'estompe en s'éloignant
+                ctx.fillStyle = col; ctx.shadowColor = col; ctx.shadowBlur = ppm * 0.01;
+                ctx.beginPath(); ctx.ellipse(0, 0, 0.05 * ppm, 0.115 * ppm, 0, 0, Math.PI * 2); ctx.fill();     // plante
+                ctx.beginPath(); ctx.arc(0, 0.1 * ppm, 0.04 * ppm, 0, Math.PI * 2); ctx.fill();                  // talon
+                for (let f = 0; f < 5; f++) {
+                    ctx.beginPath();
+                    ctx.arc((f - 2) * 0.022 * ppm * side, -0.125 * ppm + Math.abs(f - 1) * 0.006 * ppm, (0.021 - f * 0.0016) * ppm, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                ctx.restore();
+                S.placed.push({ x: px, y: py, r: 0.12 * ppm });
+            }
+        }
+
+        // Longues coulures qui partent du haut du mur (comme si ça avait coulé du plafond)
+        function streaks(S, n) {
+            const ctx = S.ctx, r = S.r;
+            for (let i = 0; i < n; i++) {
+                const x = r() * S.W, len = (0.3 + r() * 2.2) * S.ppm, lw = (0.012 + r() * 0.03) * S.ppm;
+                const col = pick(r, COLS);
+                addDrip(x, 0, (r() - 0.5) * lw, len, lw, col);
+            }
+        }
+
+        // ── Carte des coulures : chaque coulure est un trait vertical dont les canaux codent
+        //    R = avancement le long de la coulure (0 en haut → 1 au bout), G = retard de départ, B = vitesse.
+        //    Le shader la fait couler : elle s'allonge peu à peu, puis une goutte glisse sans fin le long du trait.
+        function renderDrips(S, holes) {
+            const c = document.createElement('canvas');
+            c.width = S.cw; c.height = S.ch;
+            const ctx = c.getContext('2d');
+            ctx.scale(1, S.ch / S.H);
+            S.drips.forEach(function(d) {
+                const vel = 0.04 + Math.random() * 0.1;                      // mètres par seconde
+                const rate = Math.min(0.3, Math.max(0.015, vel / Math.max(d.len / S.ppm, 0.05)));
+                const dB = Math.round(Math.random() * 255), rB = Math.round(rate / 0.3 * 255);
+                const g = ctx.createLinearGradient(0, d.y, 0, d.y + d.len);
+                g.addColorStop(0, 'rgb(0,' + dB + ',' + rB + ')');
+                g.addColorStop(1, 'rgb(255,' + dB + ',' + rB + ')');
+                ctx.strokeStyle = g; ctx.lineWidth = d.lw; ctx.lineCap = 'butt';
+                ctx.beginPath(); ctx.moveTo(d.x, d.y); ctx.lineTo(d.x + d.dx, d.y + d.len); ctx.stroke();
+                ctx.fillStyle = 'rgb(255,' + dB + ',' + rB + ')';             // la goutte au bout
+                ctx.beginPath(); ctx.arc(d.x + d.dx, d.y + d.len, d.lw * 0.85, 0, Math.PI * 2); ctx.fill();
+            });
+            holes.forEach(function(h) { ctx.clearRect(h[0], h[1], h[2] - h[0], h[3] - h[1]); });
+            return flatTex(c);
+        }
+        function flatTex(c) {      // pas de mipmaps : les canaux codés ne doivent pas se mélanger
+            const tex = new THREE.CanvasTexture(c);
+            tex.generateMipmaps = false;
+            tex.minFilter = THREE.LinearFilter;
+            tex.magFilter = THREE.LinearFilter;
+            return tex;
+        }
+        const DRIP_VS = 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }';
+        // dripColor = les coulures telles qu'elles étaient dessinées (couleur de la lettre, bout rond) ;
+        // dripInfo = avancement / retard / vitesse. On garde les couleurs d'origine telles quelles (pas de conversion).
+        const DRIP_FS = [
+            'uniform sampler2D dripColor; uniform sampler2D dripInfo; uniform float uTime; uniform float uOpacity; varying vec2 vUv;',
+            'void main(){',
+            '  vec4 c = texture2D(dripColor, vUv);',
+            '  vec4 d = texture2D(dripInfo, vUv);',
+            '  if (c.a < 0.02 || d.a < 0.02) discard;',
+            '  float p = d.r;',
+            '  float t0 = uTime - d.g * 8.0;',
+            '  float rate = max(d.b * 0.3, 0.012);',
+            '  float g = clamp(t0 * rate, 0.0, 1.0);',
+            '  if (t0 <= 0.0 || p > g) discard;',
+            '  float done = step(0.999, g);',
+            '  float cyc = fract(t0 * rate * 0.5 + fract(d.g * 37.1));',
+            '  float bead = done * smoothstep(0.06, 0.0, abs(p - cyc));',
+            '  float tip = (1.0 - done) * smoothstep(0.05, 0.0, g - p);',
+            '  vec3 col = mix(c.rgb, min(c.rgb * 1.3 + vec3(0.05, 0.02, 0.03), vec3(1.0)), 0.8 * (bead + tip));',
+            '  gl_FragColor = vec4(col, c.a * uOpacity);',
+            '}'
+        ].join('\n');
+        const dripMats = [];
+
+        // ── Une surface = un canvas. wm × hm en mètres ; spec.holes = [u0, v0, u1, v1] laissés vides ; spec.compose(S)
+        function makeSurface(wm, hm, cw, ch, seed, spec) {
             const c = document.createElement('canvas');
             c.width = cw; c.height = ch;
             const ctx = c.getContext('2d');
-            const ppm = cw / wm;                       // pixels par mètre (horizontal)
+            const ppm = cw / wm;
             ctx.scale(1, ch / (hm * ppm));             // on dessine en pixels « carrés »
-            const r = rng(seed);
-            const W = cw, H = hm * ppm;
-            for (let i = 0; i < o.count; i++) {
-                const t = TEXTS[(r() * TEXTS.length) | 0];
-                const size = (o.minM + r() * (o.maxM - o.minM)) * ppm;
-                const col = COLS[(r() * COLS.length) | 0];
-                const ang = o.free ? r() * Math.PI * 2 : (r() - 0.5) * 0.7;
-                scrawl(ctx, t, r() * W, r() * H, size, ang, col, r, !o.free);
-            }
-            for (let i = 0; i < o.scribbles; i++) {
-                zigzag(ctx, r() * W, r() * H, (0.5 + r() * 1.6) * ppm, 0.25 * ppm, o.free ? r() * 6.283 : (r() - 0.5) * 1.2, COLS[(r() * COLS.length) | 0], r);
-            }
-            for (let i = 0; i < o.splats; i++) splat(ctx, r() * W, r() * H, (0.012 + r() * 0.05) * ppm, COLS[(r() * COLS.length) | 0], r);
-            (o.holes || []).forEach(function(h) {
-                ctx.clearRect(h[0] * ppm, h[1] * ppm, (h[2] - h[0]) * ppm, (h[3] - h[1]) * ppm);
-            });
+            const holes = (spec.holes || []).map(function(h) { return [h[0] * ppm, h[1] * ppm, h[2] * ppm, h[3] * ppm]; });
+            const S = {
+                ctx: ctx, r: rng(seed), W: cw, H: hm * ppm, ppm: ppm, free: !!spec.free, gravity: !spec.free,
+                cw: cw, ch: ch, placed: [], tol: 0.62,
+                fits: function(x, y, rad) {
+                    for (let i = 0; i < holes.length; i++) {
+                        const h = holes[i], pad = rad * 0.5;
+                        if (x > h[0] - pad && x < h[2] + pad && y > h[1] - pad && y < h[3] + pad) return false;
+                    }
+                    for (let i = 0; i < S.placed.length; i++) {
+                        const p = S.placed[i], dx = p.x - x, dy = p.y - y, m = (p.r + rad) * S.tol;
+                        if (dx * dx + dy * dy < m * m) return false;
+                    }
+                    return true;
+                }
+            };
+            const dcv = document.createElement('canvas');       // calque des coulures (mêmes dimensions)
+            dcv.width = cw; dcv.height = ch;
+            const dctx = dcv.getContext('2d');
+            dctx.scale(1, ch / (hm * ppm));
+            CUR = { list: [], ctx: dctx };
+            S.drips = CUR.list;
+            spec.compose(S);
+            CUR = null;
+            holes.forEach(function(h) { ctx.clearRect(h[0], h[1], h[2] - h[0], h[3] - h[1]); });
             const tex = new THREE.CanvasTexture(c);
             tex.encoding = THREE.sRGBEncoding;
             tex.anisotropy = 8;
-            return tex;
+            let dripColor = null, dripInfo = null;
+            if (S.drips.length) {
+                holes.forEach(function(h) { dctx.clearRect(h[0], h[1], h[2] - h[0], h[3] - h[1]); });
+                dripColor = flatTex(dcv);
+                dripInfo = renderDrips(S, holes);
+            }
+            return { tex: tex, dripColor: dripColor, dripInfo: dripInfo };
         }
 
-        function addSurface(w, h, cw, ch, seed, o, px, py, pz, rx, ry) {
+        function addSurface(w, h, cw, ch, seed, spec, px, py, pz, rx, ry) {
+            const res = makeSurface(w, h, cw, ch, seed, spec);
             const mat = new THREE.MeshBasicMaterial({
-                map: makeSurface(w, h, cw, ch, seed, o), transparent: true, opacity: 0, depthWrite: false,
+                map: res.tex, transparent: true, opacity: 0, depthWrite: false,
                 polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1
             });
             surfMats.push(mat);
@@ -802,56 +1192,167 @@ export function buildBedroom(scene, o) {
             m.rotation.y = ry || 0;
             m.renderOrder = 5;
             group.add(m);
+            if (res.dripInfo) {                      // calque des coulures animées, posé sur la même surface
+                const dm = new THREE.ShaderMaterial({
+                    uniforms: { dripColor: { value: res.dripColor }, dripInfo: { value: res.dripInfo }, uTime: { value: 0 }, uOpacity: { value: 0 } },
+                    vertexShader: DRIP_VS, fragmentShader: DRIP_FS, transparent: true, depthWrite: false,
+                    polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2
+                });
+                dripMats.push(dm);
+                const dmesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), dm);
+                dmesh.renderOrder = 6;
+                m.add(dmesh);
+            }
         }
 
-        function build() {
-            built = true;
-            const wallO = { count: 22, minM: 0.35, maxM: 1.5, scribbles: 9, splats: 26, free: false };
-            // Mur d'entrée (z = 0) : on laisse libres la porte et l'interrupteur
-            addSurface(ROOM_W, WALL_H, 2048, 512, 11, Object.assign({ holes: [[ROOM_W / 2 - 0.9, WALL_H - 2.5, ROOM_W / 2 + 0.9, WALL_H], [ROOM_W / 2 + SW_X - 0.18, WALL_H - SW_Y - 0.2, ROOM_W / 2 + SW_X + 0.18, WALL_H - SW_Y + 0.2]] }, wallO),
-                0, WALL_H / 2, 0.045, 0, 0);
-            // Mur du fond (z = HALF_D) : on laisse libre la fenêtre
-            addSurface(ROOM_W, WALL_H, 2048, 512, 23, Object.assign({ holes: [[ROOM_W / 2 - 1.55, 0.7, ROOM_W / 2 + 1.55, 2.9]] }, wallO),
-                0, WALL_H / 2, HALF_D - 0.045, 0, Math.PI);
-            // Murs de gauche et de droite
-            const sideO = Object.assign({}, wallO, { count: 14 });
-            addSurface(HALF_D, WALL_H, 1024, 512, 37, sideO, -ROOM_W / 2 + 0.045, WALL_H / 2, HALF_D / 2, 0, Math.PI / 2);
-            addSurface(HALF_D, WALL_H, 1024, 512, 41, sideO, ROOM_W / 2 - 0.045, WALL_H / 2, HALF_D / 2, 0, -Math.PI / 2);
-            // Plafond et sol : écrit dans tous les sens
-            const flatO = { count: 24, minM: 0.4, maxM: 1.6, scribbles: 12, splats: 40, free: true };
-            addSurface(ROOM_W, HALF_D, 2048, 1024, 53, flatO, 0, WALL_H - 0.02, HALF_D / 2, Math.PI / 2, 0);
-            addSurface(ROOM_W, HALF_D, 2048, 1024, 67, flatO, 0, 0.006, HALF_D / 2, -Math.PI / 2, 0);
+        function scribbles(S, n) {
+            const r = S.r;
+            for (let i = 0; i < n; i++) zigzag(S.ctx, r() * S.W, r() * S.H, (0.4 + r() * 1.2) * S.ppm, 0.2 * S.ppm, S.free ? r() * 6.283 : (r() - 0.5) * 1.2, pick(r, COLS), r);
         }
+        function splats(S, n, maxM) {
+            const r = S.r;
+            for (let i = 0; i < n; i++) splat(S.ctx, r() * S.W, r() * S.H, (0.01 + r() * maxM) * S.ppm, pick(r, COLS), r);
+        }
+
+        const jobs = [];
+        function queueJobs() {
+            const W = ROOM_W, H = WALL_H;
+
+            // Mur d'entrée (z = 0). u = x + 8, v = 3,6 − hauteur. On laisse libres la porte et l'interrupteur.
+            jobs.push(function() { addSurface(W, H, 2048, 512, 11, {
+                holes: [[W / 2 - 0.9, H - 2.5, W / 2 + 0.9, H], [W / 2 + SW_X - 0.2, H - SW_Y - 0.22, W / 2 + SW_X + 0.2, H - SW_Y + 0.22]],
+                compose: function(S) {
+                    const p = S.ppm;
+                    putText(S, 'I love you Zephyr', 0.6, { x: 8 * p, y: 0.62 * p, ang: -0.015, col: '#d3101f', drips: true });   // au-dessus de la porte
+                    hand(S, 6.7 * p, 2.3 * p, 0.55 * p, -0.2, '#b3001b');          // des mains accrochées au chambranle
+                    hand(S, 9.6 * p, 1.9 * p, 0.5 * p, 0.25, '#cf0f22', true);
+                    heart(S, 2.6 * p, 1.9 * p, 1.1 * p, '#d4152a');
+                    putText(S, 'Zephyr', 0.2, { x: 2.6 * p, y: 1.95 * p, ang: -0.1, col: '#ff3040', drips: false });
+                    eye(S, 4.9 * p, 1.15 * p, 0.45 * p, '#b3001b');
+                    eye(S, 12.3 * p, 0.95 * p, 0.55 * p, '#cf0f22');
+                    tally(S, 13.6 * p, 2.2 * p, 0.38 * p, 7, '#8f0012');
+                    lines(S, 'I love you Zephyr', 11.2 * p, 1.4 * p, 5, 0.2, '#e8202f');
+                    fillTexts(S, 60, 0.14, 0.5);
+                    streaks(S, 16); scribbles(S, 8); splats(S, 34, 0.05);
+                }
+            }, 0, H / 2, 0.045, 0, 0); });
+
+            // Mur du fond (z = HALF_D). u = 8 − x. On laisse libre la fenêtre.
+            jobs.push(function() { addSurface(W, H, 2048, 512, 23, {
+                holes: [[W / 2 - 1.55, 0.7, W / 2 + 1.55, 2.9]],
+                compose: function(S) {
+                    const p = S.ppm;
+                    putText(S, 'I love you Zephyr', 0.5, { x: 8 * p, y: 0.36 * p, ang: 0.01, col: '#d3101f', drips: true });   // au-dessus de la fenêtre
+                    eye(S, 5.5 * p, 1.7 * p, 0.55 * p, '#cf0f22');                  // des yeux qui guettent de chaque côté
+                    eye(S, 10.5 * p, 1.7 * p, 0.55 * p, '#cf0f22');
+                    heart(S, 3.0 * p, 1.9 * p, 0.95 * p, '#b3001b');
+                    hand(S, 12.9 * p, 2.2 * p, 0.55 * p, 0.2, '#8f0012');
+                    tally(S, 0.9 * p, 2.3 * p, 0.38 * p, 6, '#cf0f22');
+                    fillTexts(S, 58, 0.14, 0.5);
+                    streaks(S, 16); scribbles(S, 8); splats(S, 34, 0.05);
+                }
+            }, 0, H / 2, HALF_D - 0.045, 0, Math.PI); });
+
+            // Mur de gauche, côté lit (u = 8 − z) : un grand cœur lacéré juste au-dessus du lit
+            jobs.push(function() { addSurface(HALF_D, H, 1024, 512, 37, {
+                compose: function(S) {
+                    const p = S.ppm;
+                    heart(S, 7.0 * p, 1.0 * p, 1.5 * p, '#d4152a');
+                    putText(S, 'Zephyr', 0.34, { x: 7.0 * p, y: 1.05 * p, ang: -0.08, col: '#ff3040', drips: false, strike: 0 });
+                    lines(S, 'I love you Zephyr', 3.3 * p, 0.55 * p, 7, 0.22, '#e8202f');
+                    hand(S, 0.9 * p, 2.0 * p, 0.5 * p, 0.1, '#b3001b');
+                    fillTexts(S, 30, 0.14, 0.45);
+                    streaks(S, 8); scribbles(S, 5); splats(S, 20, 0.05);
+                }
+            }, -ROOM_W / 2 + 0.045, H / 2, HALF_D / 2, 0, Math.PI / 2); });
+
+            // Mur de droite (u = z) : « Zephyr » en grand, griffé
+            jobs.push(function() { addSurface(HALF_D, H, 1024, 512, 41, {
+                compose: function(S) {
+                    const p = S.ppm;
+                    putText(S, 'Zephyr', 0.85, { x: 4.2 * p, y: 1.2 * p, ang: -0.06, col: '#cf0f22', drips: true });
+                    eye(S, 1.3 * p, 2.3 * p, 0.45 * p, '#b3001b');
+                    tally(S, 5.6 * p, 2.3 * p, 0.36 * p, 5, '#8f0012');
+                    hand(S, 7.2 * p, 1.3 * p, 0.5 * p, -0.15, '#cf0f22', true);
+                    fillTexts(S, 32, 0.14, 0.45);
+                    streaks(S, 8); scribbles(S, 5); splats(S, 20, 0.05);
+                }
+            }, ROOM_W / 2 - 0.045, H / 2, HALF_D / 2, 0, -Math.PI / 2); });
+
+            // Plafond (u = x + 8, v = 8 − z) : une spirale d'écriture juste au-dessus de l'oreiller, un anneau au milieu
+            jobs.push(function() { addSurface(W, HALF_D, 2048, 1024, 53, {
+                free: true,
+                compose: function(S) {
+                    const p = S.ppm;
+                    ringText(S, 'I love you Zephyr  ', 1.2 * p, 7.1 * p, 0.12, 1.0, 0.11, '#e8202f', 5);   // spirale (au-dessus du lit)
+                    ringText(S, 'I love you Zephyr  ', 8.0 * p, 4.0 * p, 2.4, 2.4, 0.26, '#cf0f22', 1);                        // anneau au centre
+                    heart(S, 8.0 * p, 4.0 * p, 1.5 * p, '#d4152a');
+                    putText(S, 'Zephyr', 0.4, { x: 8.0 * p, y: 4.05 * p, ang: 0.15, col: '#ff3040', strike: 0 });
+                    fillTexts(S, 38, 0.16, 0.5);
+                    scribbles(S, 10); splats(S, 50, 0.05);
+                }
+            }, 0, WALL_H - 0.02, HALF_D / 2, Math.PI / 2, 0); });
+
+            // Sol (u = x + 8, v = z) : des pas qui vont de la porte au lit, puis du lit à la fenêtre
+            jobs.push(function() { addSurface(W, HALF_D, 2048, 1024, 67, {
+                free: true,
+                compose: function(S) {
+                    const p = S.ppm;
+                    footprints(S, 8.0 * p, 0.7 * p, 3.0 * p, 1.0 * p, 0.55 * p, '#8f0012', 0.05);       // porte → pied du lit
+                    splat(S.ctx, 3.0 * p, 1.05 * p, 0.2 * p, '#8f0012', S.r);
+                    footprints(S, 2.7 * p, 1.5 * p, 8.2 * p, 7.2 * p, 0.55 * p, '#7d0010', 0.1);        // lit → fenêtre
+                    ringText(S, 'I love you Zephyr  ', 11.0 * p, 4.0 * p, 1.7, 1.7, 0.22, '#b3001b', 1);
+                    heart(S, 11.0 * p, 4.0 * p, 1.2 * p, '#cf0f22');
+                    fillTexts(S, 34, 0.16, 0.5);
+                    scribbles(S, 8); splats(S, 60, 0.06);
+                }
+            }, 0, 0.006, HALF_D / 2, -Math.PI / 2, 0); });
+        }
+
+        // Les 6 surfaces sont dessinées en douceur, une toutes les 0,6 s à partir de 3 s après le chargement
+        // (pas de saccade) ; si on clique avant, le reste est dessiné d'un coup.
+        queueJobs();
+        function buildStep() { const j = jobs.shift(); if (j) j(); }
+        function ensureBuilt() { while (jobs.length) jobs.shift()(); }
+        for (let i = 0; i < jobs.length; i++) setTimeout(buildStep, 3000 + i * 600);
 
         function toggle() {
             dark = !dark;
-            if (dark && !built) build();
-            rocker.rotation.x = dark ? 0.3 : -0.3;       // bascule vers le bas : éteint
+            if (dark) { ensureBuilt(); darkClock = 0; }      // les coulures repartent du début à chaque extinction
+            lever.rotation.x = dark ? (2 * Math.PI) / 3 : Math.PI / 3;      // éteint : le levier pointe vers le bas
         }
 
         function update(dt) {
             const target = dark ? 1 : 0;
-            if (k === target) return;
-            k += Math.sign(target - k) * Math.min(Math.abs(target - k), dt / 0.8);
-            const e = k * k * (3 - 2 * k);
-            ambient.intensity = baseAmbient * (1 - 0.85 * e);
-            windowGlow.intensity = baseGlow * (1 - 0.9 * e);
-            redGlow.intensity = 0.9 * e;
-            for (let i = 0; i < surfMats.length; i++) surfMats[i].opacity = e;
-            group.visible = k > 0.001;
-            plateMat.color.copy(plateOn).lerp(plateOff, e);
-            rockerMat.color.copy(rockerOn).lerp(rockerOff, e);
+            if (k !== target) {
+                k += Math.sign(target - k) * Math.min(Math.abs(target - k), dt / 0.8);
+                eCur = k * k * (3 - 2 * k);
+                ambient.intensity = baseAmbient * (1 - 0.85 * eCur);
+                windowGlow.intensity = baseGlow * (1 - 0.9 * eCur);
+                redGlow.intensity = 0.9 * eCur;
+                for (let i = 0; i < surfMats.length; i++) surfMats[i].opacity = eCur;
+                group.visible = k > 0.001;
+            }
+            if (dark) darkClock += dt;
+            for (let i = 0; i < dripMats.length; i++) {
+                dripMats[i].uniforms.uTime.value = darkClock;
+                dripMats[i].uniforms.uOpacity.value = eCur;
+            }
+            hover += (hoverTarget - hover) * Math.min(1, dt * 10);
+            tint();
         }
 
-        // Clic sur l'interrupteur (à moins de 4 m)
+        // Clic / survol sur l'interrupteur (zone de clic large, jusqu'à 5 m)
         const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
-        canvas.addEventListener('click', function(ev) {
+        function overSwitch(ev) {
             const rect = canvas.getBoundingClientRect();
             ndc.set(((ev.clientX - rect.left) / rect.width) * 2 - 1, -((ev.clientY - rect.top) / rect.height) * 2 + 1);
             ray.setFromCamera(ndc, camera);
-            const hit = ray.intersectObjects([plate, rocker], false);
-            if (hit.length && hit[0].distance <= 4) toggle();
-        });
+            const hit = ray.intersectObject(hitBox, false);
+            return hit.length > 0 && hit[0].distance <= 5;
+        }
+        canvas.addEventListener('click', function(ev) { if (overSwitch(ev)) toggle(); });
+        canvas.addEventListener('mousemove', function(ev) { hoverTarget = overSwitch(ev) ? 1 : 0; });
 
         return { update: update, toggle: toggle };
     })();
