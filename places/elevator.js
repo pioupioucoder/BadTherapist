@@ -53,6 +53,7 @@ export function buildElevator(parent, opts) {
     dir: 0
   };
   let pressedFloor = -1;
+  let holdFn = null;   // (level) -> true si un PNJ est dans l'embrasure (les portes ne se referment pas sur lui)
   let shownKey = '';
 
   function floorLabel(n) { return n === 0 ? 'G' : String(n); }
@@ -620,7 +621,7 @@ export function buildElevator(parent, opts) {
       const inCabDoorway = isInsideCab(px, pz) && pz > CAB_Z1 - 0.9 && Math.abs(px) < 0.8;
       const inLandingDoorway = physics && physics.level === state.level &&
         Math.abs(px) < 0.8 && pz >= CAB_Z1 && pz < WALL_Z + 1.0;
-      const inDoorway = inCabDoorway || inLandingDoorway;
+      const inDoorway = inCabDoorway || inLandingDoorway || (holdFn ? !!holdFn(state.level) : false);
       if (inDoorway) state.doorTimer = Math.max(state.doorTimer, 1.5);
       state.doorTimer -= dt;
       if (state.doorTimer <= 0) closeDoors();
@@ -661,6 +662,9 @@ export function buildElevator(parent, opts) {
     addLanding: addLanding,
     isInsideCab: isInsideCab,
     getCabY: function() { return cab.position.y; },
+    requestFloor: requestFloor,                       // utilisé par les PNJ (boutons d'appel / de cabine)
+    doorsOpen: function() { return !state.moving && state.doorState > 0.6; },
+    setHold: function(fn) { holdFn = fn; },
     state: state,
     cab: cab
   };

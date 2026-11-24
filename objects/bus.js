@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { createTank } from './fuel.js';
+import { createFuelGauge } from './fuel-gauge.js';
 
 // ==========================================
 // BAD THERAPIST — LE BUS (objects/bus.js)
@@ -329,6 +331,11 @@ export function createBus(parent, o) {
   wheelSteer.position.set(WHEEL.x, WHEEL.y, WHEEL.z);
   wheelSteer.rotation.x = -0.75;
   g.add(wheelSteer);
+
+  // Réservoir + jauge d'essence sur le tableau de bord du conducteur
+  const tank = createTank({ type: 'bus' });
+  const fuelPort = { x: 1.3, y: 0.7, z: 2.0 };
+  const gauge = createFuelGauge(g, tank, { x: -1.02, y: 1.105, z: -5.0, tilt: -0.9, w: 0.2 });
 
   // ---------- Portes coulissantes (deux vantaux par porte) ----------
   const doorLeaves = [];
@@ -743,6 +750,7 @@ export function createBus(parent, o) {
     else speed = Math.max(vT, speed - BRK_E * dt);
     braking = speed < prev - 0.02;
     s += speed * dt;
+    tank.consume(Math.abs(speed) * dt);    // (le bus continue même à sec pour l'instant : la panne viendra avec gasstation.js)
     let arrived = false;
     if (s >= P.len - 0.12) { s = P.len; arrived = true; }
     const q = net.sampleAt(P, s);
@@ -812,6 +820,7 @@ export function createBus(parent, o) {
     // (l'avatar Violet est animé par engine/avatar-body.js : sit à l'arrêt, drive en roulant)
   }
   function step(dt, active) {
+    gauge.update(dt, false);
     const h0 = heading;
     if (mode === 'driving' && P) followStep(dt);
     else if (mode === 'turning' && turn) turnStep(dt);
@@ -850,6 +859,9 @@ export function createBus(parent, o) {
   // ==========================================
   return {
     group: g,
+    tank: tank,
+    fuelPort: fuelPort,
+    refuel: function (l) { return tank.add(l); },
     slot: driverSlot,
     update: function (dt, active) { tick(active !== false); },
     teleport: function (px, pz, h) { x = px; z = pz; heading = h; speed = 0; mode = 'parked'; place(0, true); },

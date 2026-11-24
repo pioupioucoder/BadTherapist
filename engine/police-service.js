@@ -24,6 +24,7 @@ const rnd = function (a, b) { return a + Math.random() * (b - a); };
 export function attachPolice(o) {
     const society = o.society, car = o.car, net = o.net;
     const R = society.registry;
+    // o.charge(buyer, total, why) -> bool : le même branchement que celui de places/gasstation.js (argent des PNJ). Optionnel : sans lui, les achats de Leon sont gratuits.
     const sc = function () { return CFG.timeScale || 1; };
 
     // ─── 1. Les points de patrouille (arrêts sur le réseau routier) ───
@@ -84,7 +85,15 @@ export function attachPolice(o) {
     car.setProfile({ vmax: CFG.vmax });
 
     // ─── 4. État ───
-    const S = { phase: 'parked', place: st0.place, stop: 'station', target: null, auto: true, siren: false, order: null, serving: false, recent: [], foot: false };
+    // Prix réels de la station de Lou (places/gasstation.js) quand on peut les lire
+    const FUEL = { perLiter: 2, jerryLiters: 20, jerryPrice: 38 };
+    import('../places/gasstation.js').then(function (m) {
+        if (m.GAS_CONFIG && m.GAS_CONFIG.fuelPerLiter) FUEL.perLiter = m.GAS_CONFIG.fuelPerLiter;
+        const j = (m.GAS_CATALOG || []).filter(function (c) { return c.id === 'jerrycan_20l'; })[0];
+        if (j) { FUEL.jerryLiters = j.liters; FUEL.jerryPrice = j.price; }
+    }).catch(function () { /* valeurs par défaut */ });
+
+    const S = { arresting: false, refueled: false, phase: 'parked', place: st0.place, stop: 'station', target: null, auto: true, siren: false, order: null, serving: false, recent: [], foot: false };
     const onDuty = function () { return leon.job === 'police'; };
     const placeName = function (id) { const p = R.place(id); return p ? p.name : id; };
 
@@ -110,6 +119,11 @@ export function attachPolice(o) {
         const guard = setTimeout(function () { car.abort(); }, (P.len / 4 + 120) * 1000);          // filet de sécurité : jamais bloqué pour toujours
         const res = await car.follow(P);
         clearTimeout(guard);
+        if (res === 'empty') {                                    // panne sèche au milieu de la route : il va chercher un bidon chez Lou
+            car.setSiren(false); S.siren = false;
+            await recoverFuel();
+            return false;
+        }
         if (res === 'aborted') car.teleport(r.end.x, r.end.z, r.end.heading);
         car.setSiren(false); S.siren = false;
         S.stop = stop.id; S.place = stop.place; S.phase = 'parked'; S.target = null;
@@ -151,6 +165,105 @@ export function attachPolice(o) {
         return true;
     }
 
+    // ─── 6b. Essence : plein à la pompe, ou bidon acheté chez Lou après une panne sèche ───
+    function setRoadPlace(px, pz) {
+        const id = 'road_police';
+        if (!R.place(id)) R.addPlace({ id: id, name: 'the road', kind: 'street', x: px, z: pz, public: false, discoverable: false });
+        const p = R.place(id); p.x = px; p.z = pz;
+        S.place = id; S.stop = null;
+        return id;
+    }
+    function pay(total, why) {                                    // true = payé (ou pas de système d'argent branché)
+        if (!(total > 0) || !o.charge) return true;
+        try { return o.charge('leon', total, why) !== false; } catch (e) { return true; }
+    }
+    // Voiture à sec : Leon descend, marche jusqu'à la station, achète un bidon, revient, le verse, repart.
+    async function recoverFuel() {
+        S.phase = 'broken';
+        const pose = car.getPose();
+        setRoadPlace(pose.x, pose.z);
+        car.setBeacons(true);
+        await car.openDoor();
+        leon.job = null; R.save();
+        await sleep(2300 / sc());
+        const door = car.doorSpot();
+        let cur = { x: door[0], z: door[1] };
+        const gas = o.sites && o.sites.gas;
+        if (gas && gas.x != null) {
+            const secs = Math.min(240, Math.max(20, Math.hypot(gas.x - cur.x, gas.z - cur.z) / 2.2));
+            await walk(cur, gas, secs);
+            cur = { x: gas.x, z: gas.z };
+        }
+        for (let tries = 0; tries < 3; tries++) {                 // à la caisse de Lou ; trop cher ? il réessaie, puis la police signe
+            await sleep(rnd(7, 12) * 1000 / sc());
+            if (pay(FUEL.jerryPrice, 'jerrycan')) break;
+            await sleep(30000 / sc());
+        }
+        if (gas && gas.x != null) {
+            const secs = Math.min(240, Math.max(20, Math.hypot(gas.x - door[0], gas.z - door[1]) / 2.2));
+            await walk(cur, { x: door[0], z: door[1] }, secs);
+        }
+        await sleep(5000 / sc());                                 // il verse le bidon dans la trappe
+        car.refuel(FUEL.jerryLiters);
+        await car.openDoor();
+        leon.job = 'police'; R.save();
+        await sleep(2400 / sc());
+        await car.closeDoor();
+        car.setBeacons(false);
+        S.phase = 'parked'; S.refueled = true;
+        return true;
+    }
+    // Réservoir presque vide : il passe à la pompe de la station (stop 'gas') et fait le plein
+    async function fillUp() {
+        S.phase = 'fuel';
+        const t = car.getTank();
+        const liters = Math.max(0, Math.floor(t.cap - t.level));
+        await sleep(10000 / sc());
+        pay(liters * FUEL.perLiter, 'fuel');
+        car.refuel(liters);
+        S.phase = 'parked';
+    }
+
+    // ─── 6c. Arrestation : Leon vient, met le joueur à l'arrière de la voiture, l'emmène en prison ───
+    // Appel : BadTherapistPoliceService.arrestPlayer('unpaid fuel')  (à brancher sur la dette : gasstation / store / amendes)
+    // À l'arrivée, l'événement 'bt-arrested' est émis (annulable : preventDefault() si ton module prison prend le relais ;
+    // sinon le joueur est simplement posé à côté de la voiture).
+    async function goToResilient(stop, siren) {
+        for (let i = 0; i < 3; i++) {
+            S.refueled = false;
+            if (await goTo(stop, siren)) return true;
+            if (!S.refueled) return false;                        // pas une panne : on abandonne
+        }
+        return false;
+    }
+    async function arrestPlayer(reason) {
+        if (S.arresting || !onDuty()) return false;
+        S.arresting = true; S.order = null; S.phase = 'arrest';
+        try {
+            while (S.foot) await sleep(1000);
+            if (car.isEmpty()) await recoverFuel();
+            const pp = car.playerPos(), q = net.nearestRoadPoint(pp.x, pp.z);
+            if (q) {
+                const st = net.stopAt(q.road, q.s, 'arrest'); st.place = S.place;
+                await goToResilient(st, true);
+            }
+            R.emit('speech', { actor: leon, text: 'You are under arrest. Get in the back.', to: ['player'] });
+            await sleep(1800 / sc());
+            await car.takePlayer();
+            // la route jusqu'à la prison ; sinon la gare (la ville B n'est atteignable qu'en train)
+            const pr = R.place('prison');
+            let dest = null;
+            if (pr) { const qp = net.nearestRoadPoint(pr.x, pr.z); if (qp && qp.dist <= 150) { dest = net.stopAt(qp.road, qp.s, 'prison'); dest.place = 'prison'; } }
+            if (!dest) dest = stops.station;
+            await goToResilient(dest, false);
+            const detail = { reason: reason || '', atPrison: dest.place === 'prison', stop: dest.id, handled: false };
+            const ev = new CustomEvent('bt-arrested', { detail: detail, cancelable: true });
+            window.dispatchEvent(ev);
+            if (!ev.defaultPrevented) car.releasePlayer();
+            return true;
+        } finally { S.arresting = false; S.phase = 'parked'; }
+    }
+
     // ─── 7. Boucle de patrouille automatique (sans cerveau : zéro quota) ───
     function pickTarget() {
         const others = R.actors().filter(function (a) { return a.id !== leon.id && !a.ride; });
@@ -172,14 +285,19 @@ export function attachPolice(o) {
         try {
             while (true) {
                 await sleep(1500 / sc());
-                if (!onDuty() || S.foot) continue;
-                let target = null, siren = false;
+                if (!onDuty() || S.foot || S.arresting) continue;
+                let target = null, siren = false, wantFuel = false;
                 if (S.order) { target = S.order.stop; siren = S.order.siren; S.order = null; }
+                else if (car.isLow() && stops.gas) { target = stops.gas; wantFuel = true; }          // réservoir presque vide : direction la pompe
                 else if (S.auto) target = pickTarget();
                 if (!target) continue;
-                if (target.id === S.stop && !car.isMoving()) { await sleep(3000 / sc()); continue; }
+                if (target.id === S.stop && !car.isMoving()) {
+                    if (wantFuel) await fillUp(); else await sleep(3000 / sc());
+                    continue;
+                }
                 if (!(await goTo(target, siren))) { await sleep(8000 / sc()); continue; }
                 if (!onDuty()) continue;
+                if (wantFuel || (S.stop === 'gas' && car.isLow())) await fillUp();
                 await sleep(rnd(CFG.dwellMin, CFG.dwellMax) * 1000 / sc());
                 if (S.auto && onDuty() && !S.order && Math.random() < CFG.footChance) await footPatrol();
             }
@@ -292,7 +410,9 @@ export function attachPolice(o) {
         cfg: CFG, state: S, stops: stops,
         status: function () { return { onDuty: onDuty(), phase: S.phase, at: S.place, target: S.target, auto: S.auto, siren: S.siren }; },
         go: function (id) { if (stops[id]) S.order = { stop: stops[id], siren: false }; return !!stops[id]; },     // F12 : BadTherapistPoliceService.go('town')
-        foot: footPatrol
+        foot: footPatrol,
+        arrestPlayer: arrestPlayer,        // F12 : BadTherapistPoliceService.arrestPlayer('test')
+        refuelNow: recoverFuel             // F12 : simule la panne sèche + le bidon de Lou
     };
     window.BadTherapistPoliceService = api;
     return api;

@@ -27,9 +27,10 @@ import { NPCS } from '../npcs/index.js';
 // (apparence, taille, véhicule, poste, dialogues). Seule Evelyn garde un corps FBX Mixamo.
 const DEFS = {
     evelyn: {
-        dir: 'avatars/evelyn/', model: 'evelyn.fbx', height: 1.7, insideAt: 'therapist_house',   // insideAt : « chez elle » = dans la maison (invisible dehors)
+        dir: 'avatars/evelyn/', model: 'evelyn.fbx', height: 1.7, interior: true,   // plus de insideAt : elle est visible partout dehors
         // noms EXACTS (majuscules comprises : GitHub Pages les distingue). Une animation dont le fichier n'existe pas (encore) est ignorée sans 404.
-        anims: { walk: 'Walking.fbx', run: 'Running.fbx', sit: 'Sitting.fbx', talk: 'Standing Talking.fbx' }
+        anims: { walk: 'Walking.fbx', run: 'Running.fbx', sit: 'Sitting.fbx', talk: 'Standing Talking.fbx',
+                 open: 'OpeningDoor.fbx', close: 'ClosingDoor.fbx', touch: 'touchbutton,takebook,touchelevator.fbx' }
     }
 };
 Object.keys(NPCS).forEach(function (id) {
@@ -82,7 +83,7 @@ export function createBodies(scene, o) {
         const hx = r.left + (headV.x * 0.5 + 0.5) * r.width, hy = r.top + (-headV.y * 0.5 + 0.5) * r.height;
         const fy = r.top + (-feetV.y * 0.5 + 0.5) * r.height;
         if (on) b.scr = { x: hx, y: hy, fy: fy, dist: dist };
-        Bubbles.place(b.id, hx, hy, on);
+        Bubbles.place(b.id, hx, hy, on, dist);
     }
 
     // Clic sur un avatar (ou, si la souris est verrouillée, avatar au centre de l'écran) : la boîte de réponse s'ouvre
@@ -127,6 +128,7 @@ export function createBodies(scene, o) {
             Object.keys(def.anims).forEach(function (k) {
                 const p = d + def.anims[k];
                 if (!set || set.has(p)) an[k] = p;          // fichier absent du dossier : ignoré
+                else console.warn('[body ' + id + '] animation « ' + k + ' » IGNORÉE : « ' + p + ' » n\'est pas dans assets-manifest.json (relance assets.php ou vérifie le nom exact)');
             });
             return loadMixamoAvatar({
                 model: d + def.model,
@@ -150,7 +152,11 @@ export function createBodies(scene, o) {
     function play(b, name) {
         if (!b.a || b.cur === name) return;
         const key = b.a.actions && b.a.actions[name] ? name : (name === 'drive' || name === 'talk' || name === 'greet' || name === 'work' || name === 'sleep' ? 'idle' : null);
-        if (!key || !b.a.actions[key]) return;
+        if (!key || !b.a.actions[key]) {
+            b.missing = b.missing || {};
+            if (!b.missing[name] && b.id === 'evelyn') { b.missing[name] = 1; console.warn('[body ' + b.id + '] animation « ' + name + ' » demandée mais absente : le corps garde sa pose précédente (il glisse). Disponibles : ' + Object.keys(b.a.actions || {}).join(', ')); }
+            return;
+        }
         b.cur = name;
         try { b.a.play(key); } catch (e) { /* animation absente : on garde la précédente */ }
     }
@@ -210,7 +216,77 @@ export function createBodies(scene, o) {
         b.seated = !!yes;
     }
 
+    // ----- intérieur de l'immeuble (hall, ascenseur, couloir) : les lieux ont un point `at` (places/building-feature.js) -----
+    // Le corps vit dans la scène principale (x≈0) à l'intérieur, et dans la scène de la rue dehors : on le déplace de l'une à l'autre.
+    function atOf(id) { const p = R.place(id); if (!p || !p.at) return null; try { return typeof p.at === 'function' ? p.at() : p.at; } catch (e) { return null; } }
+    function lerp(a, c, k) { return a + (c - a) * k; }
+    function setFrame(b, f, I) {
+        if (b.frame === f) return;
+        b.frame = f;
+        if (f === 'in') {
+            if (!b.grpIn) { b.grpIn = new THREE.Group(); I.parent.add(b.grpIn); }
+            b.grpIn.add(b.a.root); b.grpIn.visible = true; b.grp.visible = false;
+        } else {
+            b.grp.add(b.a.root); if (b.grpIn) b.grpIn.visible = false;
+        }
+    }
+    // Il voit le joueur arriver près de lui : il se tourne (visuel) ET son cerveau est réveillé tout de suite, une fois par approche
+    // (au plus une fois par minute) pour qu'il réagisse (parler, penser) sans attendre le tour suivant.
+    function notice(b, actor, dp, now) {
+        if (dp > 6) { b.seen = false; return; }
+        if (b.seen) return;
+        b.seen = true;
+        if (now - (b.noticedAt || 0) < 60000) return;
+        b.noticedAt = now;
+        try { society.brains.wake(actor.id, true, 'see'); } catch (e) { /* pas de cerveau */ }
+    }
+    function interiorStep(b, actor, tr, dt, now) {
+        const I = window.BadTherapistInterior;
+        if (!I || !I.parent) return false;
+        const fromIn = tr ? !!atOf(tr.fromId) : false, toIn = tr ? !!atOf(tr.toId) : false;
+        const here = tr ? null : atOf(actor.loc);
+        if ((tr && !fromIn && !toIn) || (!tr && !here)) {
+            const pl = R.place(actor.loc);
+            if (!tr && pl && pl.indoor && b.warnLoc !== actor.loc) { b.warnLoc = actor.loc; console.warn('[body ' + b.id + '] cachée : elle est dans « ' + actor.loc + ' » (intérieur) mais ce lieu n\'a pas de point `at`.'); }
+            setFrame(b, 'out', I); delete I.npcs[b.id]; return false;
+        }
+        let frame, x, y = 0, z, moving = false, hd = b.heading;
+        if (tr) {
+            const k = Math.max(0, Math.min(1, (now - tr.t0) / (tr.t1 - tr.t0))), fa = atOf(tr.fromId), ta = atOf(tr.toId);
+            moving = k < 1;
+            if (fromIn && toIn) { frame = 'in'; x = lerp(tr.fx, tr.tx, k); z = lerp(tr.fz, tr.tz, k); y = lerp(fa.y, ta.y, k); }
+            else if (fromIn) {                                  // intérieur -> rue : jusqu'à la porte, puis dehors
+                if (k < 0.5) { const u = k / 0.5; frame = 'in'; x = lerp(tr.fx, I.inner.x, u); z = lerp(tr.fz, I.inner.z, u); y = fa.y; }
+                else { const u = (k - 0.5) / 0.5; frame = 'out'; x = lerp(I.outer.x, tr.tx, u); z = lerp(I.outer.z, tr.tz, u); }
+            } else {                                            // rue -> intérieur
+                if (k < 0.5) { const u = k / 0.5; frame = 'out'; x = lerp(tr.fx, I.outer.x, u); z = lerp(tr.fz, I.outer.z, u); }
+                else { const u = (k - 0.5) / 0.5; frame = 'in'; x = lerp(I.inner.x, tr.tx, u); z = lerp(I.inner.z, tr.tz, u); y = ta.y; }
+            }
+            if (b.lf === frame && Math.hypot(x - b.lx, z - b.lz) > 0.002) hd = Math.atan2(x - b.lx, z - b.lz);
+        } else {
+            frame = 'in'; x = here.x; y = here.y; z = here.z;
+            if (here.heading !== undefined && b.lf !== 'in') hd = here.heading;
+            const dpx = camera.position.x - x, dpz = camera.position.z - z;
+            const dpl = Math.abs(camera.position.y - y) < 4 ? Math.hypot(dpx, dpz) : 99;
+            notice(b, actor, dpl, now);
+            if (dpl < 6) {      // il se tourne vers toi s'il est dans la même pièce
+                let diff = Math.atan2(dpx, dpz) - hd; diff = Math.atan2(Math.sin(diff), Math.cos(diff)); hd += diff * Math.min(1, dt * 4);
+            }
+        }
+        b.lf = frame; b.lx = x; b.lz = z; b.heading = hd;
+        setFrame(b, frame, I);
+        if (frame === 'in') { b.grpIn.position.set(x, y, z); b.grpIn.rotation.y = hd; }
+        else { b.grp.visible = true; b.x = x; b.z = z; b.grp.position.set(x, groundH(x, z), z); b.grp.rotation.y = hd; }
+        I.npcs[b.id] = frame === 'in' ? { x: x, y: y, z: z, inside: true } : { x: x + I.streetDX, y: 0, z: z + I.streetZ, inside: false };
+        const atDoor = moving && frame === 'in' && Math.abs(z - I.doorZ) < 1.6 && Math.abs(x) < 1.6;
+        play(b, atDoor ? 'open' : (moving ? 'walk' : (actor.speakingUntil > now ? 'talk' : 'idle')));
+        b.a.update(dt);
+        bubbleAt(b, true);
+        return true;
+    }
+
     function step(dt) {
+
         const now = Date.now();
         if (taxi) { tSync += dt; if (tSync > 0.4) { tSync = 0; society.syncTaxi(); } }
         const cam = scene.worldToLocal(camera.position.clone());
@@ -264,6 +340,9 @@ export function createBodies(scene, o) {
             // 2b. à son poste : le lieu dit où il est et ce qu'il fait
             if (PS && !tr && PS.controls && PS.controls(actor)) { postStep(b, PS, dt, cam); return; }
 
+            // 2c. dans l'immeuble (hall / ascenseur / couloir) ou en train d'y entrer / d'en sortir
+            if (b.def.interior && interiorStep(b, actor, tr, dt, now)) return;
+
             // 3. position
             const place = R.place(actor.loc);
             let moving = false, vis = true;
@@ -294,6 +373,7 @@ export function createBodies(scene, o) {
 
             // 4. le regard : vers le joueur s'il est tout proche et que l'avatar est à l'arrêt
             const dpx = cam.x - b.x, dpz = cam.z - b.z, dp = Math.hypot(dpx, dpz);
+            if (b.def.interior) notice(b, actor, dp, now);
             if (!moving && dp < SEE_PLAYER) {
                 const want = Math.atan2(dpx, dpz);
                 let diff = want - b.heading;

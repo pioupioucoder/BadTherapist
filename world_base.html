@@ -88,13 +88,75 @@ html, body {
 }
 
 #moneyDisplay {
-  padding: 11px 13px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px 6px 8px;
   background: rgba(23, 23, 32, 0.9);
-  border: 1px solid #7c3535;
+  border: 1px solid #8a6d2f;
   border-radius: 10px;
-  color: #ff5555;
+  color: #f2c75c;
   font: bold 15px monospace;
   white-space: nowrap;
+  min-width: 64px;
+  transition: transform 0.15s;
+}
+
+#moneyDisplay svg { width: 26px; height: 26px; flex: none; }
+#moneyDisplay.pop { transform: scale(1.15); }
+#moneyDisplay.loss { color: #ff6b6b; border-color: #7c3535; }
+
+#moneyToast {
+  position: fixed;
+  top: 64px;
+  right: 18px;
+  z-index: 35;
+  font: bold 15px monospace;
+  color: #f2c75c;
+  text-shadow: 0 1px 4px #000;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(6px);
+}
+#moneyToast.show { animation: toastUp 1.4s ease-out forwards; }
+#moneyToast.neg { color: #ff6b6b; }
+@keyframes toastUp {
+  0%   { opacity: 0; transform: translateY(8px); }
+  15%  { opacity: 1; transform: translateY(0); }
+  75%  { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-14px); }
+}
+
+/* VIE (le coeur) */
+
+#lifeHud {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  width: 40px;
+  height: 40px;
+  pointer-events: none;
+  filter: drop-shadow(0 2px 5px rgba(0,0,0,0.7));
+}
+#lifeHud svg { width: 100%; height: 100%; overflow: visible; }
+#lifeHud.low { animation: heartBeat 0.8s infinite; }
+#lifeHud.crit { animation: heartBeat 0.45s infinite; }
+@keyframes heartBeat {
+  0%, 100% { transform: translateX(-50%) scale(1); }
+  20%      { transform: translateX(-50%) scale(1.18); }
+  40%      { transform: translateX(-50%) scale(1); }
+}
+
+#hurtFlash {
+  position: fixed;
+  inset: 0;
+  z-index: 25;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(ellipse at center, rgba(120,0,0,0) 40%, rgba(150,0,0,0.75) 100%);
+  transition: opacity 0.6s ease-out;
 }
 
 /* PANELS */
@@ -299,9 +361,14 @@ html, body {
   }
 
   #moneyDisplay {
-    padding: 9px 8px;
+    padding: 4px 8px 4px 5px;
     font-size: 12px;
+    min-width: 0;
   }
+
+  #moneyDisplay svg { width: 22px; height: 22px; }
+
+  #lifeHud { width: 34px; height: 34px; top: 10px; }
 
   .hud-panel {
     top: 58px;
@@ -358,8 +425,38 @@ html, body {
     </svg>
   </button>
 
-  <div id="moneyDisplay">-3000 $</div>
+  <div id="moneyDisplay" title="Monnaie">
+    <svg viewBox="0 0 32 32" aria-hidden="true">
+      <circle cx="16" cy="16" r="14.5" fill="#d9a63a" stroke="#8a6d2f" stroke-width="1.5"/>
+      <circle cx="16" cy="16" r="11.5" fill="#f2c75c"/>
+      <path d="M8.5 9.5 L8.5 16 L13 12.6 Z M23.5 9.5 L23.5 16 L19 12.6 Z" fill="#5a4318"/>
+      <ellipse cx="16" cy="18" rx="8" ry="6.6" fill="#5a4318"/>
+      <ellipse cx="12.8" cy="17" rx="1.3" ry="1.7" fill="#f2c75c"/>
+      <ellipse cx="19.2" cy="17" rx="1.3" ry="1.7" fill="#f2c75c"/>
+      <path d="M15 20 L17 20 L16 21.2 Z" fill="#f2c75c"/>
+      <path d="M16 21.2 Q14.6 23 13.4 22.2 M16 21.2 Q17.4 23 18.6 22.2" stroke="#f2c75c" stroke-width="0.8" fill="none" stroke-linecap="round"/>
+    </svg>
+    <span id="moneyValue">0</span>
+  </div>
 </div>
+
+
+<div id="lifeHud" aria-label="Vie">
+  <svg viewBox="0 0 32 32">
+    <defs>
+      <clipPath id="heartClip">
+        <path d="M16 28.5 C16 28.5 2.5 20.5 2.5 11.2 C2.5 6.9 5.8 4 9.6 4 C12.4 4 14.7 5.5 16 7.8 C17.3 5.5 19.6 4 22.4 4 C26.2 4 29.5 6.9 29.5 11.2 C29.5 20.5 16 28.5 16 28.5 Z"/>
+      </clipPath>
+    </defs>
+    <path d="M16 28.5 C16 28.5 2.5 20.5 2.5 11.2 C2.5 6.9 5.8 4 9.6 4 C12.4 4 14.7 5.5 16 7.8 C17.3 5.5 19.6 4 22.4 4 C26.2 4 29.5 6.9 29.5 11.2 C29.5 20.5 16 28.5 16 28.5 Z" fill="#1b1b22" stroke="#625047" stroke-width="1.4"/>
+    <g clip-path="url(#heartClip)">
+      <rect id="heartFill" x="0" y="4" width="32" height="25" fill="#e23b3b"/>
+    </g>
+    <path d="M7.5 9 C8 7.5 9.4 6.7 10.8 6.8" stroke="rgba(255,255,255,0.45)" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+  </svg>
+</div>
+<div id="hurtFlash"></div>
+<div id="moneyToast"></div>
 
 <div class="hud-panel" id="coordPanel">
   <div class="panel-title">
@@ -1369,6 +1466,7 @@ Object.assign(window.BadTherapist, {
   setPlayerState(state) {
     if (!state || !state.worlds) return;
     writeState(state);
+    if (typeof loadEconomy === 'function') loadEconomy();
     const saved = state.worlds[worldFile];
     if (applyPose(saved)) applyWorldState(saved);
   },
@@ -1395,6 +1493,264 @@ document.getElementById('resetPosBtn')
     button.textContent = 'RESET POSITION';
   }, 1200);
 });
+
+
+// ==========================================
+// 7b. ECONOMIE (monnaie "chat") + VIE (coeur)
+// ==========================================
+//
+// MONNAIE (visible) :  BadTherapist.money.get() / add(n) / spend(n) / find(n) / canAfford(n)
+// PRIX :               BadTherapist.prices.delivery(distance) / fuel(litres) / taxi(distance) / fine(kind)
+// VIE (cachee) :       BadTherapist.life.hurt(n, 'cause') / heal(n) / eat(n) / sleep(true|false) / fun(n)
+//                      (le joueur ne voit que le coeur : jamais comment il se remplit ou se vide)
+//
+// Tout est sauvegarde dans bt_player_state.economy, donc inclus dans ton export / import JSON.
+
+const PRICES = {
+  DELIVERY_MIN: 3,          // livraison la plus courte
+  DELIVERY_MAX: 10,         // livraison la plus longue
+  DELIVERY_NEAR: 30,        // distance (unites du monde) <= a ca : prix mini
+  DELIVERY_FAR: 400,        // distance >= a ca : prix maxi
+  FUEL_PER_LITRE: 2,
+  TAXI_BASE: 2,
+  TAXI_PER_100: 2,          // + 2 monnaies par 100 unites
+  TAXI_MAX: 25,
+  FINES: { speeding: 5, parking: 3, red_light: 6, trespass: 8, default: 4 }
+};
+
+const prices = {
+  // 3 a 10 monnaies selon la distance
+  delivery(dist) {
+    const t = THREE.MathUtils.clamp((dist - PRICES.DELIVERY_NEAR) / (PRICES.DELIVERY_FAR - PRICES.DELIVERY_NEAR), 0, 1);
+    return Math.round(PRICES.DELIVERY_MIN + t * (PRICES.DELIVERY_MAX - PRICES.DELIVERY_MIN));
+  },
+  fuel(litres) { return Math.ceil(litres * PRICES.FUEL_PER_LITRE); },
+  taxi(dist) {
+    return Math.min(PRICES.TAXI_MAX, Math.ceil(PRICES.TAXI_BASE + (dist / 100) * PRICES.TAXI_PER_100));
+  },
+  fine(kind) { return PRICES.FINES[kind] || PRICES.FINES.default; },
+  table: PRICES
+};
+
+const ECO_DEFAULT = { money: 0, life: 85, hunger: 20, fatigue: 20 };
+let eco = Object.assign({}, ECO_DEFAULT);
+let ecoDirty = false;
+let ecoSaveClock = 0;
+let sleeping = false;
+
+function loadEconomy() {
+  const saved = readState().economy;
+  eco = Object.assign({}, ECO_DEFAULT, saved && typeof saved === 'object' ? saved : {});
+  ['money', 'life', 'hunger', 'fatigue'].forEach(k => { if (!Number.isFinite(eco[k])) eco[k] = ECO_DEFAULT[k]; });
+  eco.money = Math.max(0, Math.floor(eco.money));
+  eco.life = THREE.MathUtils.clamp(eco.life, 0, 100);
+  renderMoney(false);
+  renderLife();
+}
+
+function saveEconomy() {
+  const state = readState();
+  state.economy = { money: eco.money, life: +eco.life.toFixed(2), hunger: +eco.hunger.toFixed(2), fatigue: +eco.fatigue.toFixed(2) };
+  writeState(state);
+  ecoDirty = false;
+}
+
+// ----- MONNAIE -----
+
+const moneyBox = document.getElementById('moneyDisplay');
+const moneyValue = document.getElementById('moneyValue');
+const moneyToast = document.getElementById('moneyToast');
+let toastTimer = 0;
+
+function renderMoney(animate, delta) {
+  moneyValue.textContent = eco.money;
+  if (!animate) return;
+  moneyBox.classList.remove('pop'); void moneyBox.offsetWidth; moneyBox.classList.add('pop');
+  setTimeout(() => moneyBox.classList.remove('pop'), 160);
+  if (delta) {
+    moneyToast.textContent = (delta > 0 ? '+' : '') + delta;
+    moneyToast.classList.toggle('neg', delta < 0);
+    moneyToast.classList.remove('show'); void moneyToast.offsetWidth; moneyToast.classList.add('show');
+  }
+}
+
+const money = {
+  get() { return eco.money; },
+  canAfford(n) { return eco.money >= n; },
+  add(n, reason) {
+    n = Math.floor(n); if (!n) return eco.money;
+    eco.money = Math.max(0, eco.money + n);
+    ecoDirty = true; renderMoney(true, n);
+    window.dispatchEvent(new CustomEvent('bt-money', { detail: { delta: n, total: eco.money, reason: reason || '' } }));
+    return eco.money;
+  },
+  // Renvoie false (et ne retire rien) si le joueur n'a pas assez
+  spend(n, reason) {
+    n = Math.ceil(n);
+    if (n <= 0) return true;
+    if (eco.money < n) return false;
+    money.add(-n, reason);
+    return true;
+  },
+  // Pour les pieces trouvees dans un tiroir, un manteau, par terre... (donne un petit plaisir cache)
+  find(n, reason) { money.add(n, reason || 'found'); life.fun(Math.min(6, 1 + n)); return eco.money; },
+  set(n) { eco.money = Math.max(0, Math.floor(n)); ecoDirty = true; renderMoney(true); }
+};
+
+// ----- VIE -----
+
+const heartFill = document.getElementById('heartFill');
+const lifeHud = document.getElementById('lifeHud');
+const hurtFlash = document.getElementById('hurtFlash');
+
+// rouge vif -> orange -> ambre terne -> gris violace -> presque noir
+const HEART_STOPS = [
+  [0,  [48, 40, 52]],
+  [15, [92, 62, 96]],
+  [35, [196, 140, 60]],
+  [60, [226, 100, 52]],
+  [100,[226, 59, 59]]
+];
+
+function heartColor(v) {
+  for (let i = 1; i < HEART_STOPS.length; i++) {
+    if (v <= HEART_STOPS[i][0]) {
+      const [a, ca] = HEART_STOPS[i - 1], [b, cb] = HEART_STOPS[i];
+      const t = (v - a) / (b - a);
+      return 'rgb(' + ca.map((c, k) => Math.round(c + (cb[k] - c) * t)).join(',') + ')';
+    }
+  }
+  return 'rgb(226,59,59)';
+}
+
+function renderLife() {
+  const v = eco.life;
+  // le coeur se vide par le haut ; il garde un minimum visible
+  const h = 25 * (0.08 + 0.92 * v / 100);
+  heartFill.setAttribute('y', (29 - h).toFixed(2));
+  heartFill.setAttribute('height', h.toFixed(2));
+  heartFill.setAttribute('fill', heartColor(v));
+  lifeHud.classList.toggle('crit', v < 15);
+  lifeHud.classList.toggle('low', v >= 15 && v < 35);
+}
+
+function flashHurt(power) {
+  hurtFlash.style.transition = 'none';
+  hurtFlash.style.opacity = String(Math.min(1, 0.35 + power / 40));
+  void hurtFlash.offsetWidth;
+  hurtFlash.style.transition = 'opacity 0.7s ease-out';
+  hurtFlash.style.opacity = '0';
+}
+
+function setLife(v) {
+  eco.life = THREE.MathUtils.clamp(v, 0, 100);
+  ecoDirty = true;
+  renderLife();
+}
+
+const life = {
+  get() { return eco.life; },
+  set: setLife,
+
+  // Degats : attaque, chute, voiture...   cause = 'attack' | 'fall' | 'car' | 'evelyn' ...
+  hurt(n, cause) {
+    if (!(n > 0)) return;
+    setLife(eco.life - n);
+    flashHurt(n);
+    window.dispatchEvent(new CustomEvent('bt-hurt', { detail: { amount: n, cause: cause || '', life: eco.life } }));
+    if (eco.life <= 0) onLifeZero(cause);
+  },
+  heal(n) { if (n > 0) setLife(eco.life + n); },
+
+  // Manger : baisse la faim et redonne un peu de vie (n = intensite du repas, ex. 10 snack, 35 vrai repas)
+  eat(n) { eco.hunger = Math.max(0, eco.hunger - n * 1.6); life.heal(n * 0.5); ecoDirty = true; },
+
+  // Dormir : sleep(true) au coucher, sleep(false) au reveil (ou bien le monde expose isSleeping())
+  sleep(on) { sleeping = !!on; },
+
+  // Repos complet apres une nuit : rest(heures, qualite)  (qualite 1 = lit normal, 0.6 = banc de prison, 1.3 = lit luxueux)
+  rest(hours, quality) {
+    const q = (quality == null ? 1 : quality) * Math.min(1, (hours || 8) / 8);
+    eco.fatigue = Math.max(0, eco.fatigue - 85 * q);
+    eco.hunger = Math.min(100, eco.hunger + 12 * (hours || 8) / 8);   // on se reveille avec faim
+    life.heal(30 * q);
+    ecoDirty = true;
+  },
+
+  // Plaisir : acheter un objet qui plait, trouver un objet, regarder la TV...
+  fun(n) { life.heal(n); },
+
+  needs() { return { hunger: eco.hunger, fatigue: eco.fatigue }; }
+};
+
+function onLifeZero(cause) {
+  window.dispatchEvent(new CustomEvent('bt-life-zero', { detail: { cause: cause || '' } }));
+  // Comportement par defaut (a remplacer par ton ecran "hopital" / game over / reveil dans la chambre) :
+  // on perd la moitie de la monnaie et on repart avec un peu de vie, fatigue/faim remises a un niveau moyen.
+  eco.money = Math.floor(eco.money / 2); renderMoney(true);
+  eco.hunger = 40; eco.fatigue = 40;
+  setLife(35);
+}
+
+// ----- BOUCLE (appelee dans animate) -----
+
+let fallStartY = null;
+let prevY = null;
+let lifeTick = 0;
+
+function economyUpdate(dt) {
+  const isSleeping = sleeping || !!(world && typeof world.isSleeping === 'function' && world.isSleeping());
+
+  // Besoins caches : ~25 min pour avoir tres faim, ~35 min pour etre epuise (temps reel)
+  if (isSleeping) {
+    eco.fatigue = Math.max(0, eco.fatigue - dt * 1.6);
+    eco.hunger += dt * 0.025;
+  } else {
+    eco.hunger = Math.min(100, eco.hunger + dt * 0.055);
+    eco.fatigue = Math.min(100, eco.fatigue + dt * 0.04);
+  }
+
+  lifeTick += dt;
+  if (lifeTick >= 1) {
+    const step = lifeTick; lifeTick = 0;
+    // Qui a faim ou qui est epuise perd de la vie, doucement
+    const starving = eco.hunger > 75, exhausted = eco.fatigue > 80;
+    if (starving || exhausted) {
+      const loss = (starving ? 0.25 : 0) + (exhausted ? 0.2 : 0);
+      setLife(eco.life - loss * step);
+      if (eco.life <= 0) onLifeZero(starving ? 'hunger' : 'fatigue');
+    } else if (isSleeping) {
+      setLife(eco.life + 1.2 * step);               // le sommeil soigne
+    } else if (eco.hunger < 50 && eco.fatigue < 55) {
+      setLife(eco.life + 0.05 * step);              // bien repose et nourri : tres lente remontee
+    }
+    ecoDirty = true;
+  }
+
+  // Chute de hauteur : degats a l'atterrissage (ignore pendant ascenseur / camion / chambre verrouillee)
+  const y = camera.position.y;
+  const ignore = isSleeping || (world && (world.controlsLocked || (typeof world.isDriving === 'function' && world.isDriving())));
+  if (prevY !== null && !ignore && dt > 0) {
+    const vy = (y - prevY) / dt;
+    if (vy < -8) { if (fallStartY === null) fallStartY = prevY; }
+    else if (fallStartY !== null) {
+      const drop = fallStartY - y; fallStartY = null;
+      if (drop > 4) life.hurt((drop - 4) * 7, 'fall');
+    }
+  } else { fallStartY = null; }
+  prevY = y;
+
+  ecoSaveClock += dt;
+  if (ecoSaveClock > 2) { ecoSaveClock = 0; if (ecoDirty) saveEconomy(); }
+}
+
+loadEconomy();
+window.addEventListener('pagehide', () => { if (ecoDirty) saveEconomy(); });
+
+// (en attendant que les lieux appellent cette API : commandes de test dans la console F12)
+window.BadTherapist.money = money;
+window.BadTherapist.life = life;
+window.BadTherapist.prices = prices;
 
 // ==========================================
 // 8. HUD INTERACTIONS
@@ -2000,6 +2356,7 @@ function animate() {
   // SAVE POSITION (après le monde, pour enregistrer la vraie hauteur)
 
   savePosition(dt);
+  economyUpdate(dt);
 
   const tr0 = performance.now();
   // Pendant le rêve (places/dreambedroom.js) un canvas plein écran couvre le jeu : inutile de le dessiner dessous

@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { loadMixamoAvatar } from '../avatar-loader.js';
+import { createTank } from './fuel.js';
+import { createFuelGauge } from './fuel-gauge.js';
 
 // ==========================================
 // BAD THERAPIST — LE TAXI D'OLIVER (taxi.js)
@@ -157,6 +159,11 @@ export function createTaxi(parent, o) {
   wheelSteer.position.set(WHEEL.x, WHEEL.y, WHEEL.z);
   wheelSteer.rotation.x = -0.95;
   g.add(wheelSteer);
+
+  // Réservoir + jauge d'essence sur le tableau de bord (côté conducteur)
+  const tank = createTank({ type: 'taxi' });
+  const fuelPort = { x: 0.95, y: 0.7, z: 1.3 };
+  const gauge = createFuelGauge(g, tank, { x: WHEEL.x, y: 1.135, z: CAB_Z0 + 0.27, tilt: -0.9, w: 0.2 });
   function seat(x, z) {
     box(0.4, SEAT_TOP - 0.14 - FLOOR, 0.4, M.dark, x, (FLOOR + SEAT_TOP - 0.14) / 2, z);
     box(0.55, 0.14, 0.55, M.seat, x, SEAT_TOP - 0.07, z);
@@ -693,6 +700,7 @@ export function createTaxi(parent, o) {
   function drive(dt) {
     const q0 = sampleAt(P, s);
     s += q0.v * dt;
+    tank.consume(Math.abs(q0.v) * dt);     // (pour l'instant le taxi continue même à sec : la panne + le détour par la station viendront avec gasstation.js)
     let arrived = false;
     if (s >= P.len - 0.12) { s = P.len; arrived = true; }
     const q = sampleAt(P, s);
@@ -735,6 +743,7 @@ export function createTaxi(parent, o) {
   }
 
   function step(dt, active) {
+    gauge.update(dt, false);
 
     if (mode === 'driving') {
       drive(dt);
@@ -788,6 +797,9 @@ export function createTaxi(parent, o) {
 
   return {
     group: g,
+    tank: tank,
+    fuelPort: fuelPort,
+    refuel: function (l) { return tank.add(l); },
     isRiding: function () { return riding; },
     enter: enter,
     exit: exit,

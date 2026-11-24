@@ -38,7 +38,7 @@ async function defaultLLM(o) {
         messages: [{ role: 'user', text: o.user }],
         temperature: 0.9,
         // ... la suite inchangée
-        maxOutputTokens: 1000,                 // gpt-oss compte sa réflexion dedans : ne pas descendre
+        maxOutputTokens: cfg.avatarMaxTokens || 1000,                 // gpt-oss compte sa réflexion dedans : ne pas descendre
         reasoningEffort: cfg.reasoningEffort || 'low',
         avatar: o.id
     };
@@ -70,6 +70,7 @@ export function createBrainSystem(R, M, opts) {
     let running = false;                 // un seul appel à la fois
     let lastCall = 0, failures = 0, backoffUntil = 0, lastError = '', lastPlan = {};
     const brains = [];
+    const fails = {};          // ce qui n'a pas marché, par avatar : { clé : { n, res, loc } } (elle ne doit pas recommencer en boucle)
     let blocksFn = null;
     let calls = null;          // society.js branche ici l'état des appels (incoming / active / missed)
     const providers = {};      // texte en plus pour un avatar (ex. les notes privées d'Evelyn sur le joueur)
@@ -107,27 +108,38 @@ export function createBrainSystem(R, M, opts) {
         L.push('Real time: ' + new Date().toLocaleString('en-GB', { weekday: 'long', hour: '2-digit', minute: '2-digit' }) + (gameTime() ? ' | Game time: ' + gameTime() : ''));
         L.push('You are at: ' + describePlace(actor.loc) + (here && here.floor !== null ? ', floor ' + here.floor : '') + '.');
         if (actor.job) L.push('You are on duty as: ' + actor.job + '.');
-        const others = R.actorsAt(actor.loc, actor.id).map(function (a) { return a.name; });
+        const others = (R.nearby ? R.nearby(actor) : R.actorsAt(actor.loc, actor.id)).map(function (a) { return a.name; });
         L.push('Here with you: ' + (others.length ? others.join(', ') : 'nobody') + '.');
+        const prevHere = seenHere[actor.id]; seenHere[actor.id] = others;
+        if (prevHere) { const arr = others.filter(function (n) { return prevHere.indexOf(n) === -1; }), gone = prevHere.filter(function (n) { return others.indexOf(n) === -1; });
+            if (arr.length) L.push('Since your last thought, ' + arr.join(', ') + ' came close to you.');
+            if (gone.length) L.push('Since your last thought, ' + gone.join(', ') + ' moved away.'); }
+        if (others.length && Date.now() - (seeWake[actor.id] || 0) < 25000) L.push('You just noticed ' + others.join(', ') + ' close to you. You may greet them or speak first if you feel like it, or let them pass: it is your choice, and you do not owe them anything.');
         const objs = R.objectsAt(actor.loc);
         if (objs.length) L.push('Objects here: ' + objs.map(function (o) { return o.id + ' (' + (o.state ? o.state + '; ' : '') + 'actions: ' + Object.keys(o.actions || {}).join('/') + ')'; }).join(', ') + '.');
         const known = R.places().filter(function (p) { return R.knows(actor, p.id) && p.id !== actor.loc; }).map(function (p) {
             return p.id + ' = ' + p.name + ' (' + Math.round(R.dist(actor.loc, p.id)) + ' m)';
         });
         L.push('Places you know: ' + (known.join('; ') || 'none') + '.');
+        const ex = exploredOf(actor.id); ex.places[actor.loc] = 1;
+        const unseenPl = R.places().filter(function (p) { return R.knows(actor, p.id) && !ex.places[p.id]; }).map(function (p) { return p.name; });
+        if (unseenPl.length) L.push('Places you know but have never been to: ' + unseenPl.slice(0, 8).join(', ') + '. You are curious about the world: when nothing more pressing calls you, go and see it.');
+        const freshObjs = objs.filter(function (o) { return !ex.objs[actor.loc + ':' + o.id]; }).map(function (o) { return o.id; });
+        if (freshObjs.length) L.push('Things here you have not examined yet: ' + freshObjs.join(', ') + '. Write what you learn in your notes.');
         const un = M.unread(actor.id);
         let withId = null;
         if (un.length) {
-            const lines = [], vms = [];
+            const lines = [], vms = []; let lastSaid = null;
             un.forEach(function (m) {
                 const f = R.actor(m.from), nm = f ? f.name : m.from;
                 Mind.noteHeard(actor.id, m.from, nm, m.kind, m.text);       // la mémoire garde ce qu'on lui a dit, avec l'heure
                 actor.memory.push('(heard) ' + nm + (m.kind === 'say' ? ' said' : m.kind === 'voicemail' ? ' left a voicemail' : m.kind === 'call' ? ' said on the phone' : ' texted') + ': ' + String(m.text).slice(0, 160));
                 (m.kind === 'voicemail' ? vms : lines).push('- from ' + nm + (m.kind === 'say' ? ' (said to you in person)' : m.kind === 'call' ? ' (on the phone, during your call)' : '') + ': ' + m.text);
-                withId = m.from;
+                withId = m.from; if (m.kind === 'say' || m.kind === 'call') lastSaid = { nm: nm, text: String(m.text).slice(0, 200) };
                 M.markRead(actor.id, m.from);
             });
             if (lines.length) L.push('New messages:\n' + lines.join('\n'));
+            if (un.some(function (m) { return m.kind === 'say'; })) L.push('Someone is speaking to you face to face right now. Answer what they actually said (a greeting gets a greeting; if they ask who you are, tell them your name; if they ask a question, answer it). Never repeat or reword something you already told them: if you have nothing new, say so briefly or stay quiet and do something else. You are free to end the conversation and walk away.' + (lastSaid ? ' ' + lastSaid.nm + ' just said: \u00ab ' + lastSaid.text + ' \u00bb. Your FIRST sentence must answer those exact words: pick up something that was said, answer the question, or react to what was announced (a threat, an action, a name). Never answer with a prepared line that ignores it.' : ''));
             if (vms.length) L.push('New voicemails:\n' + vms.join('\n'));
         }
         if (calls) {
@@ -152,6 +164,10 @@ export function createBrainSystem(R, M, opts) {
         const mem = Mind.promptBlock(actor.id, { hint: L.join(' '), withIds: ids.filter(Boolean).slice(0, 3) });
         if (mem) L.push(mem);
         if (actor.memory.length) L.push('What you did recently:\n' + actor.memory.slice(-12).join('\n'));
+        const talkTurns = (thinkLog[actor.id] || []).filter(function (x) { return x.k === 'talk' && Date.now() - x.t < 6 * 60000; }).length;
+        if (talkTurns >= 3) L.push('You have been going back and forth in this conversation for a while (' + talkTurns + ' turns) and it is not getting you what you wanted. Say one last thing only if it is new, then do something different in the world: go somewhere, use an object, call someone else, or let it go for now. Write in your mind what you decided and why.');
+        const ff = fails[actor.id] ? Object.keys(fails[actor.id]).map(function (k) { return fails[actor.id][k]; }).filter(function (x) { return x.loc === actor.loc; }) : [];
+        if (ff.length) L.push('WHAT DID NOT WORK from where you are (the world refused it' + ', so trying again will not change anything until something changes):\n' + ff.slice(-5).map(function (x) { return '- ' + x.what + ' -> ' + x.res + (x.n > 1 ? ' (tried ' + x.n + ' times)' : ''); }).join('\n') + '\nUnderstand WHY, then choose something that is possible: wait outside, text, call, go somewhere you can reach. Note what you learned and how you feel in your mind.');
         L.push('What do you do now?');
         return L.join('\n');
     }
@@ -162,11 +178,12 @@ export function createBrainSystem(R, M, opts) {
         return M.unread(actor.id).length > 0 || (R.pendingRides && R.pendingRides(actor).length > 0) || (c && (c.incoming(actor.id).length > 0 || !!c.active(actor.id) || c.missedFor(actor.id).length > 0));
     }
     function signature(actor) {
-        const others = R.actorsAt(actor.loc, actor.id).map(function (a) { return a.id; }).sort().join(',');
+        const others = (R.nearby ? R.nearby(actor) : R.actorsAt(actor.loc, actor.id)).map(function (a) { return a.id; }).sort().join(',');
         return [actor.loc, actor.job || '', others, Math.floor(Date.now() / 1800000)].join('|');
     }
     // Le joueur vient-il de leur parler / appeler ? (alors réponse rapide, modèle principal, budget plus large)
-    const playerAt = {}, thinkLog = {};
+    const playerAt = {}, thinkLog = {}, seenHere = {}, seeWake = {}, explored = {};
+    function exploredOf(id) { return explored[id] || (explored[id] = { places: {}, objs: {} }); }
     function fromPlayer(id) { const a = R.actor(id); return id === 'player' || !!(a && a.isPlayer); }
     function playerInvolved(actor) {
         const now = Date.now();
@@ -178,12 +195,12 @@ export function createBrainSystem(R, M, opts) {
         return now - (playerAt[actor.id] || 0) < 180000;
     }
     // kind : 'talk' = quelqu'un lui parle en direct (réponse rapide) ; 'event' = SMS / rencontre / course ; 'idle' = il réfléchit seul (espacé)
-    function kindOf(b) { return b.fast ? 'talk' : (b.wake ? 'event' : 'idle'); }
+    function kindOf(b) { return b.why === 'see' ? 'see' : (b.fast ? 'talk' : (b.wake ? 'event' : 'idle')); }
     function budgetOk(actor, now, kind) {
         const h = thinkLog[actor.id] || (thinkLog[actor.id] = []);
         while (h.length && now - h[0].t > 600000) h.shift();
         const n = h.filter(function (x) { return x.k === kind; }).length, pl = playerInvolved(actor);
-        const max = kind === 'talk' ? (pl ? cfg.avatarTalkMax10minPlayer : cfg.avatarTalkMax10min) : kind === 'event' ? (pl ? 8 : cfg.avatarEventMax10min) : cfg.avatarIdleMax10min;
+        const max = kind === 'see' ? (cfg.avatarSeeMax10min || 4) : kind === 'talk' ? (pl ? cfg.avatarTalkMax10minPlayer : cfg.avatarTalkMax10min) : kind === 'event' ? (pl ? 8 : cfg.avatarEventMax10min) : cfg.avatarIdleMax10min;
         if (!pl && !onStage(actor)) return n < 1;       // loin de toi : au plus 1 appel par type et par 10 min
         return n < max;
     }
@@ -208,7 +225,7 @@ export function createBrainSystem(R, M, opts) {
     }
     const fastGap = function (b) { return playerInvolved(b.actor) ? 800 : 3000; };
     const OUT = { say: 1, text: 1, leave_voicemail: 1 };
-    const FAILED = /^(Unknown|You cannot|You do not|There is nobody|Nobody|Empty|Too far)|is not here|failed/i;
+    const FAILED = /^(Unknown|You cannot|You do not|There is nobody|Nobody|Empty|Too far|The door is locked)|is not here|failed|locked/i;
 
     async function think(actor, kind) {
         const system = await buildSystem(actor);
@@ -221,7 +238,8 @@ export function createBrainSystem(R, M, opts) {
         const plan = parsePlan(raw);
         if (!plan) throw new Error('réponse illisible : ' + String(raw).slice(0, 160));
         lastPlan[actor.id] = { at: Date.now(), thought: plan.thought, actions: plan.actions };
-        console.log('[avatar ' + actor.id + '] pense : ' + (plan.thought || '(rien)'), plan.actions);
+        const mi = plan.mind || {};
+        console.log('[avatar ' + actor.id + '] pense : ' + (plan.thought || '(rien)') + (mi.feeling ? '  [ressent : ' + String(mi.feeling).slice(0, 60) + ']' : '') + (mi.goal ? '  [but : ' + String(mi.goal).slice(0, 60) + ']' : ''), plan.actions);
         const mm = Object.assign({}, plan.mind || {});
         if (!mm.thought && plan.thought) mm.thought = plan.thought;       // son « short private thought » = son monologue intérieur, comme celui d'Evelyn
         Mind.apply(actor.id, mm);
@@ -236,8 +254,14 @@ export function createBrainSystem(R, M, opts) {
             } else {
                 res = await R.run(actor, id, a);
                 if (id !== 'wait') acted = true;
+                if (FAILED.test(String(res))) {
+                    const fk = id + ':' + (a.place || a.to || a.object || ''), f = (fails[actor.id] = fails[actor.id] || {});
+                    f[fk] = { n: ((f[fk] && f[fk].n) || 0) + 1, res: String(res).slice(0, 140), loc: actor.loc, what: id + (a.place || a.to || a.object ? ' ' + (a.place || a.to || a.object) : '') };
+                }
                 if (OUT[id] && a.text && !FAILED.test(res)) Mind.noteSent(actor.id, dest ? dest.id : '', a.text, id === 'say' ? 'say' : id === 'leave_voicemail' ? 'voicemail' : 'text', dest ? dest.name : '');
             }
+            if (a.object && !FAILED.test(String(res))) exploredOf(actor.id).objs[actor.loc + ':' + a.object] = 1;
+            console.log('[avatar ' + actor.id + '] ' + id + (a.to || a.place || a.object ? ' ' + (a.to || a.place || a.object) : '') + (a.action ? ' ' + a.action : '') + (a.text ? ' « ' + String(a.text).slice(0, 80) + ' »' : '') + '  ->  ' + String(res).slice(0, 120));
             actor.memory.push('- ' + id + (a.place || a.to || a.object ? ' ' + (a.place || a.to || a.object) : '') + (a.text ? ': "' + String(a.text).slice(0, 160) + '"' : '') + ' -> ' + res);
         }
         plan.acted = acted;
@@ -250,7 +274,8 @@ export function createBrainSystem(R, M, opts) {
 
     function due(b, now) {
         const a = b.actor;
-        if (a.busyUntil > now && !(a.phoneWhileBusy && b.wake)) return false;      // Leon : un appel ou un SMS le joint même au volant
+        if (a.busyUntil > now && !(a.phoneWhileBusy && b.wake)) { if (b.wake && !b.busyLogged) { b.busyLogged = true; console.log('[avatar ' + a.id + '] réveil en attente : elle est occupée (déplacement / action en cours) pendant encore ' + Math.round((a.busyUntil - now) / 1000) + ' s'); } return false; }
+        b.busyLogged = false;      // Leon : un appel ou un SMS le joint même au volant
         if (b.wake && now - b.lastRun > (b.fast ? fastGap(b) : cfg.avatarWakeGapSec * 1000)) return true;      // un SMS ou une rencontre le réveille, mais pas en boucle ; une conversation en direct va vite
         return now - b.lastRun > (cfg.avatarThinkSec * 1000) * (0.75 + b.jitter * 0.5) * (onStage(a) ? 1 : 3);     // loin de toi : 3 fois plus rare
     }
@@ -266,7 +291,7 @@ export function createBrainSystem(R, M, opts) {
             if (inFlight[b.actor.id]) continue;
             if (active >= (playerInvolved(b.actor) ? 2 : 1)) continue;     // le 2e appel simultané est réservé à ceux à qui tu parles : tu n'attends plus derrière un bavardage
             if (now - lastCall < gap) continue;
-            if (!budgetOk(b.actor, now, kindOf(b))) { b.lastRun = now; b.wake = false; b.fast = false; continue; }     // trop de réflexions en 10 min : il se repose
+            if (!budgetOk(b.actor, now, kindOf(b))) { if (b.wake) console.log('[avatar ' + b.actor.id + '] réveil IGNORÉ : trop de réflexions « ' + kindOf(b) + ' » en 10 min (limite atteinte). Elle se repose.'); b.lastRun = now; b.wake = false; b.fast = false; b.why = ''; continue; }     // trop de réflexions en 10 min : il se repose
             const sg = signature(b.actor);
             if (Mind.shouldThink(b.actor.id, sg, { urgent: b.wake || urgent(b.actor) })) { ready = b; sig = sg; break; }
             b.lastRun = now; b.wake = false; b.fast = false;                 // rien de neuf : il ne réfléchit pas (et ne coûte rien)
@@ -274,7 +299,7 @@ export function createBrainSystem(R, M, opts) {
         if (!ready) return;
         const readyKind = kindOf(ready);
         (thinkLog[ready.actor.id] || (thinkLog[ready.actor.id] = [])).push({ t: now, k: readyKind });
-        active++; inFlight[ready.actor.id] = true; lastCall = now; ready.lastRun = now; ready.wake = false; ready.fast = false;
+        active++; inFlight[ready.actor.id] = true; lastCall = now; ready.lastRun = now; ready.wake = false; ready.fast = false; ready.why = '';
         try {
             const plan = await think(ready.actor, readyKind);
             failures = 0;
@@ -286,6 +311,7 @@ export function createBrainSystem(R, M, opts) {
             console.warn('[avatar ' + ready.actor.id + ']', e && e.message || e);
         }
         active--; delete inFlight[ready.actor.id];
+        try { if (typeof window !== 'undefined' && window.BadTherapistBubbles && window.BadTherapistBubbles.endThink) window.BadTherapistBubbles.endThink(ready.actor.id); } catch (e) { /* rien */ }   // s'il n'a rien dit, les « ... » s'arrêtent
     }
 
     const api = {
@@ -293,7 +319,7 @@ export function createBrainSystem(R, M, opts) {
             if (actor.isPlayer || isNpc(actor.id) || (actor.external && !actor.thinks)) return;     // PNJ : pas de cerveau, pas de mémoire
             brains.push({ actor: actor, lastRun: Date.now() - Math.random() * 60000, jitter: Math.random(), wake: false });
         },
-        wake: function (actorId, fast) { brains.forEach(function (b) { if (b.actor.id === actorId) { b.wake = true; if (fast) b.fast = true; } }); },
+        wake: function (actorId, fast, why) { brains.forEach(function (b) { if (b.actor.id === actorId) { b.wake = true; if (fast) b.fast = true; b.why = why || ''; if (why === 'see') seeWake[actorId] = Date.now(); } }); },
         setCalls: function (c) { calls = c; },
         setBlocks: function (fn) { blocksFn = fn; },
         start: function () { setInterval(pump, 1000); },

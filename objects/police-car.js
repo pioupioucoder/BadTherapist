@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { createTank } from './fuel.js';
+import { createFuelGauge } from './fuel-gauge.js';
 
 // ==========================================
 // BAD THERAPIST — LA VOITURE DE POLICE (objects/police-car.js)
@@ -57,7 +59,8 @@ export function createPoliceCar(parent, o) {
     return m;
   }
 
-  const BELT = 0.98, ROOF = 1.52;
+  // Toit relevé de 1,52 à 1,98 m : Leon (1,80 m + casquette) assis au volant dépassait du toit. Si besoin, monte encore ROOF.
+  const BELT = 0.98, ROOF = 1.98;
 
   // Plancher, caisse basse, capot, coffre, pare-chocs
   box(1.8, 0.2, 4.4, M.dark, 0, 0.3, 0);
@@ -149,6 +152,11 @@ export function createPoliceCar(parent, o) {
   box(1.5, 0.62, 0.1, M.seat, 0, FLOOR + 0.78, 1.23);
   box(1.7, 0.7, 0.04, M.dark, 0, 1.05, 0.62);                           // grille de séparation
 
+  // Réservoir + jauge d'essence (tableau de bord, côté conducteur ; visible aussi depuis la banquette arrière)
+  const tank = createTank({ type: 'police' });
+  const fuelPort = { x: 0.95, y: 0.7, z: 1.6 };
+  const gauge = createFuelGauge(g, tank, { x: WHEEL.x, y: 1.115, z: -0.93, tilt: -0.9, w: 0.2 });
+
   // Roues
   const wheels = [];
   [[-0.95, -1.55, true], [0.95, -1.55, true], [-0.95, 1.5, false], [0.95, 1.5, false]].forEach(function (w) {
@@ -168,7 +176,7 @@ export function createPoliceCar(parent, o) {
   door.position.set(-0.93, 0, -0.45);
   g.add(door);
   box(0.07, BELT - 0.3, 1.0, M.white, 0, (BELT + 0.3) / 2, 0.5, door);
-  box(0.06, 0.52, 0.9, M.glass, 0, (BELT + ROOF) / 2 - 0.12, 0.5, door).material = M.glass;
+  box(0.06, pillarH - 0.12, 0.9, M.glass, 0, (BELT + ROOF) / 2, 0.5, door).material = M.glass;      // vitre de portière : suit la hauteur du toit
   box(0.07, 0.05, 1.0, M.black, 0, BELT + 0.02, 0.5, door);
   let doorT = 0, doorTarget = 0, doorWait = [];
 
@@ -194,6 +202,39 @@ export function createPoliceCar(parent, o) {
   let mode = 'parked', P = null, s = 0, legResolve = null, errX = 0, errZ = 0, errH = 0;
   let lightsOn = true, beacons = false, siren = false, braking = false, driverIn = true, flashT = 0;
   let ac = null, sirenNodes = null;
+
+  // ==========================================
+  // LE PRISONNIER (banquette arrière, côté passager)
+  // ==========================================
+  // takePlayer() : la caméra glisse jusqu'à la banquette arrière, puis suit la voiture (cap + relief).
+  // releasePlayer() : le joueur est posé debout à côté de la portière arrière droite ; renvoie [x, z] (repère de la rue).
+  // Pendant ce temps le monde doit bloquer la marche : isDriving() de outside.js doit aussi renvoyer police.isCarrying().
+  const SEAT_BACK = new THREE.Vector3(0.45, FLOOR + 0.4 + 0.72, 0.95);
+  let carry = null, carryPrevH = 0;
+  function updateCarry(dt) {
+    if (!carry) return;
+    const eye = SEAT_BACK.clone().applyEuler(g.rotation).add(g.position);
+    const tx = origin.x + eye.x, ty = origin.y + eye.y, tz = origin.z + eye.z;
+    if (carry.phase === 'boarding') {
+      carry.t += dt;
+      const k = Math.min(1, carry.t / 1.5), e = k * k * (3 - 2 * k);
+      camera.position.set(
+        carry.from.x + (tx - carry.from.x) * e,
+        carry.from.y + (ty - carry.from.y) * e + Math.sin(Math.PI * e) * 0.1,
+        carry.from.z + (tz - carry.from.z) * e);
+      if (k >= 1) {
+        carry.phase = 'riding';
+        if (o.view) o.view.set(heading, 0);
+        carryPrevH = heading;
+        const r = carry.resolve; carry.resolve = null; if (r) r(true);
+      }
+    } else {
+      camera.position.set(tx, ty, tz);
+      if (o.view) { const v = o.view.get(); o.view.set(v.yaw + (heading - carryPrevH), v.pitch); }
+      carryPrevH = heading;
+    }
+    if (o.snow) o.snow.setBaseY(origin.y + bodyY);
+  }
 
   function place(dt, snap) {
     const fx = -Math.sin(heading), fz = -Math.cos(heading);
@@ -289,11 +330,20 @@ export function createPoliceCar(parent, o) {
 
   function followStep(dt) {
     const q0 = net.sampleAt(P, s);
-    const vT = dynCap(q0.v);
+    const vT = tank.empty ? 0 : dynCap(q0.v);                            // panne sèche : il freine et s'arrête là où il est
     const prev = speed;
     if (speed < vT) speed = Math.min(vT, speed + PAR.acc * dt); else speed = Math.max(vT, speed - PAR.brkE * dt);
     braking = speed < prev - 0.03;
     s += speed * dt;
+    tank.consume(Math.abs(speed) * dt);
+    if (tank.empty && speed < 0.05) {                                    // arrêt définitif : la leg se termine avec 'empty'
+      speed = 0; braking = true; mode = 'parked';
+      wheels.forEach(function (w) { w.g.rotation.y = 0; });
+      place(dt, false);
+      const rr = legResolve; legResolve = null; P = null;
+      if (rr) rr('empty');
+      return;
+    }
     let arrived = false;
     if (s >= P.len - 0.12) { s = P.len; arrived = true; }
     const q = net.sampleAt(P, s);
@@ -333,6 +383,8 @@ export function createPoliceCar(parent, o) {
   function step(dt) {
     if (mode === 'driving' && P) followStep(dt);
     else { speed = 0; place(dt, false); }
+    gauge.update(dt, false);
+    updateCarry(dt);
     updateDoor(dt);
     lights(dt);
   }
@@ -364,6 +416,7 @@ export function createPoliceCar(parent, o) {
     update: function () { tick(); },
     teleport: function (px, pz, h) { x = px; z = pz; heading = h; speed = 0; mode = 'parked'; place(0, true); },
     follow: function (path) {
+      if (tank.empty) return Promise.resolve('empty');
       return new Promise(function (resolve) {
         P = path; s = 0; mode = 'driving'; speed = 0; legResolve = resolve;
         const q = net.sampleAt(P, 0);
@@ -389,6 +442,28 @@ export function createPoliceCar(parent, o) {
       const rx = Math.cos(heading), rz = -Math.sin(heading), fx = -Math.sin(heading), fz = -Math.cos(heading);
       return [x - rx * 2.3 + fx * 0.1, z - rz * 2.3 + fz * 0.1];
     },
+    // ----- essence (même réservoir que le camion / taxi / bus : objects/fuel.js) -----
+    tank: tank,
+    fuelPort: fuelPort,
+    refuel: function (l) { return tank.add(l); },
+    getTank: function () { return tank; },
+    isEmpty: function () { return tank.empty; },
+    isLow: function () { return tank.low; },
+    // ----- prisonnier -----
+    takePlayer: function () {
+      if (carry) return Promise.resolve(true);
+      return new Promise(function (resolve) { carry = { phase: 'boarding', t: 0, from: camera.position.clone(), resolve: resolve }; });
+    },
+    releasePlayer: function () {
+      if (!carry) return null;
+      carry = null;
+      const rx = Math.cos(heading), rz = -Math.sin(heading), fx = -Math.sin(heading), fz = -Math.cos(heading);
+      const px = x + rx * 2.6 + fx * 0.9, pz = z + rz * 2.6 + fz * 0.9;       // côté passager, à côté de la portière arrière
+      camera.position.x = origin.x + px; camera.position.z = origin.z + pz;
+      return [px, pz];
+    },
+    isCarrying: function () { return !!carry; },
+    playerPos: function () { return { x: camera.position.x - origin.x, z: camera.position.z - origin.z }; },
     LENGTH: L, WIDTH: W
   };
 }

@@ -18,6 +18,8 @@ const BUBBLE_TYPE_MS = (THERAPIST_CONFIG && THERAPIST_CONFIG.bubbleTypeSpeedMs) 
 const HOLD_MIN_MS = 9000;           // elle reste au moins 9 s après la fin du texte
 const HOLD_PER_CHAR_MS = 150;       // + 150 ms par lettre
 const FADE_MS = 1500;
+const TALK_RANGE = 5;               // en dessous de 5 m, une icône « parler » flotte au-dessus de l'avatar (ENTRÉE ou clic)
+const PENDING_MS = 60000;           // une phrase dite hors de ta vue t'attend 60 s (elle s'affiche quand tu la regardes)
 const THINK_MAX_MS = 40000;         // « ... » s'arrête seul si l'avatar ne répond pas
 const boxes = {};
 let replyFn = null, hangUpFn = null, reply = null, audioCtx = null, styled = false;
@@ -28,6 +30,10 @@ const CSS = `
   font-family:'Press Start 2P',monospace;font-size:clamp(9px,2.2vw,13px);line-height:1.8;white-space:pre-wrap;word-wrap:break-word;
   transform:translate(-50%,-100%);opacity:1;transition:opacity ${FADE_MS}ms ease}
 .bt-say.out{opacity:0;pointer-events:none}
+.bt-talk{position:fixed;left:0;top:0;z-index:204;display:none;pointer-events:auto;cursor:pointer;transform:translate(-50%,-100%);
+  background:#050505;border:3px solid #e8c872;box-shadow:0 0 0 3px #000;color:#e8c872;padding:7px 10px;white-space:nowrap;
+  font-family:'Press Start 2P',monospace;font-size:10px;line-height:1.4;animation:btb 1.1s ease-in-out infinite}
+@keyframes btb{50%{margin-top:-7px}}
 .bt-say::after{content:"";position:absolute;left:50%;bottom:-13px;margin-left:-8px;border-left:8px solid transparent;border-right:8px solid transparent;border-top:10px solid #f2f2f2}
 .bt-say .n{color:#e8c872;margin-bottom:4px}
 .bt-say .k{display:none;margin-top:8px;font-size:.62em;color:#9a9a9a}
@@ -111,7 +117,7 @@ function box(id) {
     let b = boxes[id];
     if (b) return b;
     ensureStyle();
-    b = boxes[id] = { id: id, el: document.createElement('div'), typing: null, hideT: 0, fadeT: 0, dotsT: 0, thinkEnd: 0, shown: false, vis: false, hover: false, lastAt: 0, lastSeen: 0, pitch: pitchOf(id) };
+    b = boxes[id] = { id: id, el: document.createElement('div'), typing: null, hideT: 0, fadeT: 0, dotsT: 0, thinkEnd: 0, shown: false, vis: false, hover: false, lastAt: 0, lastSeen: 0, pitch: pitchOf(id), near: false, dist: 999, pending: null };
     b.el.className = 'bt-say';
     b.nameEl = document.createElement('div'); b.nameEl.className = 'n';
     b.txtEl = document.createElement('div');
@@ -121,6 +127,9 @@ function box(id) {
     b.el.addEventListener('mouseleave', function () { b.hover = false; });
     b.el.addEventListener('click', function (e) { e.stopPropagation(); Bubbles.talkTo(id); });   // clic sur la bulle = répondre
     document.body.appendChild(b.el);
+    b.talkEl = document.createElement('div'); b.talkEl.className = 'bt-talk'; b.talkEl.textContent = '\uD83D\uDCAC ENTER';
+    b.talkEl.addEventListener('click', function (e) { e.stopPropagation(); Bubbles.talkTo(id); });
+    document.body.appendChild(b.talkEl);
     return b;
 }
 
@@ -172,6 +181,10 @@ function pickBest() {
     Object.keys(boxes).forEach(function (id) {
         const b = boxes[id];
         if (b.vis && now - b.lastAt < REPLY_WINDOW_MS && (!best || b.lastAt > best.lastAt)) best = b;
+    });
+    if (!best) Object.keys(boxes).forEach(function (id) {          // sinon : l'avatar le plus proche (icône « parler » affichée)
+        const b = boxes[id];
+        if (b.near && b.vis && now - b.lastSeen < 1000 && (!best || b.dist < best.dist)) best = b;
     });
     return best;
 }
@@ -225,6 +238,8 @@ export const Bubbles = {
         text = String(text || '').trim().slice(0, 240);
         if (!text) return;
         const b = box(id);
+        if (!b.vis) { b.pending = { name: name, text: text, ms: ms, at: Date.now() }; return; }     // hors de ta vue : elle t'attend, au lieu d'être perdue
+        b.pending = null;
         clearTimeout(b.hideT); clearTimeout(b.fadeT); stopDots(b);
         if (b.typing) b.typing.cancel();
         if (name) b.nameEl.textContent = name;
@@ -257,11 +272,22 @@ export const Bubbles = {
         }, 380);
     },
     // Appelé par le corps de l'avatar à chaque image : position écran de sa tête
-    place: function (id, x, y, visible) {
-        const b = boxes[id];
+    place: function (id, x, y, visible, dist) {
+        let b = boxes[id];
+        if (!b && visible && dist != null && dist <= TALK_RANGE) b = box(id);
         if (!b) return;
         b.vis = !!visible;
         if (visible) b.lastSeen = Date.now();
+        b.dist = dist != null ? dist : 999;
+        b.near = !!(visible && b.dist <= TALK_RANGE);
+        if (visible && b.pending) { const p = b.pending; b.pending = null; if (Date.now() - p.at < PENDING_MS) Bubbles.say(id, p.name, p.text, p.ms); }
+        // icône « parler » : proche, visible, pas de bulle ni de boîte de réponse déjà ouverte avec lui
+        if (b.near && !b.shown && !(reply && reply.open && reply.target === id)) {
+            const w0 = window.innerWidth;
+            b.talkEl.style.display = 'block';
+            b.talkEl.style.left = Math.round(Math.max(60, Math.min(w0 - 60, x))) + 'px';
+            b.talkEl.style.top = Math.round(Math.max(b.talkEl.offsetHeight + 10, y - 14)) + 'px';
+        } else if (b.talkEl.style.display !== 'none') b.talkEl.style.display = 'none';
         if (!b.shown || !visible) { if (b.el.style.display !== 'none') b.el.style.display = 'none'; return; }
         b.el.style.display = 'block';
         const w = window.innerWidth, hw = Math.min(190, b.el.offsetWidth / 2 + 6);
@@ -321,10 +347,12 @@ export const Bubbles = {
     setHangUp: function (fn) { hangUpFn = typeof fn === 'function' ? fn : null; },
     closeReply: closeReply,
     stopThink: function (id) { const b = boxes[id]; if (b) stopDots(b); },
+    // Il a fini de réfléchir : s'il n'a rien dit, les « ... » disparaissent (sinon ils tournent jusqu'au délai de 40 s)
+    endThink: function (id) { const b = boxes[id]; if (b && b.dotsT) { stopDots(b); fadeOut(b); } },
     // Ce qui est fait quand tu réponds : fn(avatarId, texte) -> (promesse d')un texte
     setReply: function (fn) { replyFn = typeof fn === 'function' ? fn : null; },
     active: function (id) { const b = boxes[id]; return !!(b && b.shown); },
-    hide: function (id) { const b = boxes[id]; if (b) { if (b.typing) b.typing.cancel(); b.typing = null; stopDots(b); clearTimeout(b.hideT); clearTimeout(b.fadeT); b.shown = false; b.el.style.display = 'none'; } }
+    hide: function (id) { const b = boxes[id]; if (b) { if (b.typing) b.typing.cancel(); b.typing = null; stopDots(b); clearTimeout(b.hideT); clearTimeout(b.fadeT); b.shown = false; b.pending = null; b.el.style.display = 'none'; } }
 };
 
 if (typeof window !== 'undefined') window.BadTherapistBubbles = Bubbles;

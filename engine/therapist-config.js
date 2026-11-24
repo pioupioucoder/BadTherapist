@@ -1,4 +1,4 @@
-// therapist-config.js – réglages de l'IA d'Evelyn (cerveau = Gemini via le Worker Cloudflare).
+// therapist-config.js – réglages de l'IA d'Evelyn (cerveau = Groq via le Worker Cloudflare « evelyn-brain »).
 //
 // OÙ METTRE QUOI :
 //   - Qui est Evelyn, comment elle parle                              : avatars/evelyn/brain/context.txt
@@ -16,7 +16,7 @@ export const THERAPIST_CONFIG = {
   avatar: AVATAR,
   apiKey: '',                                // laisse vide
   proxyUrl: 'https://evelyn-brain.kristenanjavidy.workers.dev',   // Worker Cloudflare : il garde la clé (aucun secret ici)
-  model: 'gemini-3.8-flash',                 // vérifie le nom exact dans Google AI Studio
+  model: 'llama-3.3-70b-versatile',          // le Worker ignore ce champ : le vrai modèle d'Evelyn se règle avec la variable EVELYN_MODEL dans Cloudflare
   reasoningEffort: 'low',
   contextFile: 'avatars/' + AVATAR + '/brain/context.txt',
   linesFile: 'avatars/' + AVATAR + '/brain/lines.json',
@@ -42,6 +42,9 @@ export const THERAPIST_CONFIG = {
   lifeEnabled: false,      // plus de « vie » quand le jeu est fermé
   lifeSyncSec: 120,
 
-  // Les autres avatars (Oliver, Pluie...) : aucun appel IA
-  avatarsEnabled: false
+  // Le cerveau commun (avatar-brain.js). Seule Evelyn en a un : Oliver, Pluie et les autres sont des PNJ sans IA.
+  avatarsEnabled: true,
+  avatarThinkSec: 90,        // elle réfléchit environ toutes les 90 s (avant : 300)
+  avatarIdleMax10min: 5,     // réflexions « seule » max par 10 min (avant : 2)
+  avatarStageMeters: 400     // elle compte comme « près de toi » jusqu'à 400 m (avant : 150)
 };

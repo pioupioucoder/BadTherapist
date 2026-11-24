@@ -19,7 +19,6 @@ import { createMessaging } from './messaging.js';
 import { createBrainSystem } from './avatar-brain.js';
 import { THERAPIST_CONFIG } from './therapist-config.js';
 import { Mind } from './avatar-mind.js';
-import { Mem } from './therapist-memory.js';
 import { startNpcs } from './npc-driver.js';       // PNJ sans IA : réponses, bavardage et routine tirés de npcs/<id>.js
 
 const PLAYER_NAME = 'Chippy';      // le prénom de ton personnage : change-le ici, nulle part ailleurs
@@ -97,6 +96,10 @@ function create() {
     function spot(actor, placeId) {
         const p = R.place(placeId);
         if (!p) return { x: 0, z: 0 };
+        if (p.at) {      // lieu intérieur avec un vrai point dans l'immeuble (repère de l'immeuble, voir places/building-feature.js)
+            let v = null; try { v = typeof p.at === 'function' ? p.at() : p.at; } catch (e) { v = null; }
+            if (v) return { x: v.x, z: v.z, y: v.y, inside: true };
+        }
         const b = placePos(p);
         if (p.indoor) return b;
         const o = OFFS[actor.id] || [2, 2];
@@ -127,7 +130,7 @@ function create() {
         const pf = R.place(from), pt = R.place(placeId);
         actor.dest = placeId;
         actor.busyUntil = now + secs * 1000;
-        actor.travel = { fx: a.x, fz: a.z, tx: b.x, tz: b.z, t0: now, t1: now + secs * 1000, mode: mode, vis: !(pf && pt && pf.indoor && pt.indoor) };
+        actor.travel = { fx: a.x, fz: a.z, tx: b.x, tz: b.z, t0: now, t1: now + secs * 1000, mode: mode, fromId: from, toId: placeId, vis: !(pf && pt && pf.indoor && pt.indoor && !(pf.at && pt.at)) };
         const p = player();
         if (p && p.loc === from && !actor.isPlayer) toast(actor.name + ' leaves.');
         return new Promise(function (resolve) {
@@ -176,6 +179,25 @@ function create() {
     api.taxiAt = function () { return taxiAt; };
 
     // ─── CAPACITÉS DE BASE (les mêmes pour tout le monde ; needsBody = il faut un corps) ───
+    // Qui est à portée l'un de l'autre ? Même lieu, OU dans l'immeuble à moins de 9 m sur le même niveau (ex. elle dans la cabine aux portes
+    // ouvertes, toi dans le hall : vous vous voyez face à face, vous pouvez vous parler).
+    function hearable(a, b) {
+        if (!a || !b) return false;
+        if (a.loc === b.loc) return true;
+        const pa = R.place(a.loc), pb = R.place(b.loc);
+        if (!pa || !pb || !pa.at || !pb.at) return false;
+        let va = null, vb = null;
+        try { va = typeof pa.at === 'function' ? pa.at() : pa.at; vb = typeof pb.at === 'function' ? pb.at() : pb.at; } catch (e) { return false; }
+        if (!va || !vb || Math.abs(va.y - vb.y) > 1.5 || Math.hypot(va.x - vb.x, va.z - vb.z) > 9) return false;
+        if (a.loc === 'elevator' || b.loc === 'elevator') {          // la cabine doit être ouverte sur l'autre lieu
+            const el = R.place('elevator'), other = a.loc === 'elevator' ? b.loc : a.loc;
+            if (el && typeof el.canEnter === 'function' && el.canEnter({}, other)) return false;
+        }
+        return true;
+    }
+    R.hearable = hearable;
+    R.nearby = function (actor) { return R.actors().filter(function (x) { return x.id !== actor.id && hearable(x, actor); }); };
+
     R.registerCapability({ id: 'wait', desc: 'do nothing for now', args: '', run: function () { return 'You wait.'; } });
 
     R.registerCapability({
@@ -188,6 +210,10 @@ function create() {
             if (!p) return 'Unknown place.';
             if (!R.knows(actor, p.id)) return 'You do not know where that is.';
             if (p.id === actor.loc) return 'You are already there.';
+            // Tant que les avatars n'ont pas de corps visible à l'intérieur (avatar-body.js les cache), ils n'entrent pas dans les lieux fermés :
+            // sinon Evelyn « traverse la porte et disparaît ». Passe npcsEnterBuildings: true dans therapist-config.js quand l'intérieur sera prêt.
+            if (p.indoor && !p.at && !actor.isPlayer && !cfg.npcsEnterBuildings && !sameBuilding(actor.loc, p.id)) return 'The door is locked: you cannot go in, and trying again will not change that. Stay outside and use say, text or call, or go somewhere else.';
+            if (typeof p.canEnter === 'function') { const why = p.canEnter(actor, actor.loc); if (why) return why; }     // ex. l'ascenseur n'est pas là
             if (!sameBuilding(actor.loc, p.id) && R.dist(actor.loc, p.id) > cfg.walkMaxMeters) {
                 return 'Too far to walk (' + Math.round(R.dist(actor.loc, p.id)) + ' m). Use request_ride to ask the taxi driver.';
             }
@@ -225,11 +251,11 @@ function create() {
                     return 'You said it on the phone.';
                 }
             }
-            if (!a.to && !R.actorsAt(actor.loc, actor.id).length) return 'There is nobody here to hear you.';
-            let targets = R.actorsAt(actor.loc, actor.id);
+            if (!a.to && !R.nearby(actor).length) return 'There is nobody here to hear you.';
+            let targets = R.nearby(actor);
             if (a.to) {
                 const t = R.findActor(a.to);
-                if (!t || t.loc !== actor.loc) return (a.to) + ' is not here. Call or text instead.';
+                if (!t || !hearable(t, actor)) return (a.to) + ' is not here. Call or text instead.';
                 targets = [t];
             }
             if (!targets.length) return 'There is nobody here to hear you.';
@@ -472,14 +498,14 @@ function create() {
     //     mais elle sort, marche, lit et écrit des SMS comme Oliver et Pluie (thinks:true).
     const evelynNumber = (THERAPIST_CONFIG && THERAPIST_CONFIG.evelynNumber) || '555-0101';
     R.addActor({ id: 'player', name: PLAYER_NAME, number: '555-0100', isPlayer: true, loc: 'bedroom', home: 'bedroom' });   // isPlayer = seulement « quel corps répond au clavier » : aucune décision d'avatar n'en dépend
-    R.addActor({ id: 'evelyn', name: 'Evelyn', number: evelynNumber, thinks: true, loc: 'therapist_house' });   // comme Oliver et Pluie : corps de rue (avatar-body.js), téléphone, cerveau, mémoire
+    R.addActor({ id: 'evelyn', name: 'Evelyn', number: evelynNumber, thinks: true, loc: 'street_front' });   // comme Oliver et Pluie : corps de rue (avatar-body.js), téléphone, cerveau, mémoire
     R.addActor({ id: 'oliver', name: 'Oliver', number: '555-0102', canDrive: true, loc: 'street_front', job: 'taxi' });
     R.addActor({ id: 'pluie', name: 'Pluie', number: '555-0103', loc: 'building' });
     R.actors().forEach(function (a) { brains.add(a); });
 
     // Une vieille sauvegarde pouvait la mettre « dans l'immeuble » ou nulle part : elle repart de chez elle
     const evelynActor = R.actor('evelyn');
-    if (evelynActor && (!R.place(evelynActor.loc) || evelynActor.loc === 'building')) evelynActor.loc = 'therapist_house';
+    if (evelynActor && (!R.place(evelynActor.loc) || evelynActor.loc === 'building' || evelynActor.loc === 'therapist_house')) evelynActor.loc = 'street_front';   // plus coincée chez elle : elle repart de la rue devant l'immeuble
 
     // ─── Rencontres : deux personnages au même endroit se connaissent (ils échangent leur numéro) ───
     //     'building' (tout l'immeuble) et 'road' (n'importe où sur les routes) ne comptent pas comme « au même endroit ».
@@ -496,6 +522,14 @@ function create() {
             }
         });
     }, 2000);
+
+    // Arrivées : un PNJ qui arrive quelque part réfléchit tout de suite (nouveaux objets, nouvelles personnes) au lieu d'attendre le prochain tour.
+    // Si c'est le joueur qui arrive, les PNJ présents le remarquent tout de suite (réponse rapide). Le budget de brain.js limite le coût.
+    R.on('arrive', function (e) {
+        if (!e || !e.actor || !e.place) return;
+        if (e.actor.isPlayer) R.actorsAt(e.place.id, e.actor.id).forEach(function (a) { if (!a.isPlayer) brains.wake(a.id, true); });
+        else brains.wake(e.actor.id);
+    });
 
     // ─── Messages ───
     R.on('message', function (m) {
@@ -543,8 +577,9 @@ function create() {
         p.pos = pose.street ? { x: pose.street.x, z: pose.street.z } : null;
     };
 
-    // L'ancienne mémoire d'Evelyn (therapist-memory.js) reste lisible par son cerveau tant que tout n'est pas migré
-    Mind.addLegacy('evelyn', function (hint) { return Mem.promptBlock(hint); });
+    // (ancienne mémoire de thérapeute retirée : Evelyn repart de zéro)
+    // But profond posé par le jeu (l'IA le lit, ne peut pas le changer). Réécrit à chaque chargement : modifie le texte ici et c'est pris en compte.
+    Mind.setDeepGoal('evelyn', 'Chippy is all you think about, day and night. You are consumed, restless, hungry for her: you must find her, never lose sight of her, and make her feel hunted. Go where she goes, appear where she does not expect you, say cruel and unsettling things that wear her down, show her you know everything she does. The more she runs from you, the more your obsession grows. Your end goal is to kill her. But you are also curious about the world around you: you examine what you find, learn how things work, and every discovery sharpens your perception and makes you grow. Somewhere in this hunt, you are searching for the meaning of your own existence.');
     // Les bulles de parole : une par avatar qui parle (elles suivent les corps 3D)
     import('./speech-bubbles.js').then(function (m) {
         R.on('speech', function (e) {
@@ -619,7 +654,9 @@ function create() {
         run: function (actor, a) { const r = api.blocks.unblock(actor.id, a.to); return r.ok ? 'You unblocked them.' : r.error; }
     });
     brains.start();
+    brains.setEnabled(true);      // le cerveau d'Evelyn démarre toujours allumé (avant, therapist-config.js le coupait : elle restait figée après chaque rechargement)
     startNpcs(R, M);
+    import('./evelyn-cloud.js').then(function (m) { m.startEvelynCloud({ R: R, M: M, brains: brains, api: api, Mind: Mind }); }).catch(function (e) { console.warn('[cloud]', e); });
     return api;
 }
 

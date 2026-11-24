@@ -3,6 +3,7 @@ import { buildWorld as buildOutside } from './outside.js';
 import { buildCorridor } from './corridor.js';
 import { buildElevator } from './elevator.js';
 import { buildGroundFloor } from './rdc.js';
+import { registerBuilding } from './building-feature.js';
 import { createWindowView } from './windowview.js';
 import { buildBedroom, addBedroomColliders, WALL_H, HALF_D, BEDROOM_SPAWN } from './bedroom.js';
 import './dreambedroom.js';   // le rêve (window.BadTherapistDream), appelé quand le joueur s'endort
@@ -104,7 +105,9 @@ export function buildWorld(scene, opts) {
     });
 
     // Capteur de la porte d'entrée : quelqu'un dans le hall OU devant l'immeuble, près de la porte
+    let interior = null;     // rempli par registerBuilding (corps des PNJ dans l'immeuble)
     function nearEntrance() {
+        if (interior && interior.npcNearDoor()) return true;    // un PNJ s'approche de la porte (hall ou rue)
         if (playerLevel !== 0) return false;
         const px = camera.position.x, pz = camera.position.z;
         const lx = px > 100 ? px - STREET_DX : px;
@@ -122,6 +125,9 @@ export function buildWorld(scene, opts) {
         snow: snow, snowBaseY: LEVEL_Y[0]
     });
     elevator.addLanding({ level: 0, width: rdc.width, wallH: rdc.wallH, wallMaterial: rdc.wallMaterial });
+    // Lieux, objets et points de passage de l'immeuble pour les PNJ (porte, ascenseur) : tout se déclare dans building-feature.js
+    interior = registerBuilding({ rdc: rdc, elevator: elevator, ELEV_Z: ELEV_Z, LEVEL_Y: LEVEL_Y, scene: scene, STREET_DX: STREET_DX, STREET_Z: STREET_Z });
+    elevator.setHold(function(level) { return interior.npcInDoorway(level); });
     // Côté rue : la porte de l'immeuble est fermée tant que la porte automatique n'est pas ouverte
     physics.add({ x0: STREET_DX - 1.4, x1: STREET_DX + 1.4, z0: -16.4, z1: -15.5, level: 0,
         active: function() { return !rdc.door.isOpen(); } });

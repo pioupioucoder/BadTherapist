@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { createTank } from './fuel.js';
+import { createFuelGauge } from './fuel-gauge.js';
 
 // ==========================================
 // BAD THERAPIST — LE CAMION (vehicle.js)
@@ -121,6 +123,26 @@ export function createTruck(parent, o) {
   const cargo = new THREE.Group();
   cargo.position.set(0, 1.0, 1.58);
   g.add(cargo);
+
+  // ==========================================
+  // RÉSERVOIR + JAUGE D'ESSENCE (tableau de bord)
+  // ==========================================
+  // Le niveau est sauvegardé (localStorage 'bt_fuel_truck') : on retrouve le camion avec la même essence.
+  const FUEL_KEY = 'bt_fuel_truck';
+  let savedFuel;
+  try { const v = parseFloat(localStorage.getItem(FUEL_KEY)); if (Number.isFinite(v)) savedFuel = v; } catch (e) { /* rien */ }
+  const tank = createTank({ type: 'truck', level: savedFuel });
+  const fuelPort = { x: 1.05, y: 0.8, z: 0.8 };        // trappe : côté droit, derrière la cabine (la station choisit le côté de la pompe)
+  const gauge = createFuelGauge(g, tank, { x: -0.5, y: 1.535, z: -1.5, tilt: -1.0, w: 0.26, hud: true });
+  let fuelSaveT = 0, lastSavedFuel = -1;
+  function saveFuel(dt) {
+    fuelSaveT += dt;
+    if (fuelSaveT < 2) return;
+    fuelSaveT = 0;
+    if (Math.abs(tank.level - lastSavedFuel) < 0.01) return;
+    lastSavedFuel = tank.level;
+    try { localStorage.setItem(FUEL_KEY, String(tank.level)); } catch (e) { /* rien */ }
+  }
 
   // Roues
   const wheels = [];
@@ -292,7 +314,7 @@ export function createTruck(parent, o) {
 
   function drive(dt) {
 
-    const thr = clamp(-input.ly, -1, 1);
+    const thr = tank.empty ? 0 : clamp(-input.ly, -1, 1);       // panne sèche : plus de moteur, le camion roule sur son élan puis s'arrête
     const st = clamp(input.lx, -1, 1);
 
     if (thr > 0.05) {
@@ -310,6 +332,7 @@ export function createTruck(parent, o) {
     // La pente ralentit un peu, mais le moteur est assez fort pour grimper presque partout
     speed -= 9.8 * Math.sin(pitch) * 0.3 * dt;
     speed = clamp(speed, -MAXR, MAX);
+    tank.consume(Math.abs(speed) * dt);                          // 1 plein = RANGE_METERS (fuel.js)
 
     steerCur += (st - steerCur) * Math.min(1, dt * 7);
     const turn = steerCur * 1.3 * Math.min(1, Math.abs(speed) / 5) / (1 + Math.abs(speed) / 24);
@@ -359,6 +382,8 @@ export function createTruck(parent, o) {
   // active = le joueur est dans la rue (sinon on n'affiche pas le bouton ENTER)
 
   function update(dt, active) {
+    gauge.update(dt, driving);
+    saveFuel(dt);
     if (driving) {
       drive(dt);
       return;
@@ -373,6 +398,9 @@ export function createTruck(parent, o) {
   return {
     group: g,
     cargo: cargo,
+    tank: tank,                                                   // lu par la station-service (places/gasstation.js)
+    fuelPort: fuelPort,
+    refuel: function (l) { return tank.add(l); },
     isDriving: function () { return driving; },
     enter: enter,
     exit: exit,
