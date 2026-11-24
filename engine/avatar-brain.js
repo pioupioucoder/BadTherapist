@@ -29,7 +29,7 @@ async function fetchText(path) {
 // (Avant : { content } et max_tokens -> le Worker lisait un message VIDE : l'avatar ne savait ni où il était ni quoi faire.)
 // Remplaçable : society.setLLM(async ({ system, user, id }) => '...texte...')
 async function defaultLLM(o) {
-    const NO_BRAIN = ['pluie', 'leon', 'violet', 'oliver', 'evelyn'];
+    const NO_BRAIN = ['pluie', 'leon', 'violet', 'oliver'];     // Evelyn en est retirée : elle réfléchit pour de vrai
     if (NO_BRAIN.includes(o.id)) return '{"thought":"","actions":[{"do":"wait"}]}';
     const cfg = THERAPIST_CONFIG || {};
     if (!cfg.proxyUrl) throw new Error('pas de proxyUrl dans therapist-config.js');
@@ -97,7 +97,7 @@ export function createBrainSystem(R, M, opts) {
             'PHONE: a call rings for a few seconds; the other person may answer or not (people only hear their phone when they are near it). If nobody answers, text them or try again much later: never call or text again and again. If the person is standing right next to you, use say, not text. You can block a number (block) and unblock it (unblock); someone you block is told, and if someone blocked you, your texts and calls to them fail.',
             'Answer with ONE JSON object and nothing else: {"thought":"short private thought","actions":[{"do":"action_id", ...args}]}. ' +
             'At most 3 actions. Use {"do":"wait"} when you want to do nothing. Messages and speech are written in the language of the person you address (English by default). Never invent places, people or actions that are not listed.',
-            Mind.formBlock()
+            Mind.formBlock(actor.id)
         ].filter(Boolean).join('\n\n');
     }
 

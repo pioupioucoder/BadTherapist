@@ -91,7 +91,9 @@ function emptyAvatar() {
 }
 
 export async function loadMixamoAvatar(opts) {
-    if (window.BTLoad && window.BTLoad.skipAvatars) return emptyAvatar();
+    if (window.BTLoad && (window.BTLoad.skipAvatars || (window.BTLoad.avatarOff && window.BTLoad.avatarOff(opts && opts.model)))) return emptyAvatar();     // avatar pas encore activé dans loader.js (AVATARS_ON) : corps vide
+    // diagnostic : un avatar demandé quand l'écran de chargement est déjà parti apparaîtrait en retard
+    if (window.BTLoad && window.BTLoad.active && !window.BTLoad.active()) console.warn('[avatar] « ' + (opts && opts.model) + ' » est demandé APRÈS l\'écran de chargement : il apparaîtra en retard. Demande-le plus tôt dans le démarrage.');
     // clé UNIQUE à chaque appel : si le même avatar est demandé deux fois (ex. evelyn par avatar-body ET par therapist-house),
     // le premier à finir ne doit pas libérer l'écran de chargement pendant que l'autre charge encore
     const key = 'avatar:' + (opts && opts.model) + '#' + (++holdSeq);

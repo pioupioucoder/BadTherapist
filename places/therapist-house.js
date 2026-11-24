@@ -1609,7 +1609,7 @@ export function buildWork(parent, opts) {
   function evelynHome() {
     try {
       const s = window.BadTherapistSociety, a = s && s.registry && s.registry.actor('evelyn');
-      return !a || a.loc === 'therapist_house';
+      return !a || (a.loc === 'therapist_house' && !a.travel);     // dès qu'elle part (a.travel), son corps de la maison disparaît : sinon elle restait aussi assise dans son fauteuil pendant sa marche
     } catch (e) { return true; }
   }
 

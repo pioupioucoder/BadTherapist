@@ -14,7 +14,8 @@
 //   c) analyse des imports / chemins écrits dans les .js/.html, en dernier recours.
 //
 // Réglages rapides :
-const SKIP_AVATARS = true;    // true = AUCUN avatar : ni préchargé, ni chargé dans le jeu (requêtes vers avatars/ bloquées)
+const SKIP_AVATARS = false;   // false = les avatars sont préchargés PENDANT l'écran de chargement, jamais après. true = AUCUN avatar (requêtes vers avatars/ bloquées)
+const AVATARS_ON = ['evelyn'];   // dossiers de avatars/ chargés pour l'instant. Pour en ajouter un plus tard : écris son nom ici, ex. ['evelyn', 'oliver', 'pluie'] (leon, lou, nahara, veri, violet existent aussi)
 const SKIP_VIDEOS  = true;    // true = on ne précharge pas les vidéos (la télé précharge elle-même la suivante)
 //
 // Diagnostic : ?perf à la fin de l'adresse (ou touche F3) = FPS ; la console affiche les blocages > 120 ms.
@@ -30,7 +31,7 @@ const SKIP_VIDEOS  = true;    // true = on ne précharge pas les vidéos (la té
     const HANDOFF_MAX_AGE = 120000;
     const HANDOFF_MIN = 1.0;
     const HANDOFF_SETTLE = 3000;
-    const HANDOFF_TIMEOUT = 45000;
+    const HANDOFF_TIMEOUT = 120000;   // les avatars (FBX + animations) sont lourds : l'écran ne doit jamais partir avant eux
     const SMOOTH_FRAMES = 30, SMOOTH_MS = 40;
     const FALLBACK = ['index.html', 'world_base.html', 'bedroom.js'];
     const SKIP = /(^|\/)(\.git|node_modules|\.vscode|\.idea|backups?|saves?)(\/|$)|\.(php|ps1|bat|md|psd|blend1?|zip|rar|7z|bak|log|tmp|map|sh|sql|ini)$/i;
@@ -40,9 +41,18 @@ const SKIP_VIDEOS  = true;    // true = on ne précharge pas les vidéos (la té
     const TEXT = /\.(js|mjs|html?|css)$/i;
     const EXT = 'js|mjs|json|png|jpe?g|webp|gif|fbx|glb|gltf|mp3|ogg|wav|m4a|woff2?|ttf|css|html?|svg|txt|mp4|webm';
 
+    // un fichier de avatars/ est refusé si les avatars sont coupés, ou si son dossier n'est pas dans AVATARS_ON (avatars/_shared reste toujours chargé)
+    const avatarOff = function (p) {
+        if (!AVATARS.test(p)) return false;
+        if (SKIP_AVATARS) return true;
+        const m = /(?:^|\/)avatars?\/([^\/]+)/i.exec(p);
+        if (!m) return false;                       // le dossier avatars/ lui-même : on le parcourt
+        const name = m[1].toLowerCase();
+        return name !== '_shared' && AVATARS_ON.indexOf(name) < 0;
+    };
     const skipped = function (p) {
         p = String(p);
-        return SKIP.test(p) || (SKIP_AVATARS && AVATARS.test(p)) || (SKIP_VIDEOS && VIDEOS.test(p));
+        return SKIP.test(p) || avatarOff(p) || (SKIP_VIDEOS && VIDEOS.test(p));
     };
 
     const ROOT = new URL('./', (document.currentScript && document.currentScript.src) || location.href).href;
@@ -59,11 +69,17 @@ const SKIP_VIDEOS  = true;    // true = on ne précharge pas les vidéos (la té
     // ─── Avatars désactivés : toute requête vers avatars/ est refusée tout de suite (404 local, rien n'est téléchargé
     //     ni analysé). Pour les réactiver : SKIP_AVATARS = false en haut du fichier, ou ouvrir le jeu avec ?avatars ───
     console.log('[ILLUSION] loader.js chargé' + (SKIP_AVATARS ? ' (avatars bloqués)' : ''));
-    const BLOCK_AVATARS = SKIP_AVATARS && !/[?&]avatars\b/.test(location.search);
-    BT.skipAvatars = BLOCK_AVATARS;
+    // Seuls les avatars de AVATARS_ON sont chargés (le jeu entier : avatar-body.js demande tous les corps, mais ceux qui ne sont pas
+    // dans la liste reçoivent un avatar vide, sans aucune requête réseau). ?avatars dans l'adresse = tous les avatars.
+    const BLOCK_AVATARS = !/[?&]avatars\b/.test(location.search);
+    BT.skipAvatars = SKIP_AVATARS && BLOCK_AVATARS;                                   // true = aucun avatar
+    BT.avatarOff = function (p) { return BLOCK_AVATARS && avatarOff(String(p || '')); };   // true = cet avatar-là n'est pas chargé pour l'instant
     if (BLOCK_AVATARS) {
         const isAvatar = function (u) {
-            try { return /(^|\/)avatars\/[^?#]+\.(fbx|glb|gltf|png|jpe?g|webp)/i.test(decodeURIComponent(String(u))); } catch (e) { return false; }
+            try {
+                const s = decodeURIComponent(String(u));
+                return /(^|\/)avatars\/[^?#]+\.(fbx|glb|gltf|png|jpe?g|webp)/i.test(s) && avatarOff(s.split('?')[0]);
+            } catch (e) { return false; }
         };
         const realFetch = window.fetch;
         window.fetch = function (input) {

@@ -38,7 +38,7 @@ const DOOR = { x: 0, z: -14.5 };                          // devant l'entrée de
 const OFFS = { oliver: [3, 2.5], pluie: [-3, 2.5], evelyn: [0, 3.5] };   // chacun se tient un peu à l'écart des autres
 
 function create() {
-    const cfg = Object.assign({ rideAutoAcceptSec: 60, walkMaxMeters: 400 }, THERAPIST_CONFIG || {});
+    const cfg = Object.assign({ rideAutoAcceptSec: 60, walkMaxMeters: 1500 }, THERAPIST_CONFIG || {});
     const M = createMessaging(R);
     const brains = createBrainSystem(R, M);
     const rides = [];
@@ -115,7 +115,8 @@ function create() {
     function sameBuilding(a, b) { const t = R.place(R.topOf(a)); return R.topOf(a) === R.topOf(b) && !!t && t.kind === 'building' && !!t.indoor; }
     function travelSeconds(from, to, mode) {
         if (sameBuilding(from, to)) return 10;
-        return clamp(R.dist(from, to) / (mode === 'vehicle' ? 14 : 3.2), 5, 75);
+        // à pied : jusqu'à 3 min (avant 75 s : un trajet de 1 km se faisait à 50 km/h) ; en véhicule : 75 s au plus
+        return clamp(R.dist(from, to) / (mode === 'vehicle' ? 14 : 3.2), 5, mode === 'vehicle' ? 75 : 180);
     }
     function travel(actor, placeId, mode) {
         const from = actor.loc;
