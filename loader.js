@@ -147,7 +147,50 @@ const PRELOAD = false;        // false = le loader ne télécharge RIEN : il aff
         };
     }
 
-    // ─── Interface : épurée, même ambiance grise que le menu ───
+    // ─── Interface : même ambiance grise / pixel / vieil écran, mais le titre « se met au point » avec le chargement ───
+    // ILLUSION commence en gros blocs flous et parasités, et devient net en même temps que le chargement avance.
+    // Dessous : une rangée de cases (comme les têtes d'un lecteur de disquette) et un petit message sur ce qui se passe.
+    const TW = 420, TH = 96, CELLS = 24;
+
+    function makeTitle(canvas) {
+        const src = document.createElement('canvas'), small = document.createElement('canvas');
+        src.width = TW; src.height = TH; canvas.width = TW; canvas.height = TH;
+        const sx = src.getContext('2d'), smx = small.getContext('2d'), cx = canvas.getContext('2d');
+        function paint() {
+            sx.clearRect(0, 0, TW, TH);
+            sx.font = "44px 'Press Start 2P', monospace"; sx.textAlign = 'center'; sx.textBaseline = 'middle';
+            const t = 'ILLUSION', x = TW / 2 - 4, y = TH / 2 - 4;
+            sx.fillStyle = 'rgba(0,0,0,.8)'; sx.fillText(t, x + 6, y + 6);
+            sx.fillStyle = '#555'; sx.fillText(t, x + 3, y + 3);
+            sx.fillStyle = '#ededed'; sx.fillText(t, x, y);
+        }
+        paint();
+        try { if (document.fonts && document.fonts.load) document.fonts.load("44px 'Press Start 2P'").then(paint, function () { }); } catch (e) { /* tant pis */ }
+        return function draw(p) {
+            const q = Math.max(0, Math.min(1, p));
+            const bl = q >= 0.995 ? 1 : Math.max(1, Math.round(40 * Math.pow(1 - q, 1.7)));     // taille des blocs : 40 px -> 1 px
+            const w = Math.ceil(TW / bl), h = Math.ceil(TH / bl);
+            small.width = w; small.height = h;
+            smx.imageSmoothingEnabled = true; smx.drawImage(src, 0, 0, w, h);
+            cx.clearRect(0, 0, TW, TH);
+            cx.imageSmoothingEnabled = false;
+            cx.drawImage(small, 0, 0, w, h, 0, 0, w * bl, h * bl);
+            const bad = 1 - q;
+            // bandes décalées (le signal saute), plus fréquentes quand l'image est floue
+            if (bad > 0.01 && Math.random() < 0.05 + bad * 0.3) {
+                const hb = 3 + Math.floor(Math.random() * 12), y = Math.floor(Math.random() * (TH - hb)), dx = Math.round((Math.random() - 0.5) * (8 + bad * 40));
+                cx.drawImage(canvas, 0, y, TW, hb, dx, y, TW, hb);
+            }
+            // neige
+            const n = Math.floor(bad * bad * 320);
+            for (let i = 0; i < n; i++) {
+                const g = 90 + Math.floor(Math.random() * 150);
+                cx.fillStyle = 'rgba(' + g + ',' + g + ',' + g + ',' + (0.25 + Math.random() * 0.5).toFixed(2) + ')';
+                cx.fillRect(Math.floor(Math.random() * TW), Math.floor(Math.random() * TH), 2 + Math.floor(Math.random() * 3), 2);
+            }
+        };
+    }
+
     function buildUi(instant) {
         if (!document.querySelector('link[href*="Press+Start+2P"]')) {
             const f = document.createElement('link');
@@ -165,32 +208,39 @@ const PRELOAD = false;        // false = le loader ne télécharge RIEN : il aff
   background-size:32px 32px}
 #bt-load .scan{position:absolute;inset:0;pointer-events:none;opacity:.12;
   background:repeating-linear-gradient(to bottom,transparent 0,transparent 2px,rgba(0,0,0,.65) 3px,rgba(0,0,0,.65) 4px)}
+#bt-load .roll{position:absolute;left:0;right:0;height:16%;top:-20%;pointer-events:none;
+  background:linear-gradient(to bottom,transparent,rgba(255,255,255,.04),transparent);animation:btroll 7s linear infinite}
+@keyframes btroll{to{top:110%}}
 #bt-load .frame{position:absolute;inset:15px;border:1px solid rgba(255,255,255,.13);pointer-events:none}
 #bt-load .frame::before,#bt-load .frame::after{content:"";position:absolute;width:13px;height:13px;border:0 solid #aaa}
 #bt-load .frame::before{top:-1px;left:-1px;border-width:2px 0 0 2px}
 #bt-load .frame::after{bottom:-1px;right:-1px;border-width:0 2px 2px 0}
 #bt-load .center{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(420px,80vw);text-align:center}
-#bt-load .title{font-size:clamp(26px,6.4vw,54px);letter-spacing:.06em;line-height:1.4;margin-bottom:46px;
-  text-shadow:3px 3px 0 #555,6px 6px 0 rgba(0,0,0,.8)}
-#bt-load .title.glitch{text-shadow:-3px 0 #aaa,3px 0 #fff,6px 6px 0 rgba(0,0,0,.8);transform:translate(2px,-1px) skewX(-6deg)}
-#bt-load .track{height:4px;background:#2a2a2a;box-shadow:0 5px 0 #151515,0 -5px 0 #151515}
-#bt-load .fill{height:100%;width:0;background:#cfcfcf;box-shadow:0 0 10px rgba(255,255,255,.35)}
-#bt-load .pct{margin-top:26px;font-family:'VT323',monospace;font-size:clamp(20px,3.6vw,26px);letter-spacing:.3em;color:#858585}
+#bt-load canvas.title{display:block;width:100%;height:auto;image-rendering:pixelated;margin-bottom:30px}
+#bt-load .cells{display:flex;gap:3px}
+#bt-load .cells i{flex:1;height:10px;background:#252525;box-shadow:0 0 0 1px #151515}
+#bt-load .cells i.on{background:#cfcfcf;box-shadow:0 0 8px rgba(255,255,255,.3)}
+#bt-load .cells i.cur{background:#8a8a8a;animation:btblink .5s steps(2) infinite}
+@keyframes btblink{50%{background:#252525}}
+#bt-load .pct{margin-top:24px;font-family:'VT323',monospace;font-size:clamp(20px,3.6vw,26px);letter-spacing:.3em;color:#858585}
+#bt-load .msg{margin-top:6px;font-family:'VT323',monospace;font-size:clamp(15px,2.6vw,19px);letter-spacing:.25em;color:#5c5c5c;min-height:1.3em}
 #bt-load .flash{position:absolute;inset:0;background:#ededed;opacity:0;pointer-events:none}`;
         (document.head || document.documentElement).appendChild(css);
 
         const root = document.createElement('div');
         root.id = 'bt-load';
-        root.innerHTML = '<div class="grid"></div><div class="scan"></div><div class="frame"></div>' +
-            '<div class="center"><div class="title">ILLUSION</div>' +
-            '<div class="track"><div class="fill"></div></div><div class="pct">0%</div></div>' +
+        root.innerHTML = '<div class="grid"></div><div class="scan"></div><div class="roll"></div><div class="frame"></div>' +
+            '<div class="center"><canvas class="title"></canvas>' +
+            '<div class="cells">' + new Array(CELLS + 1).join('<i></i>') + '</div><div class="pct">0%</div><div class="msg"></div></div>' +
             '<div class="flash"></div>';
         document.documentElement.appendChild(root);
 
         ui = {
-            root: root, title: root.querySelector('.title'), fill: root.querySelector('.fill'),
-            pct: root.querySelector('.pct'), flash: root.querySelector('.flash')
+            root: root, title: root.querySelector('.title'), cells: Array.prototype.slice.call(root.querySelectorAll('.cells i')),
+            pct: root.querySelector('.pct'), msg: root.querySelector('.msg'), flash: root.querySelector('.flash')
         };
+        ui.draw = makeTitle(ui.title);
+        ui.draw(0);
         if (instant) {
             root.style.transition = 'none';
             root.classList.add('on');
@@ -201,27 +251,29 @@ const PRELOAD = false;        // false = le loader ne télécharge RIEN : il aff
         }
     }
 
-    // ─── Progression lissée (aucun dessin : juste la barre, le pourcentage, un petit glitch du titre) ───
-    function startScene(getProgress, onArrived, handoff) {
-        let t0 = performance.now(), last = t0, raf = 0, arrived = !!handoff;
-        let nextGlitch = 2 + Math.random() * 3, glitchUntil = 0;
-        let shown = handoff ? 1 : 0;
-        let lastPct = -1;
+    // ─── Progression : jamais en arrière, jamais 100 % avant la fin réelle ───
+    function startScene(getProgress, onArrived, handoff, getMsg) {
+        let t0 = performance.now(), last = t0, raf = 0, arrived = false;
+        let shown = 0, peak = 0, lastPct = -1, lastCells = -1, lastDraw = 0, lastMsg = '';
 
         function frame(now) {
             raf = requestAnimationFrame(frame);
             const dt = Math.min(0.1, (now - last) / 1000); last = now;
             const el = (now - t0) / 1000;
-            const real = getProgress();
-            shown = Math.min(real, shown + (1 / MIN_SECONDS) * dt * (0.6 + 0.8 * Math.sin(el * 1.3 + 1) * Math.sin(el * 1.3 + 1)));
+            peak = Math.max(peak, getProgress());
+            if (handoff && peak < 0.95) peak = Math.min(0.95, peak + 0.004 * dt);      // l'attente ne paraît jamais figée
+            shown = Math.min(peak, shown + (1 / MIN_SECONDS) * dt * (0.6 + 0.8 * Math.sin(el * 1.3 + 1) * Math.sin(el * 1.3 + 1)));
             const p = shown;
 
-            ui.fill.style.width = (p * 100).toFixed(1) + '%';
             const pct = Math.floor(p * 100);
             if (pct !== lastPct) { ui.pct.textContent = pct + '%'; lastPct = pct; }
-
-            if (el > nextGlitch) { ui.title.classList.add('glitch'); glitchUntil = el + 0.12; nextGlitch = el + 2.5 + Math.random() * 4; }
-            if (el > glitchUntil) ui.title.classList.remove('glitch');
+            const c = Math.floor(p * CELLS);
+            if (c !== lastCells) {
+                ui.cells.forEach(function (n, i) { n.className = i < c ? 'on' : (i === c && p < 0.999 ? 'cur' : ''); });
+                lastCells = c;
+            }
+            if (now - lastDraw > 45) { ui.draw(p); lastDraw = now; }
+            if (getMsg) { const m = getMsg(); if (m !== lastMsg) { ui.msg.textContent = m; lastMsg = m; } }
 
             if (!handoff && !arrived && p >= 0.999) {
                 arrived = true;
@@ -366,11 +418,33 @@ const PRELOAD = false;        // false = le loader ne télécharge RIEN : il aff
         const t0 = performance.now();
         const holds = { page: 1 };
         let released = false, lastEvent = t0, loaded = document.readyState === 'complete', smooth = 0, lastFrame = t0, avgDt = 16, lastReason = '';
-        const stop = startScene(function () { return 1; }, null, true);
+        let done = false, relCount = 0;
+        // Vraie progression (le loader ne connaît pas le total : on mesure des étapes) :
+        // page chargée 35 % + avatars/éléments prêts 35 % + plus de fichiers qui arrivent 15 % + jeu fluide 15 %. 100 % seulement à la fin.
+        const progress = function () {
+            if (done) return 1;
+            const now = performance.now();
+            const rs = document.readyState;
+            const page = loaded ? 1 : rs === 'interactive' ? 0.5 : 0.1;
+            const cur = Object.keys(holds).filter(function (k) { return k !== 'page'; }).length;
+            const hf = relCount + cur === 0 ? (loaded ? 1 : 0) : relCount / (relCount + cur);
+            const calm = Math.min(1, (now - lastEvent) / HANDOFF_SETTLE);
+            const fluid = Math.min(1, smooth / SMOOTH_FRAMES);
+            return Math.min(0.99, 0.35 * page + 0.35 * hf + 0.15 * calm + 0.15 * fluid);
+        };
+        const message = function () {
+            if (done) return 'READY';
+            if (!loaded) return 'OPENING THE DOOR';
+            const h = Object.keys(holds).filter(function (k) { return k !== 'page'; });
+            if (h.some(function (k) { return /avatar/i.test(k); })) return 'WAKING THE LOCALS';
+            if (h.length || performance.now() - lastEvent < HANDOFF_SETTLE) return 'BUILDING THE WORLD';
+            return 'FOCUSING';
+        };
+        const stop = startScene(progress, null, true, message);
 
         BT.active = function () { return !released; };
         BT.hold = function (n) { if (!released) { holds[n] = (holds[n] || 0) + 1; lastEvent = performance.now(); } };
-        BT.release = function (n) { if (holds[n] > 1) holds[n]--; else delete holds[n]; lastEvent = performance.now(); };
+        BT.release = function (n) { if (holds[n]) relCount++; if (holds[n] > 1) holds[n]--; else delete holds[n]; lastEvent = performance.now(); };
         addEventListener('load', function () { loaded = true; lastEvent = performance.now(); });
         try {
             new PerformanceObserver(function () { if (!released) lastEvent = performance.now(); }).observe({ entryTypes: ['resource'] });
@@ -387,7 +461,7 @@ const PRELOAD = false;        // false = le loader ne télécharge RIEN : il aff
         }
         function finish(forced, reason) {
             if (released) return;
-            released = true;
+            released = true; done = true;
             if (forced) console.warn('[ILLUSION] écran retiré de force après ' + ((performance.now() - t0) / 1000).toFixed(0) + ' s : ' + reason);
             ui.root.style.transition = 'opacity .6s';
             ui.root.style.opacity = '0';
@@ -412,6 +486,13 @@ const PRELOAD = false;        // false = le loader ne télécharge RIEN : il aff
     window.BTGo = function (url) {
         if (running) return;
         running = true;
+        // L'écran de chargement n'existe que pour le JEU (bouton PLAY). Menu, réglages, retour au menu : simple changement de page.
+        const toGame = /[?&]launch\b|world_base/i.test(String(url));
+        if (!toGame || !PRELOAD) {
+            if (toGame) { try { sessionStorage.setItem(HANDOFF_KEY, String(Date.now())); } catch (e) { /* tant pis */ } }
+            window.location.href = url;     // le VRAI écran de chargement s'affiche dans la page du jeu (un seul, pas de faux écran avant)
+            return;
+        }
         buildUi(false);
         let real = 0, finished = false;
         const stop = startScene(function () { return finished ? 1 : real * 0.985; }, function () {
@@ -435,6 +516,7 @@ const PRELOAD = false;        // false = le loader ne télécharge RIEN : il aff
     // Arrivée dans le jeu juste après BTGo : on garde l'écran de chargement
     try {
         const t = Number(sessionStorage.getItem(HANDOFF_KEY));
+        sessionStorage.removeItem(HANDOFF_KEY);      // à usage unique : la page suivante (menu, réglages...) n'affichera pas d'écran de chargement
         const fresh = t && Date.now() - t < HANDOFF_MAX_AGE;
         const isGame = /[?&]launch\b/.test(location.search);
         if ((fresh || isGame) && !document.getElementById('bt-load') && !/[?&]noload\b/.test(location.search)) startHandoff();
