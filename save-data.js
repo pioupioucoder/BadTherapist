@@ -32,8 +32,6 @@
         houseLights: 'bt_house_lights',   // interrupteurs de la maison d'Evelyn (therapist-house.js) : { pièce: allumée ? }
         housePos:  'bt_house_pos',        // où tu étais dans la maison d'Evelyn quand tu as quitté le jeu (therapist-house.js)
         evelyn:    'bt_evelyn_memory',    // mémoire d'Evelyn (séances : therapist-memory.js + « mind » : avatar-mind.js)
-        pluie:     'bt_pluie_memory',     // mémoire de Pluie (avatar-mind.js)
-        oliver:    'bt_oliver_memory',    // mémoire d'Oliver (avatar-mind.js). Nouvel avatar : ajoute ICI une ligne 'bt_<id>_memory'
         tv:        'bt_tv_state',         // la télé de la chambre (tv.js) : { isOn, volume, disk } = allumée ? + dernière disquette
         computer:  'bt_computer_state'    // l'ordinateur (computer.js) : compte YouTube, chaînes, dernière vidéo vue, activités récentes
     };
@@ -73,8 +71,6 @@
         houseLights: function (o) { return !!(o && typeof o === 'object' && !Array.isArray(o)); },
         housePos:    function (o) { return !!(o && typeof o === 'object' && !Array.isArray(o)); },
         evelyn: function (o) { return !!(o && typeof o === 'object' && !Array.isArray(o) && o.v); },
-        pluie:  function (o) { return !!(o && typeof o === 'object' && !Array.isArray(o)); },
-        oliver: function (o) { return !!(o && typeof o === 'object' && !Array.isArray(o)); },
         tv:     function (o) { return !!(o && typeof o === 'object' && !Array.isArray(o)); },
         computer: function (o) { return !!(o && typeof o === 'object' && !Array.isArray(o) && o.v); }
     };
@@ -162,8 +158,8 @@
         if (d.save || d.player) return true;
         const ev = parse(d.evelyn);
         if (ev && ev.sessions > 0) return true;          // Evelyn a déjà reçu le joueur
-        // un avatar (Evelyn, Pluie, Oliver...) a déjà noté ou échangé quelque chose (avatar-mind.js)
-        if (['evelyn', 'pluie', 'oliver'].some(function (f) {
+        // Evelyn a déjà noté ou échangé quelque chose (avatar-mind.js)
+        if (['evelyn'].some(function (f) {
             const o = parse(d[f]), mi = o && o.mind;
             return !!(mi && ((mi.notes && mi.notes.length) || (mi.people && Object.keys(mi.people).length)));
         })) return true;
@@ -236,7 +232,7 @@
         const book = parse(d.book);
         const eBook = parse(d.evelynBook);
         return JSON.stringify([
-            d.save || '', d.chapters || '', d.endings || '', d.gameFlags || '', d.evelyn || '', d.pluie || '', d.oliver || '',
+            d.save || '', d.chapters || '', d.endings || '', d.gameFlags || '', d.evelyn || '',
             book && Array.isArray(book.pages) ? book.pages : [],
             eBook && Array.isArray(eBook.pages) ? eBook.pages : [],
             d.houseLights || ''

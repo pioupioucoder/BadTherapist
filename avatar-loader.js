@@ -70,7 +70,7 @@ function fixClip(model, clip, label) {
         if (real && t.name.indexOf(node) === 0) t.name = real + t.name.slice(node.length);
         else bad++;
     });
-    console.log('[avatar] animation « ' + label + ' » : pistes sans os = ' + bad + '/' + clip.tracks.length + (bad ? '  (PROBLEME : les noms d\'os ne correspondent pas)' : '  (ok)'));
+    if (bad) console.warn('[avatar] animation « ' + label + ' » : ' + bad + '/' + clip.tracks.length + ' pistes sans os (les noms d\'os ne correspondent pas)');   // rien n'est écrit quand tout va bien
     return bad;
 }
 

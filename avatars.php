@@ -3,12 +3,14 @@
 header('Content-Type: application/json');
 
 $baseDir = __DIR__ . '/avatars/';
+// Seule Evelyn a un vrai avatar (FBX). Les autres PNJ sont des corps simples (engine/npc-body.js).
+$ONLY = ['evelyn'];
 $avatars = [];
 
 if (is_dir($baseDir)) {
     // Liste les dossiers dans /avatars/
     $dirs = array_filter(scandir($baseDir), function($item) use ($baseDir) {
-        return is_dir($baseDir . $item) && $item !== '.' && $item !== '..' && $item !== '_shared';
+        return is_dir($baseDir . $item) && $item !== '.' && $item !== '..' && $item !== '_shared' && in_array($item, $ONLY);
     });
 
     foreach ($dirs as $dir) {

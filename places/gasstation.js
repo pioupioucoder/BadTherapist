@@ -7,10 +7,10 @@ import { mats, box, glow, lampPost, signMaterial } from './common.js';
 // ==========================================
 // Auvent + 4 pompes (écrans qui comptent les litres) + VRAI magasin : rayons, frigo, caisse, bidons d'essence,
 // arrière-boutique avec un lit, porte qui s'ouvre, cloche au-dessus de la porte (réveille Lou).
-// Lou (avatars/lou) y travaille jour et nuit comme il veut : caisse, pompes, rangement, repos sur le tabouret, sieste dans le lit.
+// Lou (PNJ simple, fiche npcs/lou.js) y travaille jour et nuit comme il veut : caisse, pompes, rangement, repos sur le tabouret, sieste dans le lit.
 //
 // SANS API : service à la pompe (il voit la voiture arriver, vient, demande les litres, sert, encaisse) et vente à la caisse.
-// L'API (cerveau) ne sert que quand on lui PARLE d'autre chose (clic sur lui -> avatar-brain.js, comme les autres avatars).
+// Aucun cerveau ni API : il répond avec les phrases de sa fiche.
 //
 // Coordonnées : relatives au centre (PLACES.gas). La route arrive de l'ouest (z ≈ 0) ; l'auvent est au nord de la route.
 // Le magasin est à l'est de l'auvent (même emplacement qu'avant), porte au sud.
@@ -48,7 +48,7 @@ const RAYON_ORDER = ['food', 'snacks', 'drinks', 'car', 'home', 'counter', 'cans
 function slug(s) { return String(s).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, ''); }
 function fmt(n) { return (Math.round(n * 100) / 100).toFixed(2); }
 
-// Catalogue lisible par le cerveau de Lou / society.js : window.BadTherapistGas.catalog
+// Catalogue lisible par society.js : window.BadTherapistGas.catalog
 export const GAS_CATALOG = [];
 RAYON_ORDER.forEach(function (k) { RAYONS[k].items.forEach(function (it) { GAS_CATALOG.push({ id: slug(it[0]), name: it[0], price: it[1], rayon: k }); }); });
 [[5, 12], [10, 18], [20, 30]].forEach(function (c) {      // bidon d'essence rempli = bidon + essence au prix pompe majoré, facturé au rayon

@@ -17,8 +17,10 @@
 const SKIP_AVATARS = false;   // false = les avatars sont préchargés PENDANT l'écran de chargement, jamais après. true = AUCUN avatar (requêtes vers avatars/ bloquées)
 const AVATARS_ON = ['evelyn'];   // dossiers de avatars/ chargés pour l'instant. Pour en ajouter un plus tard : écris son nom ici, ex. ['evelyn', 'oliver', 'pluie'] (leon, lou, nahara, veri, violet existent aussi)
 const SKIP_VIDEOS  = true;    // true = on ne précharge pas les vidéos (la télé précharge elle-même la suivante)
+const PRELOAD = false;        // false = le loader ne télécharge RIEN : il affiche l'écran, c'est le jeu qui charge ce dont il a besoin. true = ancien comportement (tout télécharger depuis le menu)
 //
-// Diagnostic : ?perf à la fin de l'adresse (ou touche F3) = FPS ; la console affiche les blocages > 120 ms.
+// Diagnostic : ?perf à la fin de l'adresse (ou touche F3) = FPS. La console n'écrit que ce qui va mal : fichier manquant,
+// ou la RAISON pour laquelle l'écran de chargement reste affiché.
 
 (function () {
     'use strict';
@@ -26,13 +28,14 @@ const SKIP_VIDEOS  = true;    // true = on ne précharge pas les vidéos (la té
     const LIST_PHP = 'assets.php';
     const MANIFEST = 'assets-manifest.json';
     const CONCURRENCY = 6;
-    const MIN_SECONDS = 3.2;          // durée minimale de l'animation, même si tout est déjà en cache
+    const MIN_SECONDS = 1.6;          // durée minimale de l'animation du menu
     const HANDOFF_KEY = 'bt-handoff';
     const HANDOFF_MAX_AGE = 120000;
     const HANDOFF_MIN = 1.0;
-    const HANDOFF_SETTLE = 3000;
-    const HANDOFF_TIMEOUT = 120000;   // les avatars (FBX + animations) sont lourds : l'écran ne doit jamais partir avant eux
-    const SMOOTH_FRAMES = 30, SMOOTH_MS = 40;
+    const HANDOFF_SETTLE = 1200;        // calme (aucun fichier, aucun hold) avant de retirer l'écran
+    const FLUID_GIVEUP = 4000;        // si le jeu reste lent, on retire l'écran quand même après ce calme (ms)
+    const HANDOFF_TIMEOUT = 40000;    // sécurité : l'écran part de force après 40 s
+    const SMOOTH_FRAMES = 20, SMOOTH_MS = 50;   // 20 images d'affilée à plus de 20 images/s
     const FALLBACK = ['index.html', 'world_base.html', 'bedroom.js'];
     const SKIP = /(^|\/)(\.git|node_modules|\.vscode|\.idea|backups?|saves?)(\/|$)|\.(php|ps1|bat|md|psd|blend1?|zip|rar|7z|bak|log|tmp|map|sh|sql|ini)$/i;
     const AVATARS = /(^|\/)avatars?\//i;
@@ -68,7 +71,6 @@ const SKIP_VIDEOS  = true;    // true = on ne précharge pas les vidéos (la té
 
     // ─── Avatars désactivés : toute requête vers avatars/ est refusée tout de suite (404 local, rien n'est téléchargé
     //     ni analysé). Pour les réactiver : SKIP_AVATARS = false en haut du fichier, ou ouvrir le jeu avec ?avatars ───
-    console.log('[ILLUSION] loader.js chargé' + (SKIP_AVATARS ? ' (avatars bloqués)' : ''));
     // Seuls les avatars de AVATARS_ON sont chargés (le jeu entier : avatar-body.js demande tous les corps, mais ceux qui ne sont pas
     // dans la liste reçoivent un avatar vide, sans aucune requête réseau). ?avatars dans l'adresse = tous les avatars.
     const BLOCK_AVATARS = !/[?&]avatars\b/.test(location.search);
@@ -92,18 +94,9 @@ const SKIP_VIDEOS  = true;    // true = on ne précharge pas les vidéos (la té
             if (isAvatar(url)) { arguments[1] = 'data:text/plain,'; }
             return realOpen.apply(this, arguments);
         };
-        console.log('[ILLUSION] avatars désactivés (SKIP_AVATARS)');
     }
 
     // ─── Diagnostic ─────────────────────────────────────────────────
-    try {
-        new PerformanceObserver(function (l) {
-            l.getEntries().forEach(function (e) {
-                if (e.duration > 120) console.log('[ILLUSION] blocage de ' + Math.round(e.duration) + ' ms (à ' + (e.startTime / 1000).toFixed(1) + ' s)');
-            });
-        }).observe({ entryTypes: ['longtask'] });
-    } catch (e) { /* navigateur sans longtask */ }
-
     function perfHud() {
         if (document.getElementById('bt-perf')) return;
         const d = document.createElement('div');
@@ -343,6 +336,7 @@ const SKIP_VIDEOS  = true;    // true = on ne précharge pas les vidéos (la té
             if (!f.done) {
                 try {
                     const r = await fetch(urlOf(f.p), { cache: 'no-cache' });
+                    if (!r.ok) console.warn('[ILLUSION] fichier introuvable : ' + f.p + ' (' + r.status + ')');
                     if (r.ok && r.body && r.body.getReader) {
                         const rd = r.body.getReader();
                         const total = Number(r.headers.get('content-length')) || 0;
@@ -355,7 +349,7 @@ const SKIP_VIDEOS  = true;    // true = on ne précharge pas les vidéos (la té
                     } else if (r.ok) {
                         await r.arrayBuffer();
                     }
-                } catch (e) { /* un fichier manquant ne bloque jamais le chargement */ }
+                } catch (e) { console.warn('[ILLUSION] fichier non chargé : ' + f.p); }   // ne bloque jamais le chargement
             }
             doneW += w;
             onFrac(doneW / totalW);
@@ -371,7 +365,7 @@ const SKIP_VIDEOS  = true;    // true = on ne précharge pas les vidéos (la té
         buildUi(true);
         const t0 = performance.now();
         const holds = { page: 1 };
-        let released = false, lastEvent = t0, loaded = document.readyState === 'complete', smooth = 0, lastFrame = t0;
+        let released = false, lastEvent = t0, loaded = document.readyState === 'complete', smooth = 0, lastFrame = t0, avgDt = 16, lastReason = '';
         const stop = startScene(function () { return 1; }, null, true);
 
         BT.active = function () { return !released; };
@@ -382,28 +376,36 @@ const SKIP_VIDEOS  = true;    // true = on ne précharge pas les vidéos (la té
             new PerformanceObserver(function () { if (!released) lastEvent = performance.now(); }).observe({ entryTypes: ['resource'] });
         } catch (e) { /* navigateur sans resource timing */ }
 
-        function finish() {
+        // Pourquoi l'écran est encore là ? (null = rien ne le retient, il part)
+        function why(now) {
+            if (!loaded) return 'la page se charge encore';
+            const h = Object.keys(holds).filter(function (k) { return k !== 'page'; });
+            if (h.length) return 'en attente de : ' + h.join(', ');
+            if (now - lastEvent < HANDOFF_SETTLE) return 'des fichiers viennent d\'arriver';
+            if (smooth < SMOOTH_FRAMES && now - lastEvent < FLUID_GIVEUP) return 'le jeu tourne trop lentement derrière l\'écran (' + Math.round(1000 / avgDt) + ' images/s)';
+            return null;
+        }
+        function finish(forced, reason) {
             if (released) return;
             released = true;
-            console.log('[ILLUSION] écran de chargement retiré après ' + ((performance.now() - t0) / 1000).toFixed(1) + ' s');
+            if (forced) console.warn('[ILLUSION] écran retiré de force après ' + ((performance.now() - t0) / 1000).toFixed(0) + ' s : ' + reason);
             ui.root.style.transition = 'opacity .6s';
             ui.root.style.opacity = '0';
             setTimeout(function () { stop(); ui.root.remove(); ui = null; }, 700);
         }
         (function watch(now) {
             if (released) return;
-            smooth = (now - lastFrame) < SMOOTH_MS ? smooth + 1 : 0;
+            const dt = now - lastFrame;
+            if (dt > 0) avgDt = avgDt * 0.9 + Math.min(dt, 500) * 0.1;
+            smooth = dt < SMOOTH_MS ? smooth + 1 : 0;
             lastFrame = now;
-            const quiet = Object.keys(holds).filter(function (k) { return k !== 'page'; }).length === 0;
-            if (!watch.t || now - watch.t > 5000) { watch.t = now; console.log('[ILLUSION] attente écran', { loaded: loaded, holds: Object.keys(holds), fluide: smooth, calmeMs: Math.round(now - lastEvent) }); }
-            if (loaded && quiet && smooth >= SMOOTH_FRAMES && now - lastEvent >= HANDOFF_SETTLE && now - t0 >= HANDOFF_MIN * 1000) {
-                delete holds.page;
-                finish();
-                return;
-            }
+            const reason = why(now);
+            if (!reason && now - t0 >= HANDOFF_MIN * 1000) { delete holds.page; finish(false); return; }
+            // on n'écrit la raison que si l'attente dure (plus de 6 s) et seulement quand elle change
+            if (reason && now - t0 > 6000 && reason.replace(/\(.*\)/, '') !== lastReason) { lastReason = reason.replace(/\(.*\)/, ''); console.log('[ILLUSION] écran de chargement retenu : ' + reason); }
             requestAnimationFrame(watch);
         })(t0);
-        setTimeout(finish, HANDOFF_TIMEOUT);
+        setTimeout(function () { finish(true, why(performance.now()) || 'délai maximum'); }, HANDOFF_TIMEOUT);
     }
 
     // ─── Point d'entrée (menu) ──────────────────────────────────────
@@ -418,6 +420,7 @@ const SKIP_VIDEOS  = true;    // true = on ne précharge pas les vidéos (la té
             window.location.href = url;
         });
         (async function () {
+            if (!PRELOAD) return;                       // le loader ne charge rien : c'est le jeu qui charge, écran retenu par ses holds
             // 1) assets.php (XAMPP)  2) assets-manifest.json (GitHub, sans PHP)  3) analyse du code
             let files = await fromList(LIST_PHP);
             if (!files) files = await fromList(MANIFEST);

@@ -1874,6 +1874,7 @@ if (params.get('perf')) {
 }
 let perfFrames = 0, perfT = performance.now(), lastProgs = 0, prevWork = 0;
 let slowAcc = 0, slowN = 0;
+let lastLoadRender = 0;   // pendant l'écran de chargement : on ne dessine le monde que 2 fois par seconde (loader.js)
 const joyLast = {};
 function drawJoyIfChanged(id, x, y) {
   const k = x + ',' + y;
@@ -2002,7 +2003,13 @@ function animate() {
 
   const tr0 = performance.now();
   // Pendant le rêve (places/dreambedroom.js) un canvas plein écran couvre le jeu : inutile de le dessiner dessous
-  if (!(window.BadTherapistDream && window.BadTherapistDream.active)) renderer.render(scene, camera);
+  // Tant que l'écran de chargement (loader.js) est affiché, personne ne voit le monde : on ne le dessine que 2 fois par seconde
+  // (les programmes de rendu se préparent quand même, sans ralentir le chargement ni le test de fluidité du loader).
+  const loadingNow = !!(window.BTLoad && window.BTLoad.active && window.BTLoad.active());
+  if (!(window.BadTherapistDream && window.BadTherapistDream.active) && !(loadingNow && tr0 - lastLoadRender < 500)) {
+    renderer.render(scene, camera);
+    if (loadingNow) lastLoadRender = tr0;
+  }
   const tRender = performance.now() - tr0;
 
   // --- Mesure : gels, diagnostic, résolution adaptative

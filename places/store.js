@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { PLACES, SEA } from './layout.js';
 import { mats, box, glow, enterable, signMaterial, canvasTex, makeCanvas, FACE_YAW } from './common.js';
-import { loadMixamoAvatar } from '../avatar-loader.js';
 
 // ==========================================
 // BAD THERAPIST — LE MAGASIN (places/store.js)
@@ -9,7 +8,7 @@ import { loadMixamoAvatar } from '../avatar-loader.js';
 // Séparé de town.js. Contient :
 //   - le bâtiment (porte OPEN / CLOSE comme avant, id 'town-shop')
 //   - des rayons : boissons, épicerie longue conservation, conserves, snacks, hygiène, livres, vidéos
-//   - Véri, assise derrière la caisse (avatars/veri/) : Sitting / priceonebyingthings / validateprice
+//   - la caisse (Véri n'a plus d'avatar FBX : la caissière sera un PNJ simple, voir npcs/)
 //   - le panier : bouton PRENDRE devant un produit, puis PASSER EN CAISSE près du comptoir
 //   - la caisse : à chaque article, Véri joue « priceonebyingthings » + bip + ligne sur l'écran ;
 //     une seule fois à la fin « validateprice », puis le TOTAL s'affiche et on lui DONNE L'ARGENT
@@ -303,22 +302,8 @@ export function buildStore(scene, env) {
     A.root.position.set(V.x, V.y, V.z);
     A.root.rotation.y = V.yaw;
   }
-  function loadVeri(parent) {
-    const d = 'avatars/veri/';
-    loadMixamoAvatar({
-      model: d + 'veri.fbx',
-      textures: { map: d + 'texture_diffuse.png', normalMap: d + 'texture_normal.png', roughnessMap: d + 'texture_roughness.png', metalnessMap: d + 'texture_metallic.png' },
-      animations: { sit: d + 'Sitting.fbx', scan: d + 'priceonebyingthings.fbx', validate: d + 'validateprice.fbx' },
-      height: V.height
-    }).then(function (a) {
-      A = a;
-      parent.add(a.root);
-      applyVeri();
-      go('sit');
-    }).catch(function (e) {
-      console.warn('[store] Véri introuvable :', e && e.message ? e.message : e);
-    });
-  }
+  // Plus d'avatar FBX pour la caissière (ancien système retiré). A reste null : go() renvoie 0 et la caisse marche quand même.
+  function loadVeri() { /* rien */ }
 
   // ---------- caisse : séquence ----------
   function showPad(it) {

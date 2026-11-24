@@ -4,7 +4,7 @@ import { createBusStops } from '../objects/bus.js';
 // BAD THERAPIST — LA LIGNE DE BUS (engine/bus-line.js)
 // ==========================================
 // Le MÉTIER de Violet : conduire le bus (objects/bus.js) sur une ligne qui passe presque partout.
-// Comme Oliver pour le taxi, c'est un avatar libre : cerveau commun (avatar-brain.js), mémoire commune (avatar-mind.js),
+// Violet n'a plus de cerveau ni de mémoire : c'est un PNJ qui conduit le bus (fiche npcs/violet.js),
 // mêmes téléphone, SMS, messages vocaux. Ici : seulement sa ligne, ses arrêts, ses attentes et ses actions de chauffeur.
 //
 //   attachBusLine({ society, bus, net, scene, groundH, stops, lake })   // appelé une fois par outside.js
@@ -262,25 +262,6 @@ export function attachBusLine(o) {
         }
     }
     setInterval(syncNow, 500);
-
-    // ─── 9. Ce que Violet sait de sa ligne (ajouté à son prompt) ───
-    society.brains.setContext('violet', function () {
-        const names = seq.map(function (id) { return LABEL[id] || id; });
-        const L = [];
-        L.push('TA LIGNE DE BUS (ligne ' + LINE_NO + ') : tu conduis le bus et tu t\'arrêtes à chaque panneau de bus. Ordre des arrêts : ' + names.join(' > ') + '.');
-        if (onDuty()) {
-            const riders = ridersAboard().map(function (a) { return a.name; });
-            if (bus.isRiding()) riders.push(R.actor('player') ? R.actor('player').name : '?');
-            const now = st.phase === 'dwelling' ? ('tu es arrêtée à ' + (LABEL[st.stop] || st.stop) + ', portes ouvertes, départ dans environ ' + Math.max(0, Math.round(st.left)) + ' s')
-                : st.phase === 'turning' ? 'tu fais demi-tour au terminus' : 'tu roules vers ' + (LABEL[st.next] || st.next);
-            L.push('EN CE MOMENT : ' + now + '. Passagers à bord : ' + (riders.length ? riders.join(', ') : 'personne') + '.');
-            if (st.phase === 'dwelling') L.push('QUELQU\'UN PRÈS DU BUS : ' + (somebodyNear() ? 'oui' : 'non') + '. Le bus repart tout seul à la fin de l\'attente, sauf si tu choisis depart_now (partir tout de suite) ou wait_longer (attendre une minute de plus).');
-            L.push('Ta ligne se déroule toute seule : tu n\'as rien à décider à chaque arrêt. Si rien ne se passe, laisse un long délai avant de repenser (next_think_min : 10 à 20). Tu peux finir ta journée avec end_shift (tu gares le bus devant l\'immeuble).');
-        } else {
-            L.push('Tu n\'es pas en service. Le bus est à ' + (LABEL[st.stop] || st.stop) + (st.stop === 'home' ? ' (devant l\'immeuble)' : '') + '. Pour reprendre la ligne, tu dois être là où il est garé : start_bus_line.');
-        }
-        return L.join('\n');
-    });
 
     // ─── 10. Capacités ───
     society.registerCapability({

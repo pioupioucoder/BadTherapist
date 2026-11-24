@@ -84,6 +84,15 @@ export function createPhoneItem(opts) {
     function society() { return window.BadTherapistSociety || null; }
     function me() { const S = society(); return S ? S.registry.actor('player') : null; }
 
+    // Sur le téléphone, on voit le MÉTIER des PNJ, pas leur nom. Seule Evelyn garde son nom.
+    // Un nouveau PNJ : ajoute une ligne ici (ou mets jobLabel sur son acteur).
+    const JOB_LABELS = { oliver: 'Taxi driver', pluie: 'Journalist', violet: 'Bus driver', leon: 'Police', lou: 'Gas station', veri: 'Store', nahara: 'Restaurant' };
+    function shown(a) {
+        if (!a) return '?';
+        if (a.id === 'evelyn' || a.id === 'player') return a.name;
+        return a.jobLabel || JOB_LABELS[a.id] || a.name;
+    }
+
     // ─── Appel entrant : visible sur tous les onglets ───
     function renderIncoming() {
         const S = society();
@@ -91,7 +100,7 @@ export function createPhoneItem(opts) {
         S.calls.incoming('player').forEach(function (c) {
             const who = S.registry.actor(c.from);
             const box = el('div', 'bpi-item new');
-            box.appendChild(el('div', 'd', (who ? who.name.toUpperCase() : '?') + ' IS CALLING YOU'));
+            box.appendChild(el('div', 'd', (who ? shown(who).toUpperCase() : '?') + ' IS CALLING YOU'));
             box.appendChild(button('ANSWER', function () { S.calls.answer('player'); callId = c.id; tab = 'home'; sel = c.from; render(); }));
             box.appendChild(button('DECLINE', function () { S.calls.hangUp('player'); render(); }, 'bpi-play'));
             body.appendChild(box);
@@ -107,7 +116,7 @@ export function createPhoneItem(opts) {
         if (sel) {
             const who = R.actor(sel);
             body.appendChild(button('< BACK', function () { sel = null; render(); }, 'bpi-play'));
-            body.appendChild(el('div', 'bpi-num', who ? who.name : '?'));
+            body.appendChild(el('div', 'bpi-num', who ? shown(who) : '?'));
             body.appendChild(el('div', 'bpi-line', who ? who.number : ''));
             body.appendChild(button('CALL', function () { startCall(sel); }));
             body.appendChild(button('SEND A MESSAGE', function () { chatWith = sel; tab = 'msgs'; render(); }));
@@ -129,7 +138,7 @@ export function createPhoneItem(opts) {
         if (!dir.length) body.appendChild(el('div', 'bpi-empty', 'Nobody yet.'));
         dir.forEach(function (d) {
             const n = M.unread('player').filter(function (m) { return m.from === d.id; }).length;
-            body.appendChild(button(d.name.toUpperCase() + '  ' + d.number + (n ? '  (' + n + ' NEW)' : ''), function () { sel = d.id; render(); }));
+            body.appendChild(button(shown(d).toUpperCase() + '  ' + d.number + (n ? '  (' + n + ' NEW)' : ''), function () { sel = d.id; render(); }));
         });
     }
 
@@ -145,7 +154,7 @@ export function createPhoneItem(opts) {
         const c = S.calls.get(callId);
         if (!c) { callId = null; render(); return; }
         const other = R.actor(c.from === 'player' ? c.to : c.from);
-        const name = other ? other.name : '?';
+        const name = other ? shown(other) : '?';
         body.appendChild(el('div', 'bpi-num', name));
         if (c.status === 'ringing') {
             body.appendChild(el('div', 'bpi-line', 'CALLING... it rings.'));
@@ -206,7 +215,7 @@ export function createPhoneItem(opts) {
         const items = [];
         if (S) S.messaging.all().filter(function (m) { return m.to === 'player' && m.kind === 'voicemail'; }).forEach(function (m) {
             const f = S.registry.actor(m.from);
-            items.push({ at: m.at, who: f ? f.name : m.from, text: m.text, heard: m.read, play: function () { S.messaging.markRead('player', m.from); } });
+            items.push({ at: m.at, who: f ? shown(f) : m.from, text: m.text, heard: m.read, play: function () { S.messaging.markRead('player', m.from); } });
         });
         Mem.get().voicemails.forEach(function (v) {
             items.push({ at: v.at, who: 'Evelyn', text: v.text, heard: v.heard, play: function () { Mem.markHeard(v.id); } });
@@ -232,7 +241,7 @@ export function createPhoneItem(opts) {
             const box = el('div', 'bpi-item');
             box.appendChild(el('div', 'd', fmt(c.at) + '  (' + ago(c.at) + ' ago)'));
             const res = c.status === 'missed' ? (out ? 'NO ANSWER' : 'MISSED') : c.status === 'active' || c.status === 'ended' ? 'ANSWERED' : 'RINGING';
-            box.appendChild(el('div', null, (out ? 'YOU CALLED ' : 'CALLED YOU: ') + (o ? o.name.toUpperCase() : '?') + ' - ' + res));
+            box.appendChild(el('div', null, (out ? 'YOU CALLED ' : 'CALLED YOU: ') + (o ? shown(o).toUpperCase() : '?') + ' - ' + res));
             body.appendChild(box);
         });
     }
@@ -245,25 +254,25 @@ export function createPhoneItem(opts) {
         if (!chatWith) {
             R.directory().filter(function (d) { return d.id !== 'player'; }).forEach(function (d) {
                 const n = M.unread('player').filter(function (m) { return m.from === d.id && m.kind !== 'voicemail'; }).length;
-                body.appendChild(button(d.name.toUpperCase() + '  ' + d.number + (n ? '  (' + n + ' NEW)' : ''), function () { chatWith = d.id; render(); }));
+                body.appendChild(button(shown(d).toUpperCase() + '  ' + d.number + (n ? '  (' + n + ' NEW)' : ''), function () { chatWith = d.id; render(); }));
             });
             return;
         }
         const who = R.actor(chatWith);
         body.appendChild(button('< BACK', function () { chatWith = null; render(); }, 'bpi-play'));
-        body.appendChild(el('div', 'bpi-num', who ? who.name : '?'));
+        body.appendChild(el('div', 'bpi-num', who ? shown(who) : '?'));
         M.markRead('player', chatWith);
         M.thread('player', chatWith, 14).forEach(function (m) {
             const mine = m.from === 'player';
             const tag = m.kind === 'voicemail' ? ' (voice message)' : m.kind === 'call' ? ' (phone)' : m.kind === 'say' ? ' (in person)' : '';
             const box = el('div', 'bpi-item' + (mine ? '' : ' new'));
-            box.appendChild(el('div', 'd', (mine ? 'YOU' : who.name.toUpperCase()) + tag + '  ' + fmt(m.at)));
+            box.appendChild(el('div', 'd', (mine ? 'YOU' : shown(who).toUpperCase()) + tag + '  ' + fmt(m.at)));
             box.appendChild(el('div', null, m.text));
             body.appendChild(box);
         });
         chatInput = el('input', 'bpi-in');
         chatInput.type = 'text'; chatInput.maxLength = 300; chatInput.autocomplete = 'off'; chatInput.spellcheck = false;
-        chatInput.placeholder = 'Write to ' + (who ? who.name : '') + '...';
+        chatInput.placeholder = 'Write to ' + (who ? shown(who) : '') + '...';
         chatInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); sendChat(); } });
         body.appendChild(chatInput);
         body.appendChild(button('SEND', sendChat));
