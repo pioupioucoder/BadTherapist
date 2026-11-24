@@ -62,8 +62,26 @@ export function buildTV(scene, o) {
         current: null,
         bags: {},      // nom de disquette → { queue: [fichiers], last: dernier fichier joué }
         refresh() {
-            return fetch('videos.php?t=' + Date.now())
-                .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+            const getJson = url => fetch(url + '?t=' + Date.now())
+                .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
+            // En ligne il n'y a pas de PHP (le serveur renvoie le texte de videos.php) : on lit alors assets-manifest.json,
+            // déjà tenu à jour avec le reste du jeu, et on en déduit les disquettes (dossiers de videos/) et leurs vidéos.
+            const fromManifest = () => getJson('assets-manifest.json').then(m => {
+                const isVid = /\.(mp4|webm|ogv|mov|m4v)$/i, by = {}, loose = [];
+                ((m && m.files) || []).forEach(f => {
+                    const p = String((f && f.path) || '');
+                    if (!/^videos\//i.test(p) || !isVid.test(p)) return;
+                    const parts = p.split('/');
+                    if (parts.length === 2) loose.push(parts[1]);
+                    else if (parts.length === 3) (by[parts[1]] = by[parts[1]] || []).push(parts[2]);
+                });
+                const cmp = (a, b) => a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true });
+                const out = Object.keys(by).sort(cmp).map(n => ({ name: n, videos: by[n].sort(cmp) }));
+                if (loose.length) out.push({ name: '(vrac)', videos: loose.sort(cmp), root: true });
+                return { cassettes: out };
+            });
+            return getJson('videos.php')
+                .catch(fromManifest)
                 .then(data => {
                     this.cassettes = (data && data.cassettes) || [];
                     if (!this.cassettes.length) console.warn('[TV] aucune disquette trouvée dans /videos');
@@ -73,7 +91,7 @@ export function buildTV(scene, o) {
                         this.current = pick || (this.cassettes[0] && this.cassettes[0].name) || null;
                     }
                 })
-                .catch(err => console.error('[TV] videos.php illisible (XAMPP/PHP lancé ? fichier à la racine ?)', err));
+                .catch(err => console.error('[TV] liste des vidéos illisible (ni videos.php ni assets-manifest.json)', err));
         },
         find(name) { return this.cassettes.find(c => c.name === name); },
         names() { return this.cassettes.map(c => c.name); },
