@@ -38,11 +38,26 @@ export const INTERIOR_X = 1200;
 // ── Evelyn (Mixamo) : dossier avatars/evelyn/ à côté de world_base.html ──
 const AVATAR_DIR = 'avatars/evelyn/';
 const AVATAR_MODEL = 'evelyn.fbx';
+// Liste des fichiers qui EXISTENT vraiment (assets-manifest.json, réécrit par assets.php) : on ne demande jamais un fichier absent,
+// donc plus de 404 dans la console (livres pas encore écrits, images optionnelles, animations pas encore ajoutées...).
+// Si le manifest est illisible, la liste vaut null et chaque fonction garde son ancien comportement.
+let _manifestP = null;
+function manifestFiles() {
+  if (!_manifestP) {
+    _manifestP = fetch('assets-manifest.json')
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (m) { return m && Array.isArray(m.files) ? new Set(m.files.map(function (f) { return String(f && f.path); })) : null; })
+      .catch(function () { return null; });
+  }
+  return _manifestP;
+}
+
 // Animations d'Evelyn (noms réels de avatars/evelyn/). Les 2 premières suffisent pour la séance ; les autres servent à sa vie dans la maison.
+// Une animation dont le fichier n'existe pas (encore) est simplement ignorée, sans 404. Il manque Walking.fbx (Mixamo, « In Place »).
 const AVATAR_ANIMS = {
   sit: 'Sitting.fbx', sit_talk: 'Sitting Talking.fbx',
   walk: 'Walking.fbx', sleep: 'Sleeping Idle.fbx',
-  stand: 'Standing Greeting.fbx',                     // « debout » : faute d'animation « debout qui attend », on prend celle-ci
+  stand: 'Standing Idle.fbx',
   openDoor: 'OpeningDoor.fbx', closeDoor: 'ClosingDoor.fbx'
 };
 const AVATAR_ANIMS_MIN = { sit: 'Sitting.fbx', sit_talk: 'Sitting Talking.fbx' };   // secours si une des autres ne se charge pas
@@ -1031,7 +1046,14 @@ export function buildWork(parent, opts) {
     }
     return srgb(new THREE.CanvasTexture(c));
   }
-  function loadPic(mat, n) { loadInto(mat, [PIC_BASE + n + '.jpg', PIC_BASE + n + '.png', PIC_BASE + n + '.webp']); }
+  // Les tableaux sont DÉJÀ peints (artTex). Un fichier images/evelynpicN.jpg|png|webp ne remplace la peinture que s'il existe vraiment.
+  function loadPic(mat, n) {
+    manifestFiles().then(function (set) {
+      if (!set) return;                                            // manifest illisible : on garde la peinture, rien n'est demandé
+      const urls = ['.jpg', '.png', '.webp'].map(function (e) { return PIC_BASE + n + e; }).filter(function (u) { return set.has(u); });
+      if (urls.length) loadInto(mat, urls);
+    });
+  }
 
   function noticeTex() {
     const c = cv(400, 200), x = c.getContext('2d');
@@ -1342,12 +1364,15 @@ export function buildWork(parent, opts) {
     let booksPromise = null;
     function loadBooks() {
       if (booksPromise) return booksPromise;
-      const jobs = [];
-      for (let i = 0; i < BOOK_COUNT; i++) {
-        const name = BOOK_DIR + 'book' + (i < 9 ? '0' : '') + (i + 1) + '.json';
-        jobs.push(fetch(name).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }));
-      }
-      booksPromise = Promise.all(jobs).then(function (list) {
+      booksPromise = manifestFiles().then(function (set) {
+        const jobs = [];
+        for (let i = 0; i < BOOK_COUNT; i++) {
+          const name = BOOK_DIR + 'book' + (i < 9 ? '0' : '') + (i + 1) + '.json';
+          if (set && !set.has(name)) { jobs.push(Promise.resolve(null)); continue; }          // livre pas encore écrit : on ne le demande pas
+          jobs.push(fetch(name).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }));
+        }
+        return Promise.all(jobs);
+      }).then(function (list) {
         list.forEach(function (d, i) {
           const s = slots[i];
           if (!s || !d || !Array.isArray(d.pages)) return;
@@ -1648,9 +1673,13 @@ export function buildWork(parent, opts) {
     // ── avatar d'Evelyn, assise dans son fauteuil ──
     async function loadAvatar() {
       const d = AVATAR_DIR;
-      function load(list) {
+      async function load(list) {
+        const set = await manifestFiles();
         const anims = {};
-        Object.keys(list).forEach(function (k) { anims[k] = d + list[k]; });
+        Object.keys(list).forEach(function (k) {
+          const p = d + list[k];
+          if (!set || set.has(p)) anims[k] = p;                    // fichier absent du dossier : ignoré (pas de 404)
+        });
         return loadMixamoAvatar({
           model: d + AVATAR_MODEL,
           textures: {

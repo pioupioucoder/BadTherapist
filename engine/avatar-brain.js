@@ -14,6 +14,7 @@
 
 import { THERAPIST_CONFIG } from './therapist-config.js';
 import { Mind } from './avatar-mind.js';
+import { isNpc } from '../npcs/index.js';       // les PNJ n'ont aucun cerveau (voir npcs/ et engine/npc-driver.js)
 
 const textCache = {};
 async function fetchText(path) {
@@ -29,8 +30,7 @@ async function fetchText(path) {
 // (Avant : { content } et max_tokens -> le Worker lisait un message VIDE : l'avatar ne savait ni où il était ni quoi faire.)
 // Remplaçable : society.setLLM(async ({ system, user, id }) => '...texte...')
 async function defaultLLM(o) {
-    const NO_BRAIN = ['pluie', 'leon', 'violet', 'oliver'];     // Evelyn en est retirée : elle réfléchit pour de vrai
-    if (NO_BRAIN.includes(o.id)) return '{"thought":"","actions":[{"do":"wait"}]}';
+    if (isNpc(o.id)) return '{"thought":"","actions":[{"do":"wait"}]}';     // filet de sécurité : un PNJ n'appelle JAMAIS l'IA (seule Evelyn réfléchit)
     const cfg = THERAPIST_CONFIG || {};
     if (!cfg.proxyUrl) throw new Error('pas de proxyUrl dans therapist-config.js');
     const body = {
@@ -290,7 +290,7 @@ export function createBrainSystem(R, M, opts) {
 
     const api = {
         add: function (actor) {
-            if (actor.isPlayer || (actor.external && !actor.thinks)) return;
+            if (actor.isPlayer || isNpc(actor.id) || (actor.external && !actor.thinks)) return;     // PNJ : pas de cerveau, pas de mémoire
             brains.push({ actor: actor, lastRun: Date.now() - Math.random() * 60000, jitter: Math.random(), wake: false });
         },
         wake: function (actorId, fast) { brains.forEach(function (b) { if (b.actor.id === actorId) { b.wake = true; if (fast) b.fast = true; } }); },

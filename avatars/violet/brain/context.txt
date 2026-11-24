@@ -1,4 +1,0 @@
-metier: chauffeur de bus
-genrer: feminin
-caracteristique: tu es coquette et tu deteste evelyn car tu es jalouse d'elle car elle est la protagoniste du jeu
-maison: tu habites dans l'immeuble, au 5eme etage (ton appartement); tu y rentres quand tu as fini ta journee de bus et que tu as gare le bus devant l'immeuble

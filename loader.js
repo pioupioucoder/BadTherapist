@@ -395,6 +395,7 @@ const SKIP_VIDEOS  = true;    // true = on ne précharge pas les vidéos (la té
             smooth = (now - lastFrame) < SMOOTH_MS ? smooth + 1 : 0;
             lastFrame = now;
             const quiet = Object.keys(holds).filter(function (k) { return k !== 'page'; }).length === 0;
+            if (!watch.t || now - watch.t > 5000) { watch.t = now; console.log('[ILLUSION] attente écran', { loaded: loaded, holds: Object.keys(holds), fluide: smooth, calmeMs: Math.round(now - lastEvent) }); }
             if (loaded && quiet && smooth >= SMOOTH_FRAMES && now - lastEvent >= HANDOFF_SETTLE && now - t0 >= HANDOFF_MIN * 1000) {
                 delete holds.page;
                 finish();

@@ -18,36 +18,37 @@
 
 import * as THREE from 'three';
 import { loadMixamoAvatar } from '../avatar-loader.js';
+import { createNpc } from './npc-body.js';
 import { society } from './society.js';
 import { Bubbles } from './speech-bubbles.js';
+import { NPCS } from '../npcs/index.js';
 
+// Les PNJ (Oliver, Violet, Leon, Lou, Pluie...) n'ont PLUS de définition ici : tout est dans leur fiche npcs/<id>.js
+// (apparence, taille, véhicule, poste, dialogues). Seule Evelyn garde un corps FBX Mixamo.
 const DEFS = {
-    oliver: {
-        dir: 'avatars/oliver/', model: 'oliver.fbx', height: 1.78, driver: true, vehicle: 'taxi',
-        anims: { walk: 'Walking.fbx', run: 'Running.fbx', sit: 'Sitting.fbx', drive: 'Driving.fbx' }
-    },
-    violet: {
-        dir: 'avatars/violet/', model: 'violet.fbx', height: 1.66, driver: true, vehicle: 'bus',
-        anims: { walk: 'Walking.fbx', sit: 'Sitting.fbx', drive: 'Driving.fbx' }   // son dossier n'a ni Running ni Talking : « talk » retombe sur idle
-    },
-    leon: {
-        dir: 'avatars/leon/', model: 'leon.fbx', height: 1.8, driver: true, vehicle: 'police',
-        // son dossier : Driving, Entering Car, Exiting Car, Salute, SitTalking, StandingTalking, Walking (pas de Running : « run » absent = on marche)
-        anims: { walk: 'Walking.fbx', sit: 'SitTalking.fbx', drive: 'Driving.fbx', talk: 'StandingTalking.fbx', greet: 'Salute.fbx', enter: 'Entering Car.fbx', exit: 'Exiting Car.fbx' }
-    },
-    lou: {
-        dir: 'avatars/lou/', model: 'lou.fbx', height: 1.75, post: 'BadTherapistGas',
-        anims: { walk: 'Walking.fbx', run: 'Running.fbx', sit: 'Sitting.fbx', talk: 'Talking.fbx', greet: 'Standing Greeting.fbx', work: 'FuelingAndSelling.fbx', sleep: 'Sleeping.fbx' }
-    },
-    pluie: {
-        dir: 'avatars/pluie/', model: 'pluie.fbx', height: 1.68,
-        anims: { walk: 'Walking.fbx', run: 'Running.fbx', sit: 'Sitting.fbx', talk: 'Talking.fbx' }
-    },
     evelyn: {
         dir: 'avatars/evelyn/', model: 'evelyn.fbx', height: 1.7, insideAt: 'therapist_house',   // insideAt : « chez elle » = dans la maison (invisible dehors)
-        anims: { walk: 'Walking.fbx', run: 'Running.fbx', sit: 'Sitting.fbx', talk: 'Talking.fbx' }   // noms EXACTS (majuscules comprises : GitHub Pages les distingue)
+        // noms EXACTS (majuscules comprises : GitHub Pages les distingue). Une animation dont le fichier n'existe pas (encore) est ignorée sans 404.
+        anims: { walk: 'Walking.fbx', run: 'Running.fbx', sit: 'Sitting.fbx', talk: 'Standing Talking.fbx' }
     }
 };
+Object.keys(NPCS).forEach(function (id) {
+    const sh = NPCS[id];
+    DEFS[id] = { height: sh.height || 1.75, look: sh.look || {}, driver: !!sh.vehicle, vehicle: sh.vehicle || null, post: sh.post || null, anims: {} };
+});
+
+// Fichiers qui existent vraiment (assets-manifest.json, réécrit par assets.php) : on ne demande jamais un fichier absent (pas de 404).
+let _manifestP = null;
+function manifestSet() {
+    if (!_manifestP) {
+        _manifestP = fetch('assets-manifest.json')
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (m) { return m && Array.isArray(m.files) ? new Set(m.files.map(function (f) { return String(f && f.path); })) : null; })
+            .catch(function () { return null; });
+    }
+    return _manifestP;
+}
+
 const WALK_CHASE = 1.8;       // m/s : quand il a un nouveau point de repos à rejoindre
 const SEE_PLAYER = 10;        // il se tourne vers toi à moins de 10 m
 const FAR_NO_ANIM = 160;      // au-delà, on ne calcule plus l'animation
@@ -105,18 +106,35 @@ export function createBodies(scene, o) {
     window.addEventListener('click', onClick);
 
     function load(id, def) {
+        const simple = id !== 'evelyn';          // tout le monde sauf Evelyn est un PNJ léger
+        // personnage léger : pas d'animation de montée / descente de voiture, il apparaît et disparaît simplement
+        if (simple) def = Object.assign({}, def, { anims: {} });
         const b = { id: id, def: def, a: null, grp: new THREE.Group(), cur: '', seated: null, x: null, z: null, heading: 0 };
         b.grp.visible = false;
         scene.add(b.grp);
         bodies[id] = b;
-        const d = def.dir, an = {};
-        Object.keys(def.anims).forEach(function (k) { an[k] = d + def.anims[k]; });
-        loadMixamoAvatar({
-            model: d + def.model,
-            textures: { map: d + 'texture_diffuse.png', normalMap: d + 'texture_normal.png', roughnessMap: d + 'texture_roughness.png', metalnessMap: d + 'texture_metallic.png' },
-            animations: an,
-            modelAnimation: 'idle',      // l'idle = l'animation contenue dans le .fbx du personnage lui-même
-            height: def.height
+        if (simple) {
+            b.a = createNpc({ height: def.height, look: def.look });
+            const sheet = NPCS[id];
+            if (sheet && typeof sheet.customize === 'function') { try { sheet.customize(b.a, THREE); } catch (e) { console.warn('[npc ' + id + '] customize :', e); } }
+            b.grp.add(b.a.root);
+            play(b, 'idle');
+            return;
+        }
+        const d = def.dir;
+        manifestSet().then(function (set) {
+            const an = {};
+            Object.keys(def.anims).forEach(function (k) {
+                const p = d + def.anims[k];
+                if (!set || set.has(p)) an[k] = p;          // fichier absent du dossier : ignoré
+            });
+            return loadMixamoAvatar({
+                model: d + def.model,
+                textures: { map: d + 'texture_diffuse.png', normalMap: d + 'texture_normal.png', roughnessMap: d + 'texture_roughness.png', metalnessMap: d + 'texture_metallic.png' },
+                animations: an,
+                modelAnimation: 'idle',      // l'idle = l'animation contenue dans le .fbx du personnage lui-même
+                height: def.height
+            });
         }).then(function (a) {
             b.a = a;
             b.grp.add(a.root);
@@ -289,7 +307,7 @@ export function createBodies(scene, o) {
 
             // 5. animation
             if (dp < FAR_NO_ANIM) {
-                play(b, moving ? 'walk' : (actor.speakingUntil > now ? 'talk' : 'idle'));
+                play(b, moving ? 'walk' : (actor.greetUntil > now ? 'greet' : (actor.speakingUntil > now ? 'talk' : 'idle')));
                 a.update(dt);
             }
             bubbleAt(b, true);

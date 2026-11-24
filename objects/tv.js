@@ -698,15 +698,35 @@ export function buildTV(scene, o) {
             function loadBooks() {
                 const out = [];
                 function done() { bookDefs = out; spineCache = {}; rebuildTable(order.length); }
-                (function next(n) {
-                    if (n > BOOKS_MAX) { done(); return; }
-                    const url = BOOKS_DIR + 'book' + (n < 10 ? '0' + n : n) + '.json?t=' + Date.now();
-                    fetch(url).then(r => {
-                        if (!r.ok) { done(); return; }
-                        return r.json().then(d => { out.push(d); next(n + 1); },
-                            e => { console.warn('[Livres] JSON invalide :', url, e); next(n + 1); });
-                    }).catch(done);
-                })(1);
+                // Ancienne méthode : essayer book01, book02… jusqu'au premier absent (génère un 404 dans la console à la fin)
+                function probe() {
+                    (function next(n) {
+                        if (n > BOOKS_MAX) { done(); return; }
+                        const url = BOOKS_DIR + 'book' + (n < 10 ? '0' + n : n) + '.json?t=' + Date.now();
+                        fetch(url).then(r => {
+                            if (!r.ok) { done(); return; }
+                            return r.json().then(d => { out.push(d); next(n + 1); },
+                                e => { console.warn('[Livres] JSON invalide :', url, e); next(n + 1); });
+                        }).catch(done);
+                    })(1);
+                }
+                // Méthode propre : assets-manifest.json liste les livres qui existent, on ne demande que ceux-là (aucun 404)
+                fetch('assets-manifest.json?t=' + Date.now())
+                    .then(r => (r.ok ? r.json() : null)).catch(() => null)
+                    .then(m => {
+                        const re = /^json\/livredebedroom\/(book\d+\.json)$/i;
+                        const names = (m && Array.isArray(m.files))
+                            ? m.files.map(f => { const x = re.exec(String((f && f.path) || '')); return x ? x[1] : null; }).filter(Boolean).sort()
+                            : [];
+                        if (!names.length) { probe(); return; }
+                        (function nextName(i) {
+                            if (i >= names.length || i >= BOOKS_MAX) { done(); return; }
+                            const url = BOOKS_DIR + names[i] + '?t=' + Date.now();
+                            fetch(url).then(r => (r.ok ? r.json() : null))
+                                .then(d => { if (d) out.push(d); nextName(i + 1); })
+                                .catch(() => nextName(i + 1));
+                        })(0);
+                    });
             }
 
             function rebuildTable(n) {

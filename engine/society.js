@@ -20,6 +20,7 @@ import { createBrainSystem } from './avatar-brain.js';
 import { THERAPIST_CONFIG } from './therapist-config.js';
 import { Mind } from './avatar-mind.js';
 import { Mem } from './therapist-memory.js';
+import { startNpcs } from './npc-driver.js';       // PNJ sans IA : réponses, bavardage et routine tirés de npcs/<id>.js
 
 const PLAYER_NAME = 'Chippy';      // le prénom de ton personnage : change-le ici, nulle part ailleurs
 const hasDom = typeof document !== 'undefined';
@@ -618,6 +619,7 @@ function create() {
         run: function (actor, a) { const r = api.blocks.unblock(actor.id, a.to); return r.ok ? 'You unblocked them.' : r.error; }
     });
     brains.start();
+    startNpcs(R, M);
     return api;
 }
 
