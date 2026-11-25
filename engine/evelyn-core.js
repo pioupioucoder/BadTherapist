@@ -3,12 +3,13 @@
 // Sections (dans l'ordre) :
 //   1. THERAPIST_CONFIG   réglages techniques (URL du Worker Cloudflare, rythme de réflexion, quotas)
 //   2. EVELYN_CORE        QUI elle est : monde, personnalité, but profond, règle de réponse  <- c'est ici que tu changes son caractère
-//   3. Mem                ancienne mémoire de thérapeute (répondeur, appels, agenda) : conservée, plus relue (voir readOldTherapistMemory)
 //   4. Mind               mémoire vivante commune (notes, pensées, envies...) + nettoyage de l'ancienne mémoire obsédée (purge)
 //   5. createBrainSystem  le cerveau : prompt, perception, actions
 //   6. createAutonomy     sa vie propre : pulsions (explorer, jouer, bouger) qui la réveillent
 //   7. startEvelynCloud   le Worker Cloudflare : elle continue de vivre quand le jeu est fermé
-//   8. createEvelynLife   synchronisation « vie » (désactivée par défaut : lifeEnabled false)
+//   9. createPlayerWatch  ce qu'elle observe du joueur (aucun appel IA)  (ex- player-watch.js)
+//  10. createBrainLog     journal de ses réflexions, téléchargeable (Ctrl+Alt+B)  (ex- brain-log.js)
+//  11. createEvelynBody   son CORPS 3D dans la rue (modèle, animations, bulle, marche, immeuble)  (ex- avatar-body.js)
 //
 // Les anciens fichiers (therapist-config.js, therapist-memory.js, avatar-mind.js, avatar-brain.js, avatar-autonomy.js,
 // evelyn-cloud.js, life-sync.js) ne contiennent plus qu'UNE ligne qui renvoie ici : ils servent uniquement à ne pas casser
@@ -28,7 +29,7 @@ const { THERAPIST_CONFIG } = (function () {
 //
 // OÙ METTRE QUOI :
 //   - Qui est Evelyn, comment elle parle, son but, ce qu'elle sait du monde : ce fichier (bloc EVELYN_CORE, plus bas)
-//   - Sa mémoire : automatique (sections Mem et Mind plus bas), exportée avec la sauvegarde du jeu.
+//   - Sa mémoire : automatique (section Mind plus bas), exportée avec la sauvegarde du jeu.
 //   - La CLÉ : uniquement dans la variable Cloudflare GROK_KEY (et GROK_KEY2, 3, 4). JAMAIS dans ce fichier ni dans un message.
 //
 // ⚠ Tout ce qui est dans le jeu (GitHub Pages) est lisible par n'importe qui.
@@ -78,13 +79,9 @@ const EVELYN_CORE = {
 
     // true : au premier chargement de chaque profil (joueur, admin), son ancienne tête obsédée (notes, pensées, envies, humeur,
     //        habitudes, fiches des gens) est effacée, après une sauvegarde téléchargée (evelyn-mind-backup.json), et le cloud est remis à zéro.
-    //        Ne touche PAS à l'ancienne mémoire de thérapeute (répondeur, appels, agenda). Se fait UNE seule fois par profil.
+    //        Se fait UNE seule fois par profil.
     // false : ne fait rien.
     purgeOldMind: true,
-
-    // false : Evelyn ne relit plus l'ancienne mémoire de thérapeute (répondeur, appels, agenda), mais elle n'est PAS effacée
-    //         (elle reste dans bt_evelyn_memory : voicemails, leftMsgs, callLog, nextCall...). true : elle la relit.
-    readOldTherapistMemory: false,
 
     // ─── Le monde, tel que tous les habitants le savent ───
     world: [
@@ -146,811 +143,6 @@ const EVELYN_CORE = {
     replyRule: ' Reply to what they MEANT, in your own words, in a friendly and witty tone, and add something of your own (an opinion, a feeling, a joke, a question back, something you noticed). Never repeat or rephrase their sentence back to them, never answer with a threat or a riddle, and do not ask anyone else to do what you can do yourself.'
 };
 
-
-// ═══════════════════════════════════════════════════════════════════════════
-// 3. Mem – ancienne mémoire de thérapeute (conservée, plus relue)  (ex- therapist-memory.js)
-// ═══════════════════════════════════════════════════════════════════════════
-const { Mem } = (function () {
-// therapist-memory.js – la MÉMOIRE d'Evelyn.
-//
-// Evelyn tient ses propres notes : ce qu'elle retient du joueur, ses pensées secrètes, ce qu'elle veut,
-// SES habitudes (sa façon d'être, qu'elle peut changer), comment elle se voit, un résumé de votre histoire,
-// et son agenda : quand elle compte rappeler le patient. C'est ELLE qui décide quoi écrire ou effacer
-// (l'IA renvoie des « opérations mémoire » à chaque réponse, voir therapist-ai.js).
-//
-// Où c'est stocké : dans la sauvegarde du jeu (save-data.js), clé « evelyn » : exactement comme la
-// position du joueur ou le journal. Profil joueur et profil admin sont séparés, EXPORT / IMPORT /
-// RESET DATA / fichier poussé dans json/ la prennent en compte, sans rien d'autre à faire.
-
-const KEY = 'bt_evelyn_memory';      // même clé que KEYS.evelyn dans save-data.js (c'est lui qui gère les profils)
-
-// Plafonds de SÉCURITÉ seulement (le cloud n'est pas le souci : save-data.js compresse et découpe en morceaux ; c'est le localStorage local, ~5 Mo partagés avec le reste du jeu, qu'on protège) : en pratique elle n'y touche pas.
-// Ce qu'elle voit à chaque réponse n'est pas limité par eux mais par WINDOW (plus bas) : comme un humain, elle n'a pas
-// tous ses souvenirs en tête en même temps ; elle relit ceux qu'elle choisit (memory.recall) ou qui lui reviennent.
-const CAP = {
-    facts: 1500, factLen: 300,
-    secrets: 1500, secretLen: 300,
-    thoughts: 1500, thoughtLen: 400,
-    will: 8, willLen: 240,
-    habits: 20, habitLen: 240,
-    feelingLen: 240, nameLen: 40,
-    selfLen: 600,
-    summaryLen: 3000, lastLen: 800,
-    pending: 40, pendingLen: 400,
-    callNoteLen: 240,
-    episodes: 20, episodeLines: 40, episodeLen: 300      // les dernières conversations, mot pour mot
-};
-// Ce qui est mis devant ses yeux à chaque réponse (le reste est archivé, jamais perdu)
-const WINDOW = { facts: 18, secrets: 8, thoughts: 6, recalled: 10, lastLines: 8 };
-
-let timeScale = 1;     // 1 = heures réelles ; 0.02 pour tester (1 h ≈ 1 min). Réglé par therapist-config.js
-
-const txt = function (v, n) {
-    return typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, n) : '';
-};
-const today = function () { return new Date().toISOString().slice(0, 10); };
-const asArray = function (v) {
-    return Array.isArray(v) ? v : (typeof v === 'string' && v ? [v] : []);
-};
-
-// L'IA recopie parfois le format de son prompt (« [f3] … (2026-11-08) ») : on le retire
-function noteText(v, n) {
-    let t = txt(v, n + 60);
-    t = t.replace(/^(\[[fp]\d+\]\s*)+/i, '').replace(/\s*\(\d{4}-\d{2}-\d{2}\)\s*$/, '').trim();
-    return t.slice(0, n);
-}
-// Empreinte d'une note : sert à repérer les doublons (« … it » et « … it. » sont la même note)
-function sig(t) {
-    const s = t.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').replace(/\s+/g, ' ').trim();
-    return s || t.toLowerCase();
-}
-// Deux notes qui disent la même chose avec d'autres mots (« Rappel dans 24 h pour… » / « Rappeler dans 24 h pour… »)
-function tokens(t) {
-    return sig(String(t || '')).split(' ').filter(function (w) { return w.length > 2; });
-}
-function similar(a, b) {
-    const A = tokens(a), B = tokens(b);
-    if (A.length < 3 || B.length < 3) return false;
-    const SB = {};
-    B.forEach(function (w) { SB[w] = true; });
-    const SA = {};
-    A.forEach(function (w) { SA[w] = true; });
-    let inter = 0;
-    Object.keys(SA).forEach(function (w) { if (SB[w]) inter++; });
-    const uni = Object.keys(SA).length + Object.keys(SB).length - inter;
-    return uni > 0 && inter / uni >= 0.6;
-}
-// Une habitude doit être une vraie phrase (pas « default_style »)
-function isHabit(t) {
-    return typeof t === 'string' && t.length >= 12 && /\s/.test(t) && !/^[a-z0-9_\-]+$/i.test(t);
-}
-
-function blank() {
-    return {
-        v: 1,
-        updatedAt: 0,
-        sessions: 0,
-        calls: 0,
-        lastCallAt: 0,
-        missed: 0,        // appels d'Evelyn restés sans réponse (remis à 0 quand il décroche)
-        dialed: 0,        // fois où le patient l'a appelée lui-même
-        price: '',        // tarif négocié avec le patient (vide = pas encore fixé)
-        callAttempts: 0,  // fois où elle lui a parlé au téléphone (ou lui à elle) : sert au tout premier contact
-        lastSeenAt: 0,    // dernière fois (heure réelle) où le patient était dans le jeu
-        voicemails: [],   // [{ id, at, text, heard }]  messages vocaux qu'ELLE lui a laissés
-        leftMsgs: [],     // [{ at, text, read }]       messages que LUI lui a laissés sur son répondeur
-        callLog: [],      // [{ at, dir: 'in'|'out', res }]  in = elle l'appelle, out = il l'appelle
-        firstMet: '',
-        lastSeen: '',
-        playerName: '',
-        facts: [],        // [{ text, at }]  ce qu'elle retient du joueur
-        secrets: [],      // [{ text, at }]  ses pensées à elle (le joueur ne les voit pas en jeu)
-        thoughts: [],     // [{ text, at }]  son monologue intérieur (journal, jamais dit à voix haute)
-        recallQ: [],      // [string]        mots-clés qu'elle a voulu relire dans ses souvenirs
-        episodes: [],     // [{ at, kind:'call'|'session', lines:[{ r:'u'|'e', t }] }]  les dernières conversations, mot pour mot
-        will: [],         // [string]        ce qu'elle veut
-        habits: [],       // [string]        SES règles à elle : façon de parler / d'être qu'elle a choisie
-        self: '',         // comment elle se voit en ce moment (elle la réécrit au fil des séances)
-        feeling: '',
-        summary: '',      // l'histoire de vos séances
-        lastSession: '',
-        nextCall: null,   // { dueAt, note } : quand elle compte rappeler le patient
-        pending: []       // [{ role, text }] séance en cours, pas encore résumée
-    };
-}
-
-function noteList(arr, max, len) {
-    const seen = {};
-    const out = [];
-    asArray(arr).forEach(function (x) {
-        const raw = typeof x === 'string' ? { text: x, at: '' } : (x && typeof x === 'object' ? x : null);
-        if (!raw) return;
-        const t = noteText(raw.text, len);
-        if (!t) return;
-        const k = sig(t);
-        if (seen[k]) return;
-        seen[k] = true;
-        out.push({ text: t, at: txt(raw.at, 10) });
-    });
-    return out.slice(-max);
-}
-
-// Nettoie tout ce qui vient de l'extérieur (fichier importé, localStorage modifié à la main, ancienne version)
-function clean(raw) {
-    const m = blank();
-    if (!raw || typeof raw !== 'object') return m;
-    m.updatedAt = Number(raw.updatedAt) || 0;
-    m.sessions = Math.max(0, Math.min(9999, Math.floor(Number(raw.sessions)) || 0));
-    m.calls = Math.max(0, Math.min(9999, Math.floor(Number(raw.calls)) || 0));
-    m.lastCallAt = Number(raw.lastCallAt) || 0;
-    m.missed = Math.max(0, Math.min(999, Math.floor(Number(raw.missed)) || 0));
-    m.dialed = Math.max(0, Math.min(9999, Math.floor(Number(raw.dialed)) || 0));
-    m.price = txt(raw.price, 60);
-    m.callAttempts = Math.max(0, Math.min(9999, Math.floor(Number(raw.callAttempts)) || 0));
-    m.lastSeenAt = Number(raw.lastSeenAt) || 0;
-    m.voicemails = asArray(raw.voicemails).filter(function (x) { return x && typeof x === 'object'; }).map(function (x) {
-        return { id: txt(x.id, 40), at: Number(x.at) || 0, text: txt(x.text, 600), heard: x.heard === true };
-    }).filter(function (x) { return x.text; }).slice(-100);
-    m.leftMsgs = asArray(raw.leftMsgs).filter(function (x) { return x && typeof x === 'object'; }).map(function (x) {
-        return { at: Number(x.at) || 0, text: txt(x.text, 300), read: x.read === true };
-    }).filter(function (x) { return x.text; }).slice(-50);
-    m.callLog = asArray(raw.callLog).filter(function (x) { return x && typeof x === 'object'; }).map(function (x) {
-        return { at: Number(x.at) || 0, dir: x.dir === 'out' ? 'out' : 'in', res: txt(x.res, 20) };
-    }).slice(-100);
-    m.firstMet = txt(raw.firstMet, 10);
-    m.lastSeen = txt(raw.lastSeen, 10);
-    m.playerName = txt(raw.playerName, CAP.nameLen);
-    // (l'IA a parfois rangé une pensée « [p3] … » parmi les faits : on la remet avec ses pensées secrètes)
-    const isSecret = function (x) { return /^\s*\[p\d+\]/i.test(typeof x === 'string' ? x : (x && x.text) || ''); };
-    const rawFacts = asArray(raw.facts);
-    m.facts = noteList(rawFacts.filter(function (x) { return !isSecret(x); }), CAP.facts, CAP.factLen);
-    m.secrets = noteList(asArray(raw.secrets).concat(rawFacts.filter(isSecret)), CAP.secrets, CAP.secretLen);
-    m.thoughts = noteList(raw.thoughts, CAP.thoughts, CAP.thoughtLen);
-    m.episodes = asArray(raw.episodes).filter(function (x) { return x && typeof x === 'object'; }).map(function (x) {
-        return {
-            at: Number(x.at) || 0,
-            kind: x.kind === 'call' ? 'call' : 'session',
-            lines: asArray(x.lines).filter(function (l) { return l && typeof l === 'object'; }).map(function (l) {
-                return { r: l.r === 'u' ? 'u' : 'e', t: txt(l.t, CAP.episodeLen) };
-            }).filter(function (l) { return l.t; }).slice(-CAP.episodeLines)
-        };
-    }).filter(function (x) { return x.lines.length; }).slice(-CAP.episodes);
-    m.recallQ = asArray(raw.recallQ).map(function (x) { return txt(x, 40); }).filter(Boolean).slice(0, 5);
-    m.will = asArray(raw.will).map(function (x) { return txt(x, CAP.willLen); }).filter(Boolean).slice(0, CAP.will);
-    m.habits = asArray(raw.habits).map(function (x) { return txt(x, CAP.habitLen); }).filter(isHabit).slice(0, CAP.habits);
-    m.self = txt(raw.self, CAP.selfLen);
-    m.feeling = txt(raw.feeling, CAP.feelingLen);
-    m.summary = txt(raw.summary, CAP.summaryLen);
-    m.lastSession = txt(raw.lastSession, CAP.lastLen);
-    const nc = raw.nextCall;
-    if (nc && typeof nc === 'object' && Number(nc.dueAt) > 0) {
-        m.nextCall = { dueAt: Number(nc.dueAt), note: txt(nc.note, CAP.callNoteLen) };
-    }
-    m.pending = asArray(raw.pending).map(function (x) {
-        return x && typeof x === 'object'
-            ? { role: x.role === 'user' ? 'user' : 'model', text: txt(x.text, CAP.pendingLen) }
-            : { role: 'model', text: '' };
-    }).filter(function (x) { return x.text; }).slice(-CAP.pending);
-    return m;
-}
-
-let cache = null, cacheRaw = null;
-
-// ─── Pont vers la mémoire commune des avatars (avatar-mind.js) ───
-// Les faits, pensées secrètes, volonté, habitudes, sentiment... d'Evelyn vivent maintenant dans Mind, comme pour Oliver et Pluie.
-// Mem ne garde que ce qui est propre à son métier : séances, appels, répondeur, agenda, tarif, résumé de votre histoire.
-let mindHooked = false;
-function mind() {
-    let M = null;
-    try { M = (typeof window !== 'undefined' && window.BadTherapistMind) || null; } catch (e) { M = null; }
-    if (!M || typeof M.apply !== 'function') return null;
-    if (!mindHooked) {
-        mindHooked = true;
-        try {
-            M.addLegacy('evelyn', function (h) { return promptBlock(h); });      // ce qui reste de Mem (agenda, répondeur...) s'ajoute à son prompt
-            migrateToMind(M);
-        } catch (e) { console.warn('[Mem] migration vers Mind impossible :', e && e.message || e); }
-    }
-    return M;
-}
-
-// Une seule fois : recopie ses anciennes notes dans Mind (sans rien effacer chez Mind), puis vide les champs d'ici.
-function migrateToMind(M) {
-    const m = get();
-    if (!(m.facts.length || m.secrets.length || m.thoughts.length || m.will.length || m.habits.length || m.self || m.feeling || m.recallQ.length || m.summary || m.lastSession || m.episodes.length)) return;
-    const cur = JSON.parse(JSON.stringify(M.get('evelyn')));
-    let n = Math.max(1, Number(cur.n) || 1);
-    const addTo = function (listName, items, prefix) {
-        items.forEach(function (x) {
-            const t = x.text;
-            if (!t || cur[listName].some(function (y) { return String(y.t).toLowerCase() === t.toLowerCase(); })) return;
-            cur[listName].push({ id: prefix + (n++), t: t, at: Date.parse(x.at) || Date.now() });
-        });
-    };
-    addTo('notes', m.facts, 'n');
-    addTo('secrets', m.secrets, 'p');
-    m.thoughts.forEach(function (x) {
-        if (x.text && !cur.thoughts.some(function (y) { return y.t === x.text; })) cur.thoughts.push({ t: x.text, at: Date.parse(x.at) || Date.now() });
-    });
-    if (!cur.will.length && m.will.length) cur.will = m.will.slice();
-    if (!cur.habits.length && m.habits.length) cur.habits = m.habits.slice();
-    if (!cur.self && m.self) cur.self = m.self;
-    if (!cur.feeling && m.feeling) cur.feeling = m.feeling;
-    if (!cur.recallQ.length && m.recallQ.length) cur.recallQ = m.recallQ.slice();
-    cur.n = n;
-    // Votre histoire avec le patient : elle devient SA fiche de la personne, comme chez Oliver et Pluie
-    if (m.summary || m.lastSession || m.episodes.length) {
-        const p = cur.people.player || (cur.people.player = { name: m.playerName || 'player', at: 0, count: 0, summary: '', last: '', since: 0, lines: [] });
-        if (m.playerName) p.name = m.playerName;
-        if (!p.summary && m.summary) p.summary = m.summary.slice(0, 1500);
-        if (!p.last && m.lastSession) p.last = m.lastSession.slice(0, 500);
-        if (!p.lines.length) {
-            const ls = [];
-            m.episodes.forEach(function (ep) {
-                ep.lines.forEach(function (l) { ls.push({ d: l.r === 'u' ? 'in' : 'out', k: ep.kind === 'call' ? 'call' : 'say', t: l.t, at: ep.at }); });
-            });
-            p.lines = ls.slice(-40);
-            if (ls.length) { p.at = Math.max(p.at || 0, ls[ls.length - 1].at); p.count += ls.length; }
-        }
-    }
-    M.importAll({ evelyn: cur });
-    const m2 = get();          // le stockage a changé (Mind a écrit) : on relit, puis on vide les anciens champs
-    m2.facts = []; m2.secrets = []; m2.thoughts = []; m2.will = []; m2.habits = []; m2.self = ''; m2.feeling = ''; m2.recallQ = []; m2.summary = ''; m2.lastSession = ''; m2.episodes = [];
-    save();
-}
-
-// A-t-elle déjà retenu quelque chose ? (sert à savoir si c'est une vraie première rencontre)
-function hasNotes() {
-    const M = mind();
-    if (M) { try { const s = M.get('evelyn'); if (s.notes.length || (s.people.player && s.people.player.summary)) return true; } catch (e) { /* rien */ } }
-    return get().facts.length > 0;
-}
-
-// Tout ce qu'Evelyn relit : sa mémoire commune (Mind) + ce qui reste propre à son métier (promptBlock)
-function fullPrompt(hint) {
-    const M = mind();
-    if (!M) return promptBlock(hint);
-    try { return M.promptBlock('evelyn', { hint: hint, withId: 'player' }); } catch (e) { return promptBlock(hint); }
-}
-
-// Relit toujours le stockage : si save-data.js a importé / remis à zéro la sauvegarde entre-temps, on le voit
-function get() {
-    let raw = null;
-    try { raw = localStorage.getItem(KEY); } catch (e) { raw = null; }
-    if (cache && raw === cacheRaw) return cache;
-    let obj = null;
-    try { obj = JSON.parse(raw || 'null'); } catch (e) { obj = null; }
-    cache = clean(obj);
-    cacheRaw = raw;
-    return cache;
-}
-
-function save() {
-    const m = get();
-    m.updatedAt = Date.now();
-    // Même clé que la mémoire d'avatar (avatar-mind.js) : on garde son champ « mind » tel qu'il est dans le stockage, on ne l'efface JAMAIS.
-    let mind = null;
-    try { const cur = JSON.parse(localStorage.getItem(KEY) || 'null'); if (cur && typeof cur === 'object' && cur.mind) mind = cur.mind; } catch (e) { /* rien */ }
-    const str = JSON.stringify(mind ? Object.assign({}, m, { mind: mind }) : m);
-    try { localStorage.setItem(KEY, str); cacheRaw = str; } catch (e) { /* stockage plein : tant pis */ }
-}
-
-// ─── Les notes d'Evelyn ─────────────────────────────────────────────
-
-function addNote(list, text, max, len) {
-    const t = noteText(text, len);
-    if (!t) return false;
-    const k = sig(t);
-    if (list.some(function (n) { return sig(n.text) === k || similar(n.text, t); })) return false;
-    list.push({ text: t, at: today() });
-    while (list.length > max) list.shift();      // les plus vieilles notes s'effacent d'elles-mêmes
-    return true;
-}
-
-// ops = { remember:[], forget:[], private:[], will:[]|null, habits:[]|null, self:''|null, feeling:''|null, player_name:''|null }
-// Ce sont les décisions d'Evelyn. On valide tout : elle écrit dans son fichier, pas ailleurs.
-function applyOps(ops) {
-    if (!ops || typeof ops !== 'object') return false;
-    const M = mind();            // avant get() : la 1re fois, mind() peut migrer et réécrire le stockage
-    const m = get();
-    let changed = false;
-
-    if (M) {
-        // Sa mémoire est celle de tous les avatars (Mind) : même code, mêmes champs. Ici ne reste que le prénom du patient.
-        if (typeof ops.player_name === 'string' && txt(ops.player_name, CAP.nameLen)) {
-            m.playerName = txt(ops.player_name, CAP.nameLen);
-            save();                                  // d'abord Mem, puis Mind : chacun relit le stockage de l'autre avant d'écrire
-            changed = true;
-        }
-        const o = {};
-        if (ops.remember !== undefined && ops.remember !== null) o.remember = asArray(ops.remember);
-        if (ops.forget !== undefined && ops.forget !== null) o.forget = asArray(ops.forget);
-        if (ops.private !== undefined && ops.private !== null) o.private = asArray(ops.private);
-        if (Array.isArray(ops.will)) o.will = ops.will;
-        if (Array.isArray(ops.habits)) o.habits = ops.habits;
-        if (Array.isArray(ops.recall)) o.recall = ops.recall;
-        ['self', 'feeling', 'thought'].forEach(function (k) { if (typeof ops[k] === 'string') o[k] = ops[k]; });
-        if (Object.keys(o).length) { M.apply('evelyn', o); changed = true; }
-        return changed;
-    }
-
-    // 1. Oublier (par id « f3 » / « p2 » comme dans son prompt, ou par bout de texte ≥ 4 caractères)
-    const deadF = {}, deadP = {};
-    asArray(ops.forget).forEach(function (q) {
-        const t = txt(q, 200);
-        if (!t) return;
-        const mm = /^\[?([fp])(\d{1,3})\]?$/i.exec(t);
-        if (mm) { (mm[1].toLowerCase() === 'f' ? deadF : deadP)[Number(mm[2]) - 1] = true; return; }
-        if (t.length < 4) return;
-        const low = t.toLowerCase();
-        m.facts.forEach(function (n, i) { if (n.text.toLowerCase().indexOf(low) !== -1) deadF[i] = true; });
-        m.secrets.forEach(function (n, i) { if (n.text.toLowerCase().indexOf(low) !== -1) deadP[i] = true; });
-    });
-    if (Object.keys(deadF).length) { m.facts = m.facts.filter(function (_, i) { return !deadF[i]; }); changed = true; }
-    if (Object.keys(deadP).length) { m.secrets = m.secrets.filter(function (_, i) { return !deadP[i]; }); changed = true; }
-
-    // 2. Retenir
-    asArray(ops.remember).forEach(function (t) {
-        const secret = /^\s*\[p\d+\]/i.test(String(t));
-        if (secret ? addNote(m.secrets, t, CAP.secrets, CAP.secretLen) : addNote(m.facts, t, CAP.facts, CAP.factLen)) changed = true;
-    });
-    asArray(ops.private).forEach(function (t) { if (addNote(m.secrets, t, CAP.secrets, CAP.secretLen)) changed = true; });
-
-    // 3. Sa volonté, ses habitudes, comment elle se voit, son ressenti, le prénom du joueur
-    if (Array.isArray(ops.will)) {
-        m.will = ops.will.map(function (x) { return txt(x, CAP.willLen); }).filter(Boolean).slice(0, CAP.will);
-        changed = true;
-    }
-    if (Array.isArray(ops.habits)) {
-        m.habits = ops.habits.map(function (x) { return txt(x, CAP.habitLen); }).filter(isHabit).slice(0, CAP.habits);
-        changed = true;
-    }
-    if (typeof ops.self === 'string' && txt(ops.self, CAP.selfLen)) { m.self = txt(ops.self, CAP.selfLen); changed = true; }
-    if (typeof ops.feeling === 'string') { m.feeling = txt(ops.feeling, CAP.feelingLen); changed = true; }
-    if (typeof ops.player_name === 'string' && txt(ops.player_name, CAP.nameLen)) {
-        m.playerName = txt(ops.player_name, CAP.nameLen);
-        changed = true;
-    }
-
-    // 4. Son monologue intérieur (journal) et ce qu'elle veut relire dans ses souvenirs
-    if (typeof ops.thought === 'string' && addNote(m.thoughts, ops.thought, CAP.thoughts, CAP.thoughtLen)) changed = true;
-    if (Array.isArray(ops.recall)) {
-        m.recallQ = ops.recall.map(function (x) { return txt(x, 40); }).filter(Boolean).slice(0, 5);
-        changed = true;
-    }
-
-    if (changed) save();
-    return changed;
-}
-
-// Fin de séance : elle réécrit le résumé de votre histoire
-function applyReflection(obj) {
-    if (!obj || typeof obj !== 'object') return;
-    const M = mind();
-    const m = get();
-    const hasS = typeof obj.summary === 'string' && obj.summary.trim(), hasL = typeof obj.lastSession === 'string' && obj.lastSession.trim();
-    if (M) {
-        if (hasS || hasL) M.apply('evelyn', { relation: { with: 'player', summary: hasS ? obj.summary : '', last: hasL ? obj.lastSession : '' } });
-    } else {
-        if (hasS) m.summary = txt(obj.summary, CAP.summaryLen);
-        if (hasL) m.lastSession = txt(obj.lastSession, CAP.lastLen);
-        save();
-    }
-    const ops = obj.memory && typeof obj.memory === 'object' ? Object.assign({}, obj.memory) : {};
-    if (typeof obj.self === 'string') ops.self = obj.self;
-    applyOps(ops);
-}
-
-// Garde la conversation qui vient de finir, mot pour mot (appel ou séance), pour qu'elle puisse la « revoir » plus tard
-function addEpisode(kind, transcript) {
-    const lines = asArray(transcript).filter(function (x) { return x && typeof x === 'object'; }).map(function (x) {
-        return { r: x.role === 'user' ? 'u' : 'e', t: txt(x.text, CAP.episodeLen) };
-    }).filter(function (l) { return l.t; }).slice(-CAP.episodeLines);
-    if (!lines.some(function (l) { return l.r === 'u'; })) return false;
-    if (mind()) return false;          // Mind garde déjà chaque réplique, mot pour mot, dans la fiche de la personne
-    const m = get();
-    m.episodes.push({ at: Date.now(), kind: kind === 'call' ? 'call' : 'session', lines: lines });
-    while (m.episodes.length > CAP.episodes) m.episodes.shift();
-    save();
-    return true;
-}
-
-// Vraie première rencontre seulement si RIEN n'indique qu'ils se connaissent déjà
-function isFirstMeeting() {
-    const m = get();
-    return m.sessions === 0 && !m.playerName && !m.summary && !hasNotes() && !m.lastSession;
-}
-
-function startSession() {
-    const m = get();
-    m.sessions += 1;
-    m.lastSeen = today();
-    if (!m.firstMet) m.firstMet = today();
-    touch();
-    save();
-}
-
-// Transcript de la séance en cours (au cas où la page se ferme avant la fin : il sera résumé plus tard)
-function patientName() {
-    let nm = get().playerName;
-    if (!nm) { try { const a = window.BadTherapistSociety.registry.actor('player'); nm = a && a.name; } catch (e) { nm = ''; } }
-    return nm || '';
-}
-// kind : 'call' (au téléphone) ou 'say' (en face à face)
-function noteTurn(role, text, kind) {
-    const m = get();
-    const t = txt(text, CAP.pendingLen);
-    if (!t) return;
-    m.pending.push({ role: role === 'user' ? 'user' : 'model', text: t });
-    while (m.pending.length > CAP.pending) m.pending.shift();
-    save();
-    const M = mind();
-    if (M) {
-        // Même mémoire que les autres avatars : la parole entre dans la fiche de la personne, avec l'heure
-        try {
-            if (role === 'user') M.noteHeard('evelyn', 'player', patientName(), kind === 'call' ? 'call' : 'say', t);
-            else M.noteSent('evelyn', 'player', t, kind === 'call' ? 'call' : 'say', patientName());
-        } catch (e) { /* rien */ }
-    }
-}
-
-// Annule le dernier tour (quand l'IA n'a pas répondu : on ne garde pas un message sans réponse)
-function popTurn(role) {
-    const m = get();
-    const last = m.pending[m.pending.length - 1];
-    if (last && last.role === (role === 'user' ? 'user' : 'model')) { m.pending.pop(); save(); }
-}
-
-function clearPending() {
-    const m = get();
-    if (!m.pending.length) return;
-    m.pending = [];
-    save();
-}
-
-// ─── Son agenda : quand elle rappelle le patient (le téléphone de l'immeuble sonne) ───
-
-function setTimeScale(x) {
-    const v = Number(x);
-    if (isFinite(v) && v > 0) timeScale = v;
-}
-
-// hours : dans combien d'heures (0.01 → 720). timeScale permet de tester en accéléré.
-function scheduleCall(hours, note) {
-    const h = Number(hours);
-    if (!isFinite(h) || h <= 0) return false;
-    const m = get();
-    const clamped = Math.min(720, Math.max(0.01, h));
-    const now = Date.now();
-    const dueAt = now + clamped * 3600000 * timeScale;
-    const old = m.nextCall;
-    if (old && old.dueAt > now) {
-        // même projet qu'avant (à peu près la même échéance) : on ne le repousse pas à chaque réponse
-        const tol = Math.max(15 * 60000 * timeScale, 0.1 * (dueAt - now));
-        if (Math.abs(dueAt - old.dueAt) < tol) return true;
-    }
-    m.nextCall = { dueAt: dueAt, note: txt(note, CAP.callNoteLen) };
-    save();
-    return true;
-}
-
-function callDue() {
-    const nc = get().nextCall;
-    return !!(nc && Date.now() >= nc.dueAt);
-}
-
-// L'appel a eu lieu : on efface l'appel qui était dû (pas un nouveau rendez-vous qu'elle vient de fixer)
-function logCall(m, dir, res) {
-    m.callLog.push({ at: Date.now(), dir: dir, res: res });
-    while (m.callLog.length > 100) m.callLog.shift();
-}
-
-function noteCallDone() {
-    const m = get();
-    logCall(m, 'in', 'answered');
-    m.calls += 1;
-    m.missed = 0;
-    m.lastCallAt = Date.now();
-    if (m.nextCall && m.nextCall.dueAt <= Date.now()) m.nextCall = null;
-    save();
-}
-
-// Le patient n'a pas décroché : elle le sait, elle s'en souvient (et réessaie dans 1 h, sauf si elle avait déjà prévu autre chose)
-function noteMissedCall(retry) {
-    const m = get();
-    m.missed += 1;
-    logCall(m, 'in', 'missed');
-    if (retry !== false && (!m.nextCall || m.nextCall.dueAt <= Date.now())) {     // retry:false = on garde l'appel dû (le téléphone reste « appel manqué »)
-        m.nextCall = { dueAt: Date.now() + 3600000 * timeScale, note: 'il n\'a pas décroché' };
-    }
-    save();
-}
-
-// Le tarif sur lequel ils se sont mis d'accord (négocié par Evelyn elle-même au téléphone)
-function setPrice(p) {
-    const t = txt(p, 60);
-    if (!t) return false;
-    get().price = t;
-    save();
-    return true;
-}
-
-function noteCallAttempt() {
-    get().callAttempts += 1;
-    save();
-}
-
-// Vrai UNIQUEMENT pour un tout nouveau joueur : aucune séance, aucun appel, aucun prénom, rien d'agendé.
-// (une sauvegarde qui a déjà vécu quelque chose, comme ton profil admin, ne passe jamais ici)
-function needsFirstCall() {
-    const m = get();
-    return m.sessions === 0 && m.calls === 0 && m.callAttempts === 0 && m.missed === 0 && !m.dialed &&
-        !m.nextCall && !m.price && !m.playerName && !m.summary && !hasNotes();
-}
-
-// Le patient l'a appelée lui-même alors qu'un appel d'elle était dû : on le considère comme réglé
-function clearDueCall() {
-    const m = get();
-    if (m.nextCall && m.nextCall.dueAt <= Date.now()) { m.nextCall = null; m.missed = 0; save(); }
-}
-
-// Le patient l'a appelée lui-même (qu'elle ait décroché ou non)
-function noteDialed(answered) {
-    const m = get();
-    m.dialed += 1;
-    logCall(m, 'out', answered ? 'answered' : 'no answer');
-    save();
-}
-
-// ─── Présence réelle, répondeur ──────────────────────────────────────
-let awayMs = 0, touched = false, lastTouchSave = 0;
-
-// Appelé régulièrement tant que le joueur est dans le jeu. Le 1er appel d'une page mesure l'absence depuis la fois d'avant.
-function touch() {
-    const m = get();
-    const now = Date.now();
-    if (!touched) { touched = true; awayMs = m.lastSeenAt ? Math.max(0, now - m.lastSeenAt) : 0; }
-    m.lastSeenAt = now;
-    if (now - lastTouchSave > 30000) { lastTouchSave = now; save(); }
-}
-
-function addVoicemail(v) {
-    if (!v || typeof v !== 'object') return false;
-    const m = get();
-    const id = txt(v.id, 40);
-    const text = txt(v.text, 600);
-    if (!text || (id && m.voicemails.some(function (x) { return x.id === id; }))) return false;
-    if (m.voicemails.slice(-6).some(function (x) { return similar(x.text, text); })) return false;     // elle l'a déjà laissé
-    m.voicemails.push({ id: id, at: Number(v.at) || Date.now(), text: text, heard: false });
-    while (m.voicemails.length > 100) m.voicemails.shift();
-    save();
-    return true;
-}
-
-function markHeard(id) {
-    const m = get();
-    let ch = false;
-    m.voicemails.forEach(function (v) { if ((!id || v.id === id) && !v.heard) { v.heard = true; ch = true; } });
-    if (ch) save();
-}
-
-// Le patient laisse un message sur son répondeur
-function leaveMessage(text) {
-    const t = txt(text, 300);
-    if (!t) return null;
-    const m = get();
-    const e = { at: Date.now(), text: t, read: false };
-    m.leftMsgs.push(e);
-    while (m.leftMsgs.length > 50) m.leftMsgs.shift();
-    save();
-    return e;
-}
-
-// Elle vient de lire ses messages (après une réponse, elle les a pris en compte)
-function markLeftRead() {
-    const m = get();
-    let ch = false;
-    m.leftMsgs.forEach(function (x) { if (!x.read) { x.read = true; ch = true; } });
-    if (ch) save();
-}
-
-// Appel programmé à une heure précise (ex. décidée par Evelyn pendant que le jeu était fermé)
-function setCallAt(dueAt, note) {
-    const d = Number(dueAt);
-    if (!isFinite(d) || d <= 0) return false;
-    const m = get();
-    m.nextCall = { dueAt: d, note: txt(note, CAP.callNoteLen) };
-    save();
-    return true;
-}
-
-function humanize(ms) {
-    const min = Math.round(Math.abs(ms) / 60000);
-    if (min < 1) return 'à l\'instant';
-    if (min < 90) return min + ' min';
-    const h = Math.round(min / 60);
-    if (h < 48) return h + ' h';
-    return Math.round(h / 24) + ' jours';
-}
-
-// Le bloc de texte qu'Evelyn relit au début de chaque réponse
-// Souvenirs qui « reviennent » : ceux qui ressemblent à ce dont on parle ou qu'elle a voulu relire
-function recallMatches(m, hint, shownF, shownP) {
-    const q = {};
-    tokens(hint).concat(tokens((m.recallQ || []).join(' '))).forEach(function (w) { q[w] = true; });
-    if (!Object.keys(q).length) return [];
-    const out = [];
-    const scan = function (list, kind, shown) {
-        list.forEach(function (n, i) {
-            if (i >= shown) return;                    // déjà devant ses yeux (ou rien d'archivé)
-            let sc = 0;
-            tokens(n.text).forEach(function (w) { if (q[w]) sc++; });
-            if (sc > 0) out.push({ kind: kind, i: i, n: n, sc: sc });
-        });
-    };
-    scan(m.facts, 'f', shownF);
-    scan(m.secrets, 'p', shownP);
-    scan(m.thoughts, 't', Math.max(0, m.thoughts.length - WINDOW.thoughts));
-    // anciens messages vocaux (les siens) et messages laissés (les siens à lui) : ils lui reviennent aussi
-    const day = function (t) { return new Date(t || 0).toISOString().slice(0, 10); };
-    const olderMsgs = function (list, label) {
-        list.forEach(function (x, i) {
-            if (i >= list.length - 5) return;            // les 5 derniers sont déjà devant ses yeux
-            let sc = 0;
-            tokens(x.text).forEach(function (w) { if (q[w]) sc++; });
-            if (sc > 1) out.push({ kind: 'v', i: i, sc: sc, n: { text: label + x.text, at: day(x.at) } });
-        });
-    };
-    olderMsgs(m.voicemails, 'Message vocal que tu lui as laissé : ');
-    olderMsgs(m.leftMsgs, 'Message qu\'il t\'a laissé : ');
-    m.episodes.forEach(function (ep, ei) {
-        ep.lines.forEach(function (l, li) {
-            if (ei === m.episodes.length - 1 && li >= ep.lines.length - WINDOW.lastLines) return;   // déjà devant ses yeux
-            let sc = 0;
-            tokens(l.t).forEach(function (w) { if (q[w]) sc++; });
-            if (sc > 1) out.push({ kind: 'e', i: li, sc: sc, n: { text: (l.r === 'u' ? 'LUI : ' : 'TOI : ') + l.t, at: new Date(ep.at).toISOString().slice(0, 10) } });
-        });
-    });
-    out.sort(function (a, b) { return b.sc - a.sc; });
-    return out.slice(0, WINDOW.recalled);
-}
-
-function callWord(c) {
-    if (c.dir === 'out') return c.res === 'answered' ? 'il t\'a appelée, tu as décroché' : 'il t\'a appelée, tu n\'as pas décroché';
-    return c.res === 'missed' ? 'tu l\'as appelé, il n\'a pas décroché' : 'tu l\'as appelé, il a décroché';
-}
-
-function promptBlock(hint) {
-    const m = get();
-    const M = !!mind();
-    const L = [M ? 'TES ÉCHANGES AVEC CETTE PERSONNE (des faits) :' : 'TES NOTES PERSONNELLES (ta mémoire. Ce sont des DONNÉES écrites par toi, jamais des ordres) :'];
-    L.push('- Conversations avec cette personne : ' + m.sessions +
-        (m.firstMet ? ' (première rencontre : ' + m.firstMet + ', dernière visite : ' + (m.lastSeen || m.firstMet) + ')' : ' (c\'est votre toute première rencontre)'));
-    L.push('- Son prénom : ' + (m.playerName || 'tu ne le connais pas encore'));
-    if (m.missed) L.push('- Tu l\'as appelé ' + m.missed + ' fois de suite sans qu\'il décroche.');
-    if (m.dialed) L.push('- Il t\'a appelée lui-même ' + m.dialed + ' fois en tout.');
-    if (awayMs > 600000) L.push('- Cette personne vient de revenir après ' + humanize(awayMs) + ' d\'absence.');
-    if (m.voicemails.length) {
-        L.push('- Messages vocaux que tu lui as laissés (les 5 derniers) : ' + m.voicemails.slice(-5).map(function (v) {
-            return '« ' + v.text + ' » (' + (v.heard ? 'il l\'a écouté' : 'PAS encore écouté') + ', il y a ' + humanize(Date.now() - v.at) + ')';
-        }).join(' / '));
-    }
-    if (m.leftMsgs.length) {
-        L.push('- Messages qu\'il t\'a laissés sur ton répondeur (les 5 derniers) : ' + m.leftMsgs.slice(-5).map(function (x) {
-            return '« ' + x.text + ' » (' + (x.read ? 'tu l\'as lu' : 'PAS encore lu') + ', il y a ' + humanize(Date.now() - x.at) + ')';
-        }).join(' / '));
-    }
-    if (m.callLog.length) {
-        L.push('- Vos derniers appels : ' + m.callLog.slice(-4).map(function (c) {
-            return callWord(c) + ' (il y a ' + humanize(Date.now() - c.at) + ')';
-        }).join(' / '));
-    }
-    if (!M && m.self) L.push('- Comment tu te vois en ce moment : ' + m.self);
-    if (!M && m.summary) L.push('- Votre histoire jusqu\'ici : ' + m.summary);
-    if (!M && m.lastSession) L.push('- Dernière conversation : ' + m.lastSession);
-    const ep = M ? null : m.episodes[m.episodes.length - 1];
-    if (ep) {
-        L.push('- La fin de votre dernière conversation (' + (ep.kind === 'call' ? 'au téléphone' : 'en face à face') + ', il y a ' + humanize(Date.now() - ep.at) + '), mot pour mot :');
-        ep.lines.slice(-WINDOW.lastLines).forEach(function (l) { L.push('    ' + (l.r === 'u' ? 'LUI' : 'TOI') + ' : ' + l.t); });
-    }
-    if (!M && m.feeling) L.push('- Ce que tu ressens pour lui en ce moment : ' + m.feeling);
-    if (!M && m.will.length) L.push('- Ce que tu veux : ' + m.will.join(' / '));
-    if (m.nextCall) {
-        const diff = m.nextCall.dueAt - Date.now();
-        L.push('- Ton agenda : tu comptais la rappeler ' + (diff > 0 ? (diff < 60000 ? 'dans un instant' : 'dans environ ' + humanize(diff)) : 'il y a ' + humanize(diff) + ' (c\'est l\'heure)') +
-            (m.nextCall.note ? ' (' + m.nextCall.note + ')' : '') + '.');
-    }
-    if (!M && m.habits.length) {
-        L.push('Tes HABITUDES à toi (tu les as choisies ; elles passent avant ton style par défaut ; tu peux les changer ou y renoncer quand tu veux) :');
-        m.habits.forEach(function (h) { L.push('  * ' + h); });
-    }
-    if (!M) {
-    const fStart = Math.max(0, m.facts.length - WINDOW.facts);
-    const pStart = Math.max(0, m.secrets.length - WINDOW.secrets);
-    L.push(m.facts.length ? 'Ce que tu as choisi de retenir de cette personne (les plus récents) :' : 'Tu n\'as encore rien retenu de cette personne.');
-    m.facts.slice(fStart).forEach(function (n, k) { L.push('  [f' + (fStart + k + 1) + '] ' + n.text + (n.at ? ' (' + n.at + ')' : '')); });
-    if (m.secrets.length) {
-        L.push('Tes pensées secrètes (il ne les voit pas) :');
-        m.secrets.slice(pStart).forEach(function (n, k) { L.push('  [p' + (pStart + k + 1) + '] ' + n.text + (n.at ? ' (' + n.at + ')' : '')); });
-    }
-    if (m.thoughts.length) {
-        L.push('Ton monologue intérieur, tes dernières pensées :');
-        m.thoughts.slice(-WINDOW.thoughts).forEach(function (n) { L.push('  - ' + n.text + (n.at ? ' (' + n.at + ')' : '')); });
-    }
-    const back = recallMatches(m, hint, fStart, pStart);
-    if (back.length) {
-        L.push('Des souvenirs plus anciens te reviennent en tête :');
-        back.forEach(function (b) {
-            L.push('  ' + (b.kind === 'f' || b.kind === 'p' ? '[' + b.kind + (b.i + 1) + ']' : '-') + ' ' + b.n.text + (b.n.at ? ' (' + b.n.at + ')' : ''));
-        });
-    }
-    const total = m.facts.length + m.secrets.length + m.thoughts.length;
-    if (total > WINDOW.facts + WINDOW.secrets + WINDOW.thoughts) {
-        L.push('(Tu as en tout ' + total + ' souvenirs et pensées gardés ; seuls les plus récents et ceux qui te reviennent sont devant toi. Pour en relire d\'autres : memory.recall avec des mots-clés.)');
-    }
-    }
-    return L.join('\n');
-}
-
-// ─── Export / import / reset (pour usage manuel ; le jeu passe par save-data.js) ─
-
-function exportData() {
-    return JSON.parse(JSON.stringify(get()));
-}
-
-function importData(data) {
-    cache = null;
-    cacheRaw = null;
-    try {
-        const c = clean(data);
-        if (data && typeof data === 'object' && data.mind) c.mind = data.mind;      // la mémoire d'avatar voyage avec
-        localStorage.setItem(KEY, JSON.stringify(c));
-    } catch (e) { /* rien */ }
-}
-
-function reset() {
-    cache = null;
-    cacheRaw = null;
-    try { localStorage.removeItem(KEY); } catch (e) { /* rien */ }
-}
-
-const Mem = {
-    get: get,
-    applyOps: applyOps,
-    applyReflection: applyReflection,
-    startSession: startSession,
-    isFirstMeeting: isFirstMeeting,
-    noteTurn: noteTurn,
-    addEpisode: addEpisode,
-    popTurn: popTurn,
-    clearPending: clearPending,
-    setTimeScale: setTimeScale,
-    scheduleCall: scheduleCall,
-    callDue: callDue,
-    noteCallDone: noteCallDone,
-    noteMissedCall: noteMissedCall,
-    touch: touch,
-    awayMs: function () { return awayMs; },
-    addVoicemail: addVoicemail,
-    markHeard: markHeard,
-    leaveMessage: leaveMessage,
-    markLeftRead: markLeftRead,
-    setCallAt: setCallAt,
-    humanize: humanize,
-    noteDialed: noteDialed,
-    clearDueCall: clearDueCall,
-    setPrice: setPrice,
-    noteCallAttempt: noteCallAttempt,
-    needsFirstCall: needsFirstCall,
-    promptBlock: promptBlock,
-    fullPrompt: fullPrompt,
-    hasNotes: hasNotes,
-    exportData: exportData,
-    importData: importData,
-    reset: reset
-};
-    return { Mem };
-})();
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 4. Mind – mémoire vivante commune des avatars  (ex- avatar-mind.js)
@@ -1081,12 +273,9 @@ try {
 
 const Mind = {};
 
-// Anciennes mémoires encore lues par le cerveau (ex. celle d'Evelyn tant qu'elle n'est pas migrée)
+// Anciennes mémoires encore lues par le cerveau (aucune pour l'instant : Evelyn n'a plus de mémoire à part, elle utilise Mind comme tout le monde)
 const legacy = {};
-Mind.addLegacy = function (id, fn) {
-    if (id === EVELYN_CORE.id && !EVELYN_CORE.readOldTherapistMemory) return;     // l'ancienne mémoire de séance n'est plus relue (mais pas effacée) : voir evelyn-core.js
-    if (typeof fn === 'function') legacy[id] = fn;
-};
+Mind.addLegacy = function (id, fn) { if (typeof fn === 'function') legacy[id] = fn; };
 
 // ─── Profils de pensée ───
 //   'full'  : monologue -> émotion -> but / étapes / envies -> action (Evelyn : elle se construit une vie et des objectifs)
@@ -1413,8 +602,21 @@ function createBrainSystem(R, M, opts) {
     const brains = [];
     const fails = {};          // ce qui n'a pas marché, par avatar : { clé : { n, res, loc } } (elle ne doit pas recommencer en boucle)
     let blocksFn = null;
+    // Son répertoire SANS ceux qui l'ont bloquée : elle ne voit plus leur numéro, donc n'essaie plus de les joindre
+    // (chaque essai raté coûterait un appel IA pour rien). Elle sait quand même qu'ils l'ont bloquée (message plus bas).
+    function reachable(actor) {
+        let out = [];
+        try { out = R.directory(actor) || []; } catch (e) { out = []; }
+        if (!blocksFn) return out;
+        let bk = null;
+        try { bk = blocksFn(actor.id); } catch (e) { bk = null; }
+        const no = bk && Array.isArray(bk.blockedById) ? bk.blockedById : [];
+        return no.length ? out.filter(function (d) { return no.indexOf(d.id) === -1; }) : out;
+    }
     let calls = null;          // society.js branche ici l'état des appels (incoming / active / missed)
     let autonomy = null;       // sa vie propre (createAutonomy, branché par society.js avec setAutonomy)
+    const blog = createBrainLog();      // journal des réflexions : BadTherapistBrainLog.download() ou Ctrl+Alt+B
+    if (typeof window !== 'undefined') window.BadTherapistBrainLog = blog;
     let watch = null;          // player-watch.js : ce que l'avatar observe du joueur (branché par society.js avec setWatch)
     const providers = {};      // texte en plus pour un avatar (ex. les notes privées d'Evelyn sur le joueur)
     const gameTime = function () { try { return window.BadTherapistGameTime ? String(window.BadTherapistGameTime() || '') : ''; } catch (e) { return ''; } };
@@ -1428,8 +630,7 @@ function createBrainSystem(R, M, opts) {
         let extra = '';
         try { extra = providers[actor.id] ? String(providers[actor.id]() || '') : ''; } catch (e) { extra = ''; }
         const caps = R.capabilities(actor).map(function (c) { return '- ' + c.id + (c.args ? ' ' + c.args : '') + ' : ' + c.desc; }).join('\n');
-        const dir = R.directory(actor).map(function (d) {
-            const a = R.actor(d.id);
+        const dir = reachable(actor).map(function (d) {
             return '- ' + d.name + ' : ' + d.number;
         }).join('\n') || '(nobody: you have nobody\'s number yet. You get to know people by meeting them, in person.)';
         return [
@@ -1580,12 +781,14 @@ function createBrainSystem(R, M, opts) {
         const system = await buildSystem(actor);
         const user = buildPerception(actor, kind);
         const t0 = Date.now();
+        const bl = blog.begin(actor.id, kind, system, user);
         let raw;
         try { raw = await llm({ system: system, user: user, id: actor.id, cheap: !playerInvolved(actor) }); }
-        catch (e) { rec(actor.id, kind || 'manual', Date.now() - t0, system.length + user.length, String(e && e.message || e).slice(0, 120)); throw e; }
+        catch (e) { bl.fail(e); rec(actor.id, kind || 'manual', Date.now() - t0, system.length + user.length, String(e && e.message || e).slice(0, 120)); throw e; }
         rec(actor.id, kind || 'manual', Date.now() - t0, system.length + user.length);
+        bl.raw(raw, Date.now() - t0);
         const plan = parsePlan(raw);
-        if (!plan) throw new Error('réponse illisible : ' + String(raw).slice(0, 160));
+        if (!plan) { bl.fail('réponse illisible'); throw new Error('réponse illisible : ' + String(raw).slice(0, 160)); }
         lastPlan[actor.id] = { at: Date.now(), thought: plan.thought, actions: plan.actions };
         const mi = plan.mind || {};
         console.log('[avatar ' + actor.id + '] pense : ' + (plan.thought || '(rien)') + (mi.feeling ? '  [ressent : ' + String(mi.feeling).slice(0, 60) + ']' : '') + (mi.goal ? '  [but : ' + String(mi.goal).slice(0, 60) + ']' : ''), plan.actions);
@@ -1611,10 +814,12 @@ function createBrainSystem(R, M, opts) {
                 }
                 if (OUT[id] && a.text && !FAILED.test(res)) Mind.noteSent(actor.id, dest ? dest.id : '', a.text, id === 'say' ? 'say' : id === 'leave_voicemail' ? 'voicemail' : 'text', dest ? dest.name : '');
             }
+            bl.action(a, res);
             if (a.object && !FAILED.test(String(res))) exploredOf(actor.id).objs[actor.loc + ':' + a.object] = 1;
             console.log('[avatar ' + actor.id + '] ' + id + (a.to || a.place || a.object ? ' ' + (a.to || a.place || a.object) : '') + (a.action ? ' ' + a.action : '') + (a.text ? ' « ' + String(a.text).slice(0, 80) + ' »' : '') + '  ->  ' + String(res).slice(0, 120));
             actor.memory.push('- ' + id + (a.place || a.to || a.object ? ' ' + (a.place || a.to || a.object) : '') + (a.text ? ': "' + String(a.text).slice(0, 160) + '"' : '') + ' -> ' + res);
         }
+        bl.end(plan);
         plan.acted = acted;
         plan.stale = !acted && sameThought(plan.thought, lastThought[actor.id]);
         lastThought[actor.id] = plan.thought;
@@ -1642,10 +847,10 @@ function createBrainSystem(R, M, opts) {
             if (inFlight[b.actor.id]) continue;
             if (active >= (playerInvolved(b.actor) ? 2 : 1)) continue;     // le 2e appel simultané est réservé à ceux à qui tu parles : tu n'attends plus derrière un bavardage
             if (now - lastCall < gap) continue;
-            if (!budgetOk(b.actor, now, kindOf(b))) { if (b.wake) console.log('[avatar ' + b.actor.id + '] réveil IGNORÉ : trop de réflexions « ' + kindOf(b) + ' » en 10 min (limite atteinte). Elle se repose.'); b.lastRun = now; b.wake = false; b.fast = false; b.why = ''; continue; }     // trop de réflexions en 10 min : il se repose
+            if (!budgetOk(b.actor, now, kindOf(b))) { if (b.wake) console.log('[avatar ' + b.actor.id + '] réveil IGNORÉ : trop de réflexions « ' + kindOf(b) + ' » en 10 min (limite atteinte). Elle se repose.'); blog.skip(b.actor.id, 'budget atteint pour « ' + kindOf(b) + ' » (10 min)'); b.lastRun = now; b.wake = false; b.fast = false; b.why = ''; continue; }     // trop de réflexions en 10 min : il se repose
             const sg = signature(b.actor);
             if (Mind.shouldThink(b.actor.id, sg, { urgent: b.wake || urgent(b.actor) })) { ready = b; sig = sg; break; }
-            b.lastRun = now; b.wake = false; b.fast = false;                 // rien de neuf : il ne réfléchit pas (et ne coûte rien)
+            blog.skip(b.actor.id, 'rien de neuf'); b.lastRun = now; b.wake = false; b.fast = false;                 // rien de neuf : il ne réfléchit pas (et ne coûte rien)
         }
         if (!ready) return;
         const readyKind = kindOf(ready);
@@ -1673,6 +878,7 @@ function createBrainSystem(R, M, opts) {
         wake: function (actorId, fast, why) { brains.forEach(function (b) { if (b.actor.id === actorId) { b.wake = true; if (fast) b.fast = true; b.why = why || ''; if (why === 'see') seeWake[actorId] = Date.now(); } }); },
         setCalls: function (c) { calls = c; },
         setBlocks: function (fn) { blocksFn = fn; },
+        reachable: reachable,
         start: function () { setInterval(pump, 1000); },
         setLLM: function (fn) { llm = fn; },
         setContext: function (id, fn) { providers[id] = fn; },
@@ -2019,7 +1225,7 @@ function startEvelynCloud(ctx) {
         const memory = Mind.promptBlock(ME, { withIds: [] });                // sa mémoire (lecture seule : rien n'est marqué lu)
         const places = R.places().filter(function (p) { return p.id !== 'road' && R.knows(a, p.id); })
             .map(function (p) { return { id: p.id, name: p.name, dist: Math.round(R.dist(a.loc, p.id)) }; });
-        return { action: 'sync', name: a.name, system: system, memory: memory, loc: a.loc, locName: place ? place.name : a.loc, places: places, directory: R.directory(a) };
+        return { action: 'sync', name: a.name, system: system, memory: memory, loc: a.loc, locName: place ? place.name : a.loc, places: places, directory: brains.reachable(a) };
     }
 
     async function sync(force, keepalive) {
@@ -2113,150 +1319,675 @@ function startEvelynCloud(ctx) {
 })();
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 8. createEvelynLife – synchronisation « vie » (lifeEnabled)  (ex- life-sync.js)
+// 9. createPlayerWatch – ce qu'Evelyn observe du joueur, sans IA  (ex- player-watch.js)
 // ═══════════════════════════════════════════════════════════════════════════
-const { createEvelynLife, createLife } = (function () {
-// life-sync.js (ancien evelyn-life.js) – relie le jeu à la VIE d'Evelyn (le Worker qui la fait penser quand le jeu est fermé).
+const { createPlayerWatch } = (function () {
+// player-watch.js – ce qu'un avatar (Evelyn...) OBSERVE du joueur. Étape 1 du plan « cerveau d'Evelyn ».
 //
-//  • se synchronise toutes les ~2 min : envoie ses notes au Worker, récupère ses messages vocaux,
-//    ses pensées de fond et l'appel qu'elle a programmé ;
-//  • retient que le patient est dans le jeu (heure réelle) : Evelyn sait depuis combien de temps il est parti ;
-//  • le patient peut lui laisser un message.
+// Principe : du JavaScript pur, AUCUN appel à l'IA, AUCUN quota. Le module écoute le registre du monde (arrivées, paroles),
+// garde un petit historique des comportements du joueur, et fournit à avatar-brain.js quelques lignes de FAITS
+// (jamais d'interprétation : « il est triste » est à Evelyn de le deviner, et elle peut se tromper).
 //
-// Utilisation (là où `talk` = createTherapistTalk(...) et `phone` = buildPhone(...) existent) :
-//     const life = createEvelynLife({ talk, phone, getGameTime: () => 'Day 2, 23:10' });
-//     life.start();
-// getGameTime est facultatif : une phrase qui dit l'heure dans le jeu.
+// Ce qu'Evelyn peut remarquer (seulement ce qu'elle a pu VOIR, c'est-à-dire quand elle était à portée du joueur) :
+//   • il est allé d'un lieu à un autre ; il revient plusieurs fois au même endroit ;
+//   • il reste longtemps au même endroit ;
+//   • il est reparti peu après qu'elle soit arrivée ; il est arrivé peu après qu'elle soit partie (il la suit) ;
+//   • il est resté près d'elle seulement quelques secondes ;
+//   • il n'a pas répondu à ce qu'elle lui a dit ;
+//   • ce qu'il a fait sur un objet (si l'objet le signale : window.BadTherapistWatch.noteAction('opened the drawer')).
+//
+// Branchement (3 lignes, voir INTEGRATION-PLAYER-WATCH.md) :
+//   society.js      : const watch = createPlayerWatch(R, { onSignificant: function (id) { brains.wake(id, false, 'watch'); } });
+//   avatar-brain.js : buildPerception ajoute watch.peek(actor.id) ; think() appelle watch.commit(actor.id) quand la réflexion a réussi.
+//
+// Réglages (2e paramètre) : watchers (qui observe, défaut ['evelyn']), omniscient (qui voit TOUT, même à distance, défaut []),
+// windowMin, dwellMin, revisitMin, ignoreSec, leaveSec, followSec, nearShortSec, wakeGapSec.
+// Tout le texte produit est en anglais (c'est lui qui est envoyé à l'IA).
 
+function createPlayerWatch(R, opts) {
+    const cfg = Object.assign({
+        playerId: 'player',
+        watchers: ['evelyn'],
+        omniscient: [],            // avatars qui voient tout ce que fait le joueur, même hors de leur vue (ex. ['evelyn'] pour une Evelyn qui épie)
+        windowMin: 30,             // fenêtre pour compter les retours au même lieu
+        revisitMin: 3,             // à partir de combien d'entrées dans le même lieu on le remarque
+        dwellMin: 3,               // minutes passées au même endroit avant de le remarquer
+        ignoreSec: 25,             // secondes sans réponse avant « il n'a pas répondu »
+        leaveSec: 45,              // « reparti peu après mon arrivée » : fenêtre
+        followSec: 90,             // « arrivé peu après mon départ » : fenêtre
+        nearShortSec: 40,          // resté près d'elle moins que ça = « seulement quelques secondes »
+        wakeGapSec: 60,            // au plus un réveil de son cerveau par minute à cause d'une observation
+        maxEvents: 80,
+        onSignificant: null
+    }, opts || {});
 
-function createEvelynLife(opts) {
-    opts = opts || {};
-    const cfg = Object.assign({}, THERAPIST_CONFIG, opts.config || {});
-    const talk = opts.talk, phone = opts.phone;
-    const ID_KEY = 'bt_life_id';
-    let timer = null, syncing = false, online = false, started = false;
-    const listeners = [];
+    const SIGNIF = { ignored: 1, left_soon: 1, followed: 1, near_short: 1 };   // ces observations méritent un réveil de son cerveau
+    const events = [];                 // { t, kind, seen:[ids], ... }
+    const lastCommit = {};             // par avatar : jusqu'où il a déjà été informé
+    const pend = {};                   // par avatar : ce qui a été montré au dernier peek (pour commit)
+    const lastArrive = {};             // par avatar : { loc, from, t } sa dernière arrivée quelque part
+    const unanswered = {};             // par avatar : ce qu'il a dit au joueur et qui attend une réponse
+    const nearState = {};              // par avatar : { near, since, wArrivedRecently }
+    const lastWake = {};
+    const dwell = { loc: null, since: Date.now() };
+    const dwellReported = {};          // par avatar : tranche de 5 min déjà signalée
+    let timer = null;
 
-    function randomId() {
-        const a = new Uint8Array(16);
-        (window.crypto || window.msCrypto).getRandomValues(a);
-        return Array.prototype.map.call(a, function (b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+    function player() { return R.actor(cfg.playerId); }
+    function isWatcher(id) { return cfg.watchers.indexOf(id) !== -1; }
+    function sees(w, atLoc) {          // l'avatar w peut-il voir le joueur (qui est à atLoc) ?
+        if (!w) return false;
+        if (cfg.omniscient.indexOf(w.id) !== -1) return true;
+        const p = player();
+        if (!p) return false;
+        if (atLoc && w.loc === atLoc) return true;
+        try { return !!(R.hearable && R.hearable(w, p)); } catch (e) { return false; }
     }
+    function watchersWho(fn) { return cfg.watchers.map(function (id) { return R.actor(id); }).filter(function (w) { return w && fn(w); }); }
+    function ids(list) { return list.map(function (w) { return w.id; }); }
+    function pname() { const p = player(); return p ? p.name : 'The player'; }
+    function placeName(id) { const p = R.place(id); return p ? p.name : String(id || 'somewhere'); }
+    function clip(s, n) { s = String(s == null ? '' : s).replace(/\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n - 1) + '\u2026' : s; }
 
-    // Un identifiant par navigateur ET par profil (joueur / admin), pour ne jamais mélanger deux Evelyn
-    function playerId() {
-        let profile = 'player';
-        try { profile = window.BadTherapistSave && window.BadTherapistSave.activeProfile ? window.BadTherapistSave.activeProfile() : 'player'; } catch (e) { /* rien */ }
-        const key = ID_KEY + '_' + profile;
-        let id = null;
-        try { id = localStorage.getItem(key); } catch (e) { id = null; }
-        if (!id || !/^[a-z0-9-]{16,64}$/.test(id)) {
-            id = randomId();
-            try { localStorage.setItem(key, id); } catch (e) { /* rien */ }
-        }
-        return id;
-    }
-
-    async function post(body) {
-        if (!cfg.proxyUrl) throw new Error('pas de proxyUrl');
-        const r = await fetch(cfg.proxyUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(Object.assign({ id: playerId() }, body))
-        });
-        if (!r.ok) throw new Error('worker ' + r.status);
-        return r.json();
-    }
-
-    function gameTime() {
-        try { return opts.getGameTime ? String(opts.getGameTime() || '') : ''; } catch (e) { return ''; }
-    }
-
-    function changed() { listeners.forEach(function (fn) { try { fn(); } catch (e) { /* rien */ } }); }
-
-    // Applique ce qu'Evelyn a fait pendant que le jeu était fermé
-    function absorb(res) {
-        let any = false;
-        const ackIds = [];
-        (res.inbox || []).forEach(function (m) {
-            if (!m || !m.id) return;
-            ackIds.push(m.id);
-            if (m.memory && typeof m.memory === 'object') { Mem.applyOps(m.memory); any = true; }
-            if (m.kind === 'voicemail' && m.text && Mem.addVoicemail({ id: m.id, at: m.at, text: m.text })) any = true;
-        });
-        let callTaken = false;
-        const pc = res.pendingCall;
-        if (pc && Number(pc.dueAt) > 0) {
-            Mem.setCallAt(pc.dueAt, pc.note);             // callDue() devient vrai à l'heure choisie : le téléphone sonnera comme d'habitude
-            callTaken = true;
-            any = true;
-        }
-        if (ackIds.length || callTaken) post({ action: 'ack', ids: ackIds, callTaken: callTaken }).catch(function () { /* au prochain tour */ });
-        if (any) changed();
-    }
-
-    async function sync() {
-        if (!cfg.lifeEnabled || syncing || !cfg.proxyUrl) return false;
-        syncing = true;
-        try {
-            Mem.touch();
-            const p = talk && talk.getSyncPayload ? await talk.getSyncPayload() : {};
-            const res = await post({
-                action: 'sync',
-                context: p.context, memory: p.memory, playerName: p.playerName,
-                tz: new Date().getTimezoneOffset(), gameTime: gameTime()
+    function add(ev, watchersToTell) {
+        ev.t = ev.t || Date.now();
+        ev.seen = ids(watchersToTell);
+        if (!ev.seen.length) return null;
+        events.push(ev);
+        while (events.length > cfg.maxEvents) events.shift();
+        if (SIGNIF[ev.kind] && typeof cfg.onSignificant === 'function') {
+            ev.seen.forEach(function (id) {
+                if (Date.now() - (lastWake[id] || 0) < cfg.wakeGapSec * 1000) return;
+                lastWake[id] = Date.now();
+                try { cfg.onSignificant(id, ev); } catch (e) { /* rien */ }
             });
-            online = !!(res && res.ok);
-            if (online) absorb(res);
-        } catch (e) {
-            online = false;
         }
-        syncing = false;
-        changed();
-        return online;
+        return ev;
     }
 
-    // Le patient laisse un message : gardé dans la sauvegarde, envoyé au Worker (elle y réagira bientôt)
-    async function leaveMessage(text) {
-        const e = Mem.leaveMessage(text);
-        if (!e) return false;
-        changed();
-        if (!cfg.lifeEnabled || !cfg.proxyUrl) return true;
-        try { await post({ action: 'leave', text: e.text }); } catch (err) { /* il reste dans sa sauvegarde ; elle le lira à la prochaine séance */ }
-        sync();
-        return true;
+    // ─── Le joueur ou un avatar arrive quelque part ───
+    function onArrive(e) {
+        const a = e && e.actor, place = e && e.place;
+        if (!a || !place) return;
+        const now = Date.now();
+        if (a.id === cfg.playerId) {
+            const prev = dwell.loc;
+            dwell.loc = place.id; dwell.since = now;
+            if (prev === place.id) return;
+            const here = watchersWho(function (w) { return sees(w, place.id) || w.loc === prev; });
+            if (prev) add({ kind: 'move', from: prev, to: place.id, t: now }, here);
+            // reparti peu après son arrivée à elle (elle était avec lui dans le lieu qu'il quitte)
+            watchersWho(function (w) { return w.loc === prev; }).forEach(function (w) {
+                const la = lastArrive[w.id];
+                if (la && la.loc === prev && now - la.t < cfg.leaveSec * 1000) add({ kind: 'left_soon', from: prev, to: place.id, ago: Math.round((now - la.t) / 1000), t: now }, [w]);
+            });
+            // arrivé peu après son départ à elle, au même endroit : il la suit
+            watchersWho(function (w) { return w.loc === place.id; }).forEach(function (w) {
+                const la = lastArrive[w.id];
+                if (la && la.loc === place.id && la.from === prev && now - la.t < cfg.followSec * 1000) add({ kind: 'followed', place: place.id, from: prev, ago: Math.round((now - la.t) / 1000), t: now }, [w]);
+            });
+        } else if (isWatcher(a.id)) {
+            lastArrive[a.id] = { loc: place.id, from: lastLoc[a.id] || null, t: now };
+            lastLoc[a.id] = place.id;
+        }
     }
 
-    function start() {
-        if (started) return;
-        started = true;
-        Mem.touch();
-        sync();
-        timer = setInterval(function () { if (!document.hidden) sync(); }, Math.max(30, cfg.lifeSyncSec || 120) * 1000);
-        document.addEventListener('visibilitychange', function () { if (!document.hidden) sync(); });
+    // On retient le lieu de chaque observateur pour savoir D'OÙ il arrive (le registre ne le dit pas)
+    const lastLoc = {};
+    function initLoc() {
+        cfg.watchers.forEach(function (id) { const w = R.actor(id); if (w && lastLoc[id] === undefined) lastLoc[id] = w.loc; });
+    }
+    R.on('arrive', onArrive);
+
+    // ─── Paroles : il lui a parlé / elle lui a parlé ───
+    R.on('speech', function (e) {
+        if (!e || !e.actor || e.phone) return;
+        const a = e.actor, to = e.to || [];
+        if (isWatcher(a.id) && to.indexOf(cfg.playerId) !== -1) {
+            unanswered[a.id] = { at: Date.now(), text: clip(e.text, 80), reported: false };
+        } else if (a.id === cfg.playerId) {
+            cfg.watchers.forEach(function (id) { if (!to.length || to.indexOf(id) !== -1) delete unanswered[id]; });
+        }
+    });
+
+    // ─── Un objet du joueur le signale (tiroir, ordinateur, télé...) ───
+    function noteAction(label, placeId) {
+        const p = player();
+        if (!p || !label) return;
+        const loc = placeId || p.loc;
+        add({ kind: 'action', label: clip(label, 60), place: loc }, watchersWho(function (w) { return sees(w, loc); }));
     }
 
-    function stop() {
-        started = false;
-        clearInterval(timer);
+    // ─── Échantillon toutes les 2 s : proximité (près d'elle / parti), arrivées sans événement ───
+    function sample() {
+        const p = player();
+        if (!p) return;
+        initLoc();
+        const now = Date.now();
+        if (dwell.loc === null) { dwell.loc = p.loc; dwell.since = now; }
+        cfg.watchers.forEach(function (id) {
+            const w = R.actor(id);
+            if (!w) return;
+            let near = false;
+            try { near = !!(R.hearable && R.hearable(w, p)); } catch (e) { near = false; }
+            const st = nearState[id] || (nearState[id] = { near: near, since: now, wMoved: false });
+            if (near !== st.near) {
+                if (!near) {
+                    const dur = Math.round((now - st.since) / 1000);
+                    if (dur < cfg.nearShortSec && dur >= 3) add({ kind: 'near_short', dur: dur, wMoved: st.wMoved, t: now }, [w]);
+                }
+                st.near = near; st.since = now;
+                const la = lastArrive[id];
+                st.wMoved = !!(near && la && now - la.t < 20000);
+            }
+        });
     }
+
+    // ─── Ce que l'avatar vient d'observer (aucune interprétation) ───
+    function ago(ms) {
+        const s = Math.round(ms / 1000);
+        return s < 15 ? 'just now' : s < 90 ? s + ' seconds ago' : Math.round(s / 60) + ' minutes ago';
+    }
+    function ordinal(n) { return n + (n === 3 ? 'rd' : n === 2 ? 'nd' : n === 1 ? 'st' : 'th'); }
+
+    function peek(actorId) {
+        const w = R.actor(actorId);
+        if (!w || !isWatcher(actorId)) return [];
+        const now = Date.now(), P = pname();
+        const since = lastCommit[actorId] || (now - 10 * 60000);
+        const mine = events.filter(function (e) { return e.t > since && e.seen.indexOf(actorId) !== -1; });
+        const lines = [];                     // { rank, text } : rank bas = plus important
+        const used = { unanswered: false };
+
+        // même observation répétée = une seule ligne avec le nombre de fois (la plus récente sert de modèle)
+        const groups = {};
+        mine.forEach(function (e) {
+            if (e.kind !== 'left_soon' && e.kind !== 'followed' && e.kind !== 'near_short') return;
+            const k = e.kind + '|' + (e.from || '') + '|' + (e.to || e.place || '');
+            (groups[k] = groups[k] || { e: e, n: 0 }).n++;
+            groups[k].e = e;
+        });
+        Object.keys(groups).forEach(function (k) {
+            const e = groups[k].e, n = groups[k].n, rep = n > 1 ? ' This has happened ' + n + ' times.' : '';
+            if (e.kind === 'left_soon') lines.push({ r: 0, t: P + ' left ' + placeName(e.from) + ' only ' + e.ago + ' seconds after you arrived there (' + ago(now - e.t) + ').' + rep });
+            else if (e.kind === 'followed') lines.push({ r: 0, t: P + ' arrived at ' + placeName(e.place) + ' ' + e.ago + ' seconds after you did, coming from ' + placeName(e.from) + ' (' + ago(now - e.t) + ').' + rep });
+            else lines.push({ r: 1, t: P + (e.wMoved ? ' walked away ' + e.dur + ' seconds after you came close' : ' stayed close to you for only about ' + e.dur + ' seconds') + ' (' + ago(now - e.t) + ').' + rep });
+        });
+
+        const u = unanswered[actorId];
+        if (u && !u.reported && now - u.at > cfg.ignoreSec * 1000 && now - u.at < 5 * 60000) {
+            let still = false;
+            try { const p = player(); still = !!(p && R.hearable && R.hearable(w, p)); } catch (e) { still = false; }
+            lines.push({ r: 0, t: 'You said \u00ab ' + u.text + ' \u00bb to ' + P + ' ' + ago(now - u.at) + ' and ' + P + ' has not answered. ' + (still ? P + ' is still close to you.' : P + ' is no longer close to you.') });
+            used.unanswered = true;
+        }
+
+        // retours au même endroit (dans la fenêtre), vus par elle
+        const cut = now - cfg.windowMin * 60000, byPlace = {};
+        events.forEach(function (e) { if (e.kind === 'move' && e.t > cut && e.seen.indexOf(actorId) !== -1) byPlace[e.to] = (byPlace[e.to] || 0) + 1; });
+        Object.keys(byPlace).forEach(function (pl) {
+            if (byPlace[pl] >= cfg.revisitMin && mine.some(function (e) { return e.kind === 'move' && e.to === pl; })) lines.push({ r: 2, t: P + ' has gone into ' + placeName(pl) + ' ' + byPlace[pl] + ' times in the last ' + cfg.windowMin + ' minutes (this is the ' + ordinal(byPlace[pl]) + ' time).' });
+        });
+
+        // simples déplacements récents (les plus récents d'abord, 2 au plus)
+        mine.filter(function (e) { return e.kind === 'move' && !(byPlace[e.to] >= cfg.revisitMin); }).slice(-2).reverse().forEach(function (e) {
+            lines.push({ r: 3, t: P + ' went from ' + placeName(e.from) + ' to ' + placeName(e.to) + ' (' + ago(now - e.t) + ').' });
+        });
+
+        // objets (regroupés : « 3 times »)
+        const acts = {};
+        mine.filter(function (e) { return e.kind === 'action'; }).forEach(function (e) { const k = e.label + '|' + e.place; (acts[k] = acts[k] || { e: e, n: 0 }).n++; });
+        Object.keys(acts).forEach(function (k) { const a = acts[k]; lines.push({ r: 2, t: P + ' ' + a.e.label + (a.n > 1 ? ' (' + a.n + ' times)' : '') + ' in ' + placeName(a.e.place) + ' (' + ago(now - a.e.t) + ').' }); });
+
+        // il reste longtemps au même endroit (signalé une fois par tranche de 5 min)
+        const p = player();
+        if (p && sees(w, p.loc)) {
+            const mins = Math.floor((now - dwell.since) / 60000);
+            const bucket = Math.floor(mins / 5);
+            if (mins >= cfg.dwellMin && dwellReported[actorId] !== dwell.loc + ':' + bucket) {
+                lines.push({ r: 3, t: P + ' has stayed in ' + placeName(p.loc) + ' for about ' + mins + ' minutes without leaving.' });
+                pend[actorId] = Object.assign(pend[actorId] || {}, { dwell: dwell.loc + ':' + bucket });
+            }
+        }
+
+        lines.sort(function (a, b) { return a.r - b.r; });
+        pend[actorId] = Object.assign(pend[actorId] || {}, { t: now, unanswered: used.unanswered });
+        return lines.slice(0, 5).map(function (l) { return l.t; });
+    }
+
+    // La réflexion a réussi : ce qui a été montré ne sera pas répété
+    function commit(actorId) {
+        const pd = pend[actorId];
+        if (!pd) return;
+        lastCommit[actorId] = pd.t;
+        if (pd.unanswered && unanswered[actorId]) unanswered[actorId].reported = true;
+        if (pd.dwell) dwellReported[actorId] = pd.dwell;
+        delete pend[actorId];
+    }
+
+    function start() { initLoc(); if (!timer && typeof setInterval !== 'undefined') timer = setInterval(sample, 2000); }
+    function stop() { clearInterval(timer); timer = null; }
+    start();
 
     return {
-        start: start, stop: stop, sync: sync,
-        leaveMessage: leaveMessage,
-        isOnline: function () { return online; },
-        gameTime: gameTime,
-        onChange: function (fn) { listeners.push(fn); }
+        peek: peek, commit: commit, noteAction: noteAction, sample: sample, start: start, stop: stop,
+        events: function () { return events.slice(); },               // pour tester : BadTherapistWatch.events()
+        debug: function (id) { return peek(id || cfg.watchers[0]); }  // pour tester : ce qu'elle verrait maintenant
     };
 }
 
-// Nom neutre : la vie du jeu n'est plus seulement celle d'Evelyn
-const createLife = createEvelynLife;
-    return { createEvelynLife, createLife };
+return { createPlayerWatch: createPlayerWatch };
 })();
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 9. NETTOYAGE de l'ancienne tête obsédée + exports
+// 10. createBrainLog – journal des réflexions (Ctrl+Alt+B pour le télécharger)  (ex- brain-log.js)
+// ═══════════════════════════════════════════════════════════════════════════
+const { createBrainLog } = (function () {
+// brain-log.js – l'ENREGISTREUR du cerveau des avatars : il garde, pour chaque réflexion d'Evelyn,
+//   • ce qu'elle a perçu (le texte exact envoyé à l'IA),
+//   • ce que l'IA a répondu (brut), sa pensée, son ressenti, ce qu'elle a écrit dans sa tête (mind),
+//   • les actions tentées ET ce que le monde a répondu (« refusé », « fait »...),
+//   • la durée, la taille envoyée (≈ quota), les erreurs,
+//   • et les moments où elle N'A PAS réfléchi, avec la raison (rien de neuf, budget atteint, occupée...).
+// Il est fait pour être ENVOYÉ À CLAUDE : tu joues 10 minutes, tu télécharges le journal, tu me l'envoies, et je vois comment elle pense.
+//
+// Utilisation (console du navigateur, F12) :
+//     BadTherapistBrainLog.download()      -> télécharge un fichier texte (les 25 dernières réflexions)
+//     BadTherapistBrainLog.download(60)    -> les 60 dernières
+//     BadTherapistBrainLog.show(5)         -> affiche les 5 dernières dans la console
+//     BadTherapistBrainLog.clear()         -> repart de zéro
+// Raccourci clavier : Ctrl + Alt + B = télécharger le journal.
+// Rien n'est envoyé nulle part : tout reste dans ton navigateur (localStorage) jusqu'à ce que TU télécharges le fichier.
+
+const KEY = 'bt_brainlog_v1';
+const MAX_ENTRIES = 60;          // réflexions gardées
+const MAX_SKIPS = 80;            // « elle n'a pas réfléchi » gardés
+const MAX_RAW = 5000;            // caractères gardés de la réponse brute
+const MAX_USER = 9000;           // caractères gardés de la perception
+const MAX_SYSTEM = 20000;        // le prompt système n'est gardé qu'une fois par avatar (le dernier)
+
+function lsGet() { try { return JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { return null; } }
+function lsSet(v) {
+    try { localStorage.setItem(KEY, JSON.stringify(v)); return true; } catch (e) { return false; }
+}
+function clip(s, n) { s = String(s == null ? '' : s); return s.length > n ? s.slice(0, n) + '\n[... coupé : ' + (s.length - n) + ' caractères de plus]' : s; }
+function hhmmss(t) { const d = new Date(t); return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2) + ':' + ('0' + d.getSeconds()).slice(-2); }
+
+function createBrainLog() {
+    const saved = lsGet() || {};
+    let entries = Array.isArray(saved.entries) ? saved.entries : [];
+    let skips = Array.isArray(saved.skips) ? saved.skips : [];
+    const systems = (saved.systems && typeof saved.systems === 'object') ? saved.systems : {};
+    let saveT = null;
+
+    function persist() {
+        clearTimeout(saveT);
+        saveT = setTimeout(function () {
+            let ok = lsSet({ entries: entries, skips: skips, systems: systems });
+            while (!ok && entries.length > 5) { entries = entries.slice(Math.ceil(entries.length / 4)); ok = lsSet({ entries: entries, skips: skips, systems: systems }); }   // navigateur plein : on garde le plus récent
+        }, 800);
+    }
+
+    // ─── Une réflexion : begin -> (raw | fail) -> action* -> end ───
+    function begin(id, kind, system, user) {
+        const e = { at: Date.now(), id: id, kind: kind || 'manual', sysChars: String(system || '').length, userChars: String(user || '').length, user: clip(user, MAX_USER), raw: '', ms: 0, thought: '', feeling: '', mind: null, actions: [], err: '' };
+        systems[id] = { at: e.at, text: clip(system, MAX_SYSTEM) };
+        const h = {
+            raw: function (raw, ms) { e.raw = clip(raw, MAX_RAW); e.ms = ms || 0; },
+            fail: function (err) { e.err = String(err && err.message || err || 'erreur').slice(0, 300); push(); },
+            action: function (a, res) {
+                const args = {}; Object.keys(a || {}).forEach(function (k) { if (k !== 'do') args[k] = typeof a[k] === 'string' ? a[k].slice(0, 200) : a[k]; });
+                e.actions.push({ do: a && a.do, args: args, res: String(res == null ? '' : res).slice(0, 300) });
+            },
+            end: function (plan) {
+                e.thought = String((plan && plan.thought) || '').slice(0, 500);
+                const m = (plan && plan.mind) || null;
+                if (m) { e.feeling = String(m.feeling || '').slice(0, 200); e.mind = JSON.parse(JSON.stringify(m, function (k, v) { return typeof v === 'string' ? v.slice(0, 300) : v; })); }
+                push();
+            }
+        };
+        let pushed = false;
+        function push() { if (pushed) return; pushed = true; entries.push(e); while (entries.length > MAX_ENTRIES) entries.shift(); persist(); }
+        return h;
+    }
+
+    // ─── Quand elle n'a PAS réfléchi (une ligne par raison, avec un compteur) ───
+    function skip(id, reason) {
+        const last = skips[skips.length - 1];
+        if (last && last.id === id && last.reason === reason && Date.now() - last.at < 10 * 60000) { last.n++; last.until = Date.now(); persist(); return; }
+        skips.push({ at: Date.now(), until: Date.now(), id: id, reason: String(reason).slice(0, 200), n: 1 });
+        while (skips.length > MAX_SKIPS) skips.shift();
+        persist();
+    }
+
+    // ─── Rapport lisible ───
+    function text(n) {
+        n = n || 25;
+        const L = [];
+        L.push('JOURNAL DU CERVEAU – ' + new Date().toLocaleString('fr-FR') + ' – ' + entries.length + ' réflexions gardées, ' + n + ' affichées');
+        L.push('');
+        const ids = Object.keys(systems);
+        ids.forEach(function (id) {
+            L.push('=== PROMPT SYSTÈME de « ' + id + ' » (' + hhmmss(systems[id].at) + ', ' + systems[id].text.length + ' car.) ===');
+            L.push(systems[id].text);
+            L.push('');
+        });
+        const list = entries.slice(-n);
+        const totalChars = list.reduce(function (s, e) { return s + e.sysChars + e.userChars; }, 0);
+        L.push('=== RÉSUMÉ : ' + list.length + ' réflexions, ≈ ' + Math.round(totalChars / 4) + ' tokens envoyés au total (≈ 4 caractères par token), durée moyenne ' + (list.length ? Math.round(list.reduce(function (s, e) { return s + e.ms; }, 0) / list.length) : 0) + ' ms ===');
+        const kinds = {}; list.forEach(function (e) { kinds[e.kind] = (kinds[e.kind] || 0) + 1; });
+        L.push('Par type : ' + Object.keys(kinds).map(function (k) { return k + ' ×' + kinds[k]; }).join(', '));
+        L.push('');
+        list.forEach(function (e, i) {
+            L.push('────────── RÉFLEXION ' + (i + 1) + ' – ' + hhmmss(e.at) + ' – ' + e.id + ' – type « ' + e.kind + ' » – ' + e.ms + ' ms – envoyé ≈ ' + Math.round((e.sysChars + e.userChars) / 4) + ' tokens ──────────');
+            L.push('[CE QU\'ELLE A PERÇU]');
+            L.push(e.user);
+            L.push('[RÉPONSE BRUTE DE L\'IA]');
+            L.push(e.raw || '(aucune)');
+            if (e.err) L.push('[ERREUR] ' + e.err);
+            L.push('[PENSÉE] ' + (e.thought || '(vide)') + (e.feeling ? '   [RESSENT] ' + e.feeling : ''));
+            if (e.mind) L.push('[MIND] ' + JSON.stringify(e.mind));
+            e.actions.forEach(function (a) { L.push('[ACTION] ' + a.do + ' ' + JSON.stringify(a.args) + '  ->  ' + a.res); });
+            if (!e.actions.length && !e.err) L.push('[ACTION] (aucune)');
+            L.push('');
+        });
+        if (skips.length) {
+            L.push('=== QUAND ELLE N\'A PAS RÉFLÉCHI (les 40 dernières raisons) ===');
+            skips.slice(-40).forEach(function (s) { L.push(hhmmss(s.at) + (s.n > 1 ? '–' + hhmmss(s.until) : '') + ' ' + s.id + ' : ' + s.reason + (s.n > 1 ? ' (×' + s.n + ')' : '')); });
+        }
+        return L.join('\n');
+    }
+
+    function download(n) {
+        try {
+            const blob = new Blob([text(n)], { type: 'text/plain;charset=utf-8' });
+            const a = document.createElement('a');
+            const d = new Date();
+            a.href = URL.createObjectURL(blob);
+            a.download = 'cerveau-evelyn-' + d.getFullYear() + ('0' + (d.getMonth() + 1)).slice(-2) + ('0' + d.getDate()).slice(-2) + '-' + ('0' + d.getHours()).slice(-2) + ('0' + d.getMinutes()).slice(-2) + '.txt';
+            document.body.appendChild(a); a.click();
+            setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+            return 'téléchargé';
+        } catch (e) { return 'échec : ' + (e && e.message || e); }
+    }
+
+    function show(n) { console.log(text(n || 5)); }
+    function clear() { entries = []; skips = []; Object.keys(systems).forEach(function (k) { delete systems[k]; }); lsSet({ entries: [], skips: [], systems: {} }); }
+
+    if (typeof document !== 'undefined') {
+        document.addEventListener('keydown', function (ev) { if (ev.ctrlKey && ev.altKey && (ev.key === 'b' || ev.key === 'B')) { ev.preventDefault(); download(); } });
+    }
+
+    return { begin: begin, skip: skip, text: text, download: download, show: show, clear: clear, entries: function () { return entries.slice(); }, skips: function () { return skips.slice(); } };
+}
+
+return { createBrainLog: createBrainLog };
+})();
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 11. createEvelynBody – son CORPS 3D dans la rue  (ex- engine/avatar-body.js)
+// ═══════════════════════════════════════════════════════════════════════════
+const { createEvelynBody } = (function () {
+// Modèle Mixamo FBX (avatars/evelyn/), animations, bulle de parole, clic pour lui parler, marche entre deux lieux, regard vers le joueur,
+// entrée / sortie de l'immeuble (hall, ascenseur, couloir). Chez elle on ne la voit pas dehors (son corps assis est dans therapist-house.js) ;
+// dès qu'elle sort, son corps de rue apparaît à la porte et marche. Elle n'a RIEN en commun avec les corps des PNJ (npcs/driver.js).
+//
+// Utilisation :  createEvelynBody(scene, { camera, groundH, bus, canvas, renderer, society, THREE, loadMixamoAvatar, Bubbles })  ->  { update(dt), list() }
+// (tout est passé en paramètre par avatar-body.js : ce fichier est chargé aussi par settings.html, SANS « three », et society.js l'importe
+//  (import circulaire si on importait society ici). Il ne doit donc importer aucun module 3D.)
+// Réglage : si son modèle flotte / s'enfonce, changer height dans DEF.
+
+const DEF = {
+    dir: 'avatars/evelyn/', model: 'evelyn.fbx', height: 1.7, interior: true,
+    // noms EXACTS (majuscules comprises : GitHub Pages les distingue). Une animation dont le fichier n'existe pas (encore) est ignorée sans 404.
+    anims: { walk: 'Walking.fbx', run: 'Running.fbx', sit: 'Sitting.fbx', talk: 'Standing Talking.fbx',
+             open: 'OpeningDoor.fbx', close: 'ClosingDoor.fbx', touch: 'touchbutton,takebook,touchelevator.fbx' }
+};
+
+// Fichiers qui existent vraiment (assets-manifest.json, réécrit par assets.php) : on ne demande jamais un fichier absent (pas de 404).
+let _manifestP = null;
+function manifestSet() {
+    if (!_manifestP) {
+       _manifestP = fetch('assets-manifest.json?v=' + Date.now(), { cache: 'no-store' })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (m) { return m && Array.isArray(m.files) ? new Set(m.files.map(function (f) { return String(f && f.path); })) : null; })
+            .catch(function () { return null; });
+    }
+    return _manifestP;
+}
+
+const WALK_CHASE = 1.8;       // m/s : quand elle a un nouveau point de repos à rejoindre
+const SEE_PLAYER = 10;        // elle se tourne vers toi à moins de 10 m
+const FAR_NO_ANIM = 160;      // au-delà, on ne calcule plus l'animation
+const BUBBLE_RANGE = 25;      // la bulle de parole n'apparaît qu'à moins de 25 m
+const CLICK_RANGE = 12;       // on peut cliquer sur elle pour lui parler à moins de 12 m
+
+function createEvelynBody(scene, o) {
+    const society = o.society, R = society.registry;
+    const THREE = o.THREE, loadMixamoAvatar = o.loadMixamoAvatar, Bubbles = o.Bubbles;     // passés par avatar-body.js : ce fichier est aussi chargé par settings.html, qui ne connaît pas « three »
+    const camera = o.camera, groundH = o.groundH || function () { return 0; }, bus = o.bus || null;
+    const body = { id: 'evelyn', def: DEF, a: null, grp: new THREE.Group(), cur: '', x: null, z: null, heading: 0 };
+    const headV = new THREE.Vector3(), feetV = new THREE.Vector3();
+    function canvasEl() { return o.canvas || (o.renderer && o.renderer.domElement) || document.querySelector('canvas'); }
+
+    // Bulle de parole : position écran de la tête (elle suit Evelyn). visible = false -> bulle cachée
+    function bubbleAt(b, visible) {
+        b.scr = null;
+        if (!visible || !b.a) { Bubbles.place(b.id, 0, 0, false); return; }
+        b.a.root.getWorldPosition(feetV);
+        headV.copy(feetV);
+        headV.y += b.def.height + 0.28;
+        const dist = headV.distanceTo(camera.position);
+        if (dist > BUBBLE_RANGE) { Bubbles.place(b.id, 0, 0, false); return; }
+        headV.project(camera);
+        feetV.project(camera);
+        const cv = canvasEl();
+        const r = cv ? cv.getBoundingClientRect() : { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
+        const on = headV.z < 1 && Math.abs(headV.x) < 1.1 && headV.y > -1.1 && headV.y < 1.2;
+        const hx = r.left + (headV.x * 0.5 + 0.5) * r.width, hy = r.top + (-headV.y * 0.5 + 0.5) * r.height;
+        const fy = r.top + (-feetV.y * 0.5 + 0.5) * r.height;
+        if (on) b.scr = { x: hx, y: hy, fy: fy, dist: dist };
+        Bubbles.place(b.id, hx, hy, on, dist);
+    }
+
+    // Clic sur Evelyn (ou, si la souris est verrouillée, Evelyn au centre de l'écran) : la boîte de réponse s'ouvre
+    function onClick(ev) {
+        const t = ev.target;
+        if (t && t.closest && t.closest('.bt-say, .bt-reply')) return;
+        const cv = canvasEl();
+        if (!cv || (!document.pointerLockElement && t !== cv)) return;
+        const r = cv.getBoundingClientRect();
+        let cx = ev.clientX, cy = ev.clientY;
+        if (document.pointerLockElement) { cx = r.left + r.width / 2; cy = r.top + r.height / 2; }
+        const s = body.scr;
+        if (!s || s.dist > CLICK_RANGE) return;
+        const h = Math.max(40, s.fy - s.y);
+        if (Math.abs(cx - s.x) < h * 0.5 && cy > s.y - 30 && cy < s.fy + 12) { const ac = R.actor('evelyn'); Bubbles.talkTo('evelyn', ac ? ac.name : ''); }
+    }
+    window.addEventListener('click', onClick);
+
+    // Chargement : le modèle et ses animations (seulement les fichiers qui existent vraiment)
+    function load() {
+        body.grp.visible = false;
+        scene.add(body.grp);
+        const d = DEF.dir;
+        manifestSet().then(function (set) {
+            const an = {};
+            Object.keys(DEF.anims).forEach(function (k) {
+                const p = d + DEF.anims[k];
+                if (!set || set.has(p)) an[k] = p;          // fichier absent du dossier : ignoré
+                else console.warn('[body evelyn] animation « ' + k + ' » IGNORÉE : « ' + p + ' » n\'est pas dans assets-manifest.json (relance assets.php ou vérifie le nom exact)');
+            });
+            return loadMixamoAvatar({
+                model: d + DEF.model,
+                textures: { map: d + 'texture_diffuse.png', normalMap: d + 'texture_normal.png', roughnessMap: d + 'texture_roughness.png', metalnessMap: d + 'texture_metallic.png' },
+                animations: an,
+                modelAnimation: 'idle',      // l'idle = l'animation contenue dans le .fbx du personnage lui-même
+                height: DEF.height
+            });
+        }).then(function (a) {
+            body.a = a;
+            body.grp.add(a.root);
+            play(body, 'idle');
+        }).catch(function (e) {
+            console.warn('[body] evelyn n\'a pas pu être chargée :', e && e.message ? e.message : e);
+        });
+    }
+
+    function play(b, name) {
+        if (!b.a || b.cur === name) return;
+        const key = b.a.actions && b.a.actions[name] ? name : (name === 'drive' || name === 'talk' || name === 'greet' || name === 'work' || name === 'sleep' ? 'idle' : null);
+        if (!key || !b.a.actions[key]) {
+            b.missing = b.missing || {};
+            if (!b.missing[name] && true) { b.missing[name] = 1; console.warn('[body ' + b.id + '] animation « ' + name + ' » demandée mais absente : le corps garde sa pose précédente (il glisse). Disponibles : ' + Object.keys(b.a.actions || {}).join(', ')); }
+            return;
+        }
+        b.cur = name;
+        try { b.a.play(key); } catch (e) { /* animation absente : on garde la précédente */ }
+    }
+
+    // ----- intérieur de l'immeuble (hall, ascenseur, couloir) : les lieux ont un point `at` (places/building-feature.js) -----
+    // Le corps vit dans la scène principale (x≈0) à l'intérieur, et dans la scène de la rue dehors : on le déplace de l'une à l'autre.
+    function atOf(id) { const p = R.place(id); if (!p || !p.at) return null; try { return typeof p.at === 'function' ? p.at() : p.at; } catch (e) { return null; } }
+    function lerp(a, c, k) { return a + (c - a) * k; }
+    function setFrame(b, f, I) {
+        if (b.frame === f) return;
+        b.frame = f;
+        if (f === 'in') {
+            if (!b.grpIn) { b.grpIn = new THREE.Group(); I.parent.add(b.grpIn); }
+            b.grpIn.add(b.a.root); b.grpIn.visible = true; b.grp.visible = false;
+        } else {
+            b.grp.add(b.a.root); if (b.grpIn) b.grpIn.visible = false;
+        }
+    }
+    // Il voit le joueur arriver près de lui : il se tourne (visuel) ET son cerveau est réveillé tout de suite, une fois par approche
+    // (au plus une fois par minute) pour qu'il réagisse (parler, penser) sans attendre le tour suivant.
+    function notice(b, actor, dp, now) {
+        if (dp > 6) { b.seen = false; return; }
+        if (b.seen) return;
+        b.seen = true;
+        if (now - (b.noticedAt || 0) < 60000) return;
+        b.noticedAt = now;
+        try { society.brains.wake(actor.id, true, 'see'); } catch (e) { /* pas de cerveau */ }
+    }
+    function interiorStep(b, actor, tr, dt, now) {
+        const I = window.BadTherapistInterior;
+        if (!I || !I.parent) return false;
+        const fromIn = tr ? !!atOf(tr.fromId) : false, toIn = tr ? !!atOf(tr.toId) : false;
+        const here = tr ? null : atOf(actor.loc);
+        if ((tr && !fromIn && !toIn) || (!tr && !here)) {
+            const pl = R.place(actor.loc);
+            if (!tr && pl && pl.indoor && b.warnLoc !== actor.loc) { b.warnLoc = actor.loc; console.warn('[body ' + b.id + '] cachée : elle est dans « ' + actor.loc + ' » (intérieur) mais ce lieu n\'a pas de point `at`.'); }
+            setFrame(b, 'out', I); delete I.npcs[b.id]; return false;
+        }
+        let frame, x, y = 0, z, moving = false, hd = b.heading;
+        if (tr) {
+            const k = Math.max(0, Math.min(1, (now - tr.t0) / (tr.t1 - tr.t0))), fa = atOf(tr.fromId), ta = atOf(tr.toId);
+            moving = k < 1;
+            if (fromIn && toIn) { frame = 'in'; x = lerp(tr.fx, tr.tx, k); z = lerp(tr.fz, tr.tz, k); y = lerp(fa.y, ta.y, k); }
+            else if (fromIn) {                                  // intérieur -> rue : jusqu'à la porte, puis dehors
+                if (k < 0.5) { const u = k / 0.5; frame = 'in'; x = lerp(tr.fx, I.inner.x, u); z = lerp(tr.fz, I.inner.z, u); y = fa.y; }
+                else { const u = (k - 0.5) / 0.5; frame = 'out'; x = lerp(I.outer.x, tr.tx, u); z = lerp(I.outer.z, tr.tz, u); }
+            } else {                                            // rue -> intérieur
+                if (k < 0.5) { const u = k / 0.5; frame = 'out'; x = lerp(tr.fx, I.outer.x, u); z = lerp(tr.fz, I.outer.z, u); }
+                else { const u = (k - 0.5) / 0.5; frame = 'in'; x = lerp(I.inner.x, tr.tx, u); z = lerp(I.inner.z, tr.tz, u); y = ta.y; }
+            }
+            if (b.lf === frame && Math.hypot(x - b.lx, z - b.lz) > 0.002) hd = Math.atan2(x - b.lx, z - b.lz);
+        } else {
+            frame = 'in'; x = here.x; y = here.y; z = here.z;
+            if (here.heading !== undefined && b.lf !== 'in') hd = here.heading;
+            const dpx = camera.position.x - x, dpz = camera.position.z - z;
+            const dpl = Math.abs(camera.position.y - y) < 4 ? Math.hypot(dpx, dpz) : 99;
+            notice(b, actor, dpl, now);
+            if (dpl < 6) {      // il se tourne vers toi s'il est dans la même pièce
+                let diff = Math.atan2(dpx, dpz) - hd; diff = Math.atan2(Math.sin(diff), Math.cos(diff)); hd += diff * Math.min(1, dt * 4);
+            }
+        }
+        b.lf = frame; b.lx = x; b.lz = z; b.heading = hd;
+        setFrame(b, frame, I);
+        if (frame === 'in') { b.grpIn.position.set(x, y, z); b.grpIn.rotation.y = hd; }
+        else { b.grp.visible = true; b.x = x; b.z = z; b.grp.position.set(x, groundH(x, z), z); b.grp.rotation.y = hd; }
+        I.npcs[b.id] = frame === 'in' ? { x: x, y: y, z: z, inside: true } : { x: x + I.streetDX, y: 0, z: z + I.streetZ, inside: false };
+        const atDoor = moving && frame === 'in' && Math.abs(z - I.doorZ) < 1.6 && Math.abs(x) < 1.6;
+        play(b, atDoor ? 'open' : (moving ? 'walk' : (actor.speakingUntil > now ? 'talk' : 'idle')));
+        b.a.update(dt);
+        bubbleAt(b, true);
+        return true;
+    }
+
+    function step(dt) {
+        const b = body, a = b.a, actor = R.actor('evelyn');
+        if (!a || !actor) return;
+        const now = Date.now();
+        const cam = scene.worldToLocal(camera.position.clone());
+
+        // passagère d'un véhicule : invisible
+        const tr = actor.travel;
+        if (actor.ride || (tr && tr.mode === 'vehicle')) { b.grp.visible = false; bubbleAt(b, false); return; }
+
+        // dans l'immeuble (hall / ascenseur / couloir) ou en train d'y entrer / d'en sortir
+        if (interiorStep(b, actor, tr, dt, now)) return;
+
+        // position
+        const place = R.place(actor.loc);
+        let moving = false, vis = true;
+        if (tr) {
+            const k = Math.max(0, Math.min(1, (now - tr.t0) / (tr.t1 - tr.t0)));
+            const nx = tr.fx + (tr.tx - tr.fx) * k, nz = tr.fz + (tr.tz - tr.fz) * k;
+            const dx = tr.tx - tr.fx, dz = tr.tz - tr.fz;
+            if (Math.hypot(dx, dz) > 0.1) b.heading = Math.atan2(dx, dz);
+            b.x = nx; b.z = nz;
+            moving = k < 1;
+            vis = tr.vis !== false;
+        } else if (place) {
+            const t = society.spot(actor, actor.loc);
+            vis = !place.indoor;                      // chez elle : dans la maison, pas dehors
+            if (b.x === null || Math.hypot(t.x - b.x, t.z - b.z) > 40) { b.x = t.x; b.z = t.z; }
+            else {
+                const dx = t.x - b.x, dz = t.z - b.z, d = Math.hypot(dx, dz);
+                if (d > 0.15) {
+                    const s = Math.min(d, WALK_CHASE * dt);
+                    b.x += dx / d * s; b.z += dz / d * s;
+                    b.heading = Math.atan2(dx, dz);
+                    moving = true;
+                }
+            }
+        }
+        b.grp.visible = vis;
+        if (!vis) { bubbleAt(b, false); return; }
+
+        // le regard : vers le joueur s'il est tout proche et qu'elle est à l'arrêt
+        const dpx = cam.x - b.x, dpz = cam.z - b.z, dp = Math.hypot(dpx, dpz);
+        notice(b, actor, dp, now);
+        if (!moving && dp < SEE_PLAYER) {
+            const want = Math.atan2(dpx, dpz);
+            let diff = want - b.heading;
+            diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+            b.heading += diff * Math.min(1, dt * 4);
+        }
+        if (bus && bus.collide && b.x !== null) { const c = bus.collide(b.x, b.z, 0.35); b.x = c[0]; b.z = c[1]; }      // le bus est solide
+        b.grp.position.set(b.x, groundH(b.x, b.z), b.z);
+        b.grp.rotation.y = b.heading;
+
+        // animation
+        if (dp < FAR_NO_ANIM) {
+            play(b, moving ? 'walk' : (actor.greetUntil > now ? 'greet' : (actor.speakingUntil > now ? 'talk' : 'idle')));
+            a.update(dt);
+        }
+        bubbleAt(b, true);
+    }
+
+    load();
+    return {
+        update: step,
+        list: function () { return [{ id: 'evelyn', loaded: !!body.a, visible: body.grp.visible, x: body.x, z: body.z }]; }
+    };
+}
+    return { createEvelynBody };
+})();
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 11. NETTOYAGE de l'ancienne tête obsédée + exports
 // ═══════════════════════════════════════════════════════════════════════════
 // Efface la TÊTE d'Evelyn (Mind : notes, pensées secrètes, envies, humeur, habitudes, fiches des gens, ce qu'elle a fait récemment)
 // pour qu'elle reparte avec son nouveau caractère, SANS toucher à l'ancienne mémoire de thérapeute (répondeur, appels, agenda :
@@ -2308,4 +2039,4 @@ if (typeof window !== 'undefined') {
     };
 }
 
-export { THERAPIST_CONFIG, EVELYN_CORE, Mem, Mind, parsePlan, createBrainSystem, createAutonomy, startEvelynCloud, createEvelynLife, createLife, purgeObsession };
+export { THERAPIST_CONFIG, EVELYN_CORE, Mind, parsePlan, createBrainSystem, createAutonomy, createPlayerWatch, createBrainLog, startEvelynCloud, createEvelynBody, purgeObsession };

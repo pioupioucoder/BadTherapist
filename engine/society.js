@@ -16,8 +16,7 @@
 
 import { registry as R } from './world-registry.js';
 import { createMessaging, createPhones } from './phones.js';       // SMS + téléphones (numéro = téléphone posé quelque part, contacts et journal par téléphone) : tout est dans phones.js
-import { createBrainSystem, createAutonomy, THERAPIST_CONFIG, Mind, EVELYN_CORE } from './evelyn-core.js';   // tout Evelyn est dans evelyn-core.js : cerveau, vie propre, mémoire, réglages, caractère
-import { createPlayerWatch } from './player-watch.js';   // ce qu'Evelyn observe du joueur (aucun appel IA)
+import { createBrainSystem, createAutonomy, createPlayerWatch, THERAPIST_CONFIG, Mind, EVELYN_CORE } from './evelyn-core.js';   // tout Evelyn est dans evelyn-core.js : cerveau, vie propre, mémoire, réglages, caractère
 import { startNpcs } from '../npcs/behavior.js';     // PNJ sans IA : réponses, bavardage et routine tirés de npcs/<id>.js
 
 const PLAYER_NAME = 'Chippy';      // le prénom de ton personnage : change-le ici, nulle part ailleurs
@@ -59,6 +58,13 @@ function create() {
     M.send = function (fromId, toKey, text, o) {
         const f = R.actor(fromId), t = R.findActor(toKey);
         if (f && t && !(o && o.kind === 'say')) { const e = blockError(f, t); if (e) return { ok: false, error: e }; }   // parler en face à face n'est jamais bloqué
+        // un SMS part d'un téléphone et arrive sur un téléphone (c'est ce qui permet de s'écrire d'un téléphone à l'autre)
+        if (f && t && (!o || !o.kind || o.kind === 'text') && P) {
+            const fp = (o && o.fromPhone && P.get(o.fromPhone)) || P.nearest(f);
+            const tp = P.byNumber(toKey) || P.ofOwner(t.id);
+            o = Object.assign({}, o, { fromPhone: fp ? fp.id : null, toPhone: tp ? tp.id : null });
+            return rawSend.call(M, fromId, toKey, text, o);
+        }
         return rawSend.apply(M, arguments);
     };
     // combien de messages d'affilée sans réponse (pour qu'un avatar n'enchaîne pas les SMS)
@@ -395,12 +401,17 @@ function create() {
             return l.length ? 'Contacts of this phone: ' + l.map(function (c) { const a = c.actorId ? R.actor(c.actorId) : null; return (c.label || (a && a.name) || '?') + ' ' + c.number; }).join(', ') + '.' : 'This phone has no contacts.';
         }
     });
+    // Ce qu'un avatar fait dans ses contacts devient un souvenir (le joueur n'a pas de Mind : rien à écrire pour lui)
+    function noteContact(actor, text) {
+        try { if (actor && actor.id !== 'player' && Mind && Mind.apply) Mind.apply(actor.id, { remember: [text] }); } catch (e) { /* rien */ }
+    }
     R.registerCapability({
         id: 'add_contact', desc: 'save a number in the contacts of the phone you are next to', args: '{"number":"555-...","name":"label"}',
         run: function (actor, a) {
             const ph = phoneHere(actor);
             if (!ph) return 'There is no phone here.';
             const r = P.addContact(ph.id, a.number, a.name);
+            if (r.ok) noteContact(actor, 'You saved ' + (a.name || a.number) + ' (' + a.number + ') in the contacts of the phone at ' + (ph.place || 'this place') + '.');
             return r.ok ? 'Contact saved.' : r.error;
         }
     });
@@ -409,7 +420,9 @@ function create() {
         run: function (actor, a) {
             const ph = phoneHere(actor);
             if (!ph) return 'There is no phone here.';
-            return P.rename(ph.id, a.number, a.name) ? 'Contact renamed.' : 'This number is not in the contacts.';
+            const ok = P.rename(ph.id, a.number, a.name);
+            if (ok) noteContact(actor, 'You renamed the contact ' + a.number + ' to ' + a.name + '.');
+            return ok ? 'Contact renamed.' : 'This number is not in the contacts.';
         }
     });
     R.registerCapability({
@@ -417,7 +430,9 @@ function create() {
         run: function (actor, a) {
             const ph = phoneHere(actor);
             if (!ph) return 'There is no phone here.';
-            return P.removeContact(ph.id, a.number) ? 'Contact deleted.' : 'This number is not in the contacts.';
+            const ok = P.removeContact(ph.id, a.number);
+            if (ok) noteContact(actor, 'You deleted the contact ' + a.number + ' from the phone.');
+            return ok ? 'Contact deleted.' : 'This number is not in the contacts.';
         }
     });
     R.registerCapability({
@@ -633,7 +648,7 @@ function create() {
             const p = R.place(a.loc);
             L.push(a.name + ' (téléphone ' + a.number + ') se trouve : ' + (p ? p.name : a.loc) + '.');
         });
-        M.all().filter(function (m) { const f = R.actor(m.from); return m.to === 'evelyn' && f && !f.isPlayer && R.knowsPerson(me, f.id) && Date.now() - m.at < 3 * 3600 * 1000; })
+        M.all().filter(function (m) { const f = R.actor(m.from); return m.to === 'evelyn' && m.from !== m.to && f && !f.isPlayer && R.knowsPerson(me, f.id) && Date.now() - m.at < 3 * 3600 * 1000; })
             .slice(-3).forEach(function (m) { L.push(R.actor(m.from).name + " t'a envoyé un SMS : « " + m.text + ' »'); });
         return L;
     };
@@ -722,7 +737,7 @@ function create() {
     };
     brains.setBlocks(function (id) {
         const nm = function (k) { const a = R.actor(k); return a ? a.name : k; };
-        return { blocking: api.blocks.list(id).map(nm), blockedBy: api.blocks.blockedBy(id).map(nm) };
+        return { blocking: api.blocks.list(id).map(nm), blockedBy: api.blocks.blockedBy(id).map(nm), blockedById: api.blocks.blockedBy(id) };   // blockedById : le cerveau retire ces personnes de son répertoire (elle n'essaie plus, donc pas de quota gaspillé)
     });
     R.registerCapability({
         id: 'block', desc: 'block someone on your phone: they can no longer text or call you, and they are told they are blocked', args: '{"to":"name"}',

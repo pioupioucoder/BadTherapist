@@ -58,9 +58,11 @@ export function createMessaging(R) {
         text = String(text || '').trim().slice(0, 400);
         if (!from) return { ok: false, error: 'Unknown sender.' };
         if (!dest) return { ok: false, error: 'Nobody has that name or number.' };
-        if (dest.id === from.id) return { ok: false, error: 'You cannot write to yourself.' };
+        const fp = opts.fromPhone || null, tp = opts.toPhone || null;
+        // écrire à soi-même n'est refusé que si c'est le MÊME téléphone : depuis le téléphone d'Evelyn, on peut écrire au sien (et inversement)
+        if (dest.id === from.id && !(fp && tp && fp !== tp)) return { ok: false, error: 'You cannot write to yourself.' };
         if (!text) return { ok: false, error: 'Empty message.' };
-        const m = { id: nextId++, at: Date.now(), from: from.id, to: dest.id, text: text, kind: opts.kind || 'text', read: false };
+        const m = { id: nextId++, at: Date.now(), from: from.id, to: dest.id, text: text, kind: opts.kind || 'text', read: false, fromPhone: fp, toPhone: tp };
         msgs.push(m);
         save();
         R.emit('message', m);
@@ -90,6 +92,32 @@ export function createMessaging(R) {
         });
         if (any) save();
         return any;
+    };
+    // ─── Par TÉLÉPHONE (les SMS sont rangés par téléphone : on peut s'écrire d'un téléphone à un autre) ───
+    // ph = le téléphone où l'on lit ; other = le contact { phoneId, actorId } (ses SMS avec ce téléphone-là)
+    function inPhoneThread(m, ph, other) {
+        if (m.fromPhone || m.toPhone) return (m.fromPhone === ph.id && m.toPhone === other.phoneId) || (m.toPhone === ph.id && m.fromPhone === other.phoneId);
+        // anciens messages (sans téléphone) : ils restent sur le téléphone de leur propriétaire
+        return !!ph.owner && !!other.actorId && ((m.from === ph.owner && m.to === other.actorId) || (m.from === other.actorId && m.to === ph.owner));
+    }
+    M.threadForPhone = function (ph, other, n) {
+        if (!ph || !other) return [];
+        return msgs.filter(function (m) { return (!m.kind || m.kind === 'text') && inPhoneThread(m, ph, other) && !(m.hide && m.hide[ph.id]); }).slice(-(n || 20));
+    };
+    M.deleteForPhone = function (ph, other) {
+        let any = false;
+        msgs.forEach(function (m) { if ((!m.kind || m.kind === 'text') && inPhoneThread(m, ph, other) && !(m.hide && m.hide[ph.id])) { (m.hide = m.hide || {})[ph.id] = 1; any = true; } });
+        if (any) save();
+        return any;
+    };
+    // SMS reçus par ce téléphone et pas encore ouverts (pastille « 1 »)
+    M.unreadPhone = function (phoneId, fromPhoneId) {
+        return msgs.filter(function (m) { return (!m.kind || m.kind === 'text') && m.toPhone === phoneId && !m.seen && (!fromPhoneId || m.fromPhone === fromPhoneId) && !(m.hide && m.hide[phoneId]); }).length;
+    };
+    M.markSeenPhone = function (phoneId, fromPhoneId) {
+        let any = false;
+        msgs.forEach(function (m) { if (m.toPhone === phoneId && !m.seen && (!fromPhoneId || m.fromPhone === fromPhoneId)) { m.seen = true; any = true; } });
+        if (any) save();
     };
     return M;
 }
@@ -230,6 +258,13 @@ export function createPhones(R) {
         while (l.length > 60) l.shift();
         save();
     };
+    // appels manqués reçus depuis la dernière fois qu'on a regardé l'onglet CALLS (pastille « 1 »)
+    if (!saved.seen || typeof saved.seen !== 'object') saved.seen = {};
+    P.missedCount = function (phoneId) {
+        const t = saved.seen[phoneId] || 0;
+        return (saved.log[phoneId] || []).filter(function (c) { return c.dir === 'in' && c.res === 'missed' && c.at > t; }).length;
+    };
+    P.markCallsSeen = function (phoneId) { if (!phones[phoneId] || !P.missedCount(phoneId)) return; saved.seen[phoneId] = Date.now(); save(); };
     P.callLog = function (phoneId) { return (saved.log[phoneId] || []).slice().reverse(); };
     P.clearLog = function (phoneId) {
         if (!saved.log[phoneId] || !saved.log[phoneId].length) return false;
@@ -424,7 +459,8 @@ function createPhoneScreen(opts) {
         const list = S.phones.contacts(ph.id);
         if (!list.length) body.appendChild(el('div', 'bpi-empty', 'No contacts yet.'));
         list.forEach(function (c) {
-            body.appendChild(button(nameOf(c).toUpperCase() + '  ' + c.number, function () { sel = c.number; chat = false; editing = null; note = ''; render(); }));
+            const nu = c.phoneId ? S.messaging.unreadPhone(ph.id, c.phoneId) : 0;
+            body.appendChild(button((nu ? '(' + nu + ') ' : '') + nameOf(c).toUpperCase() + '  ' + c.number, function () { sel = c.number; chat = false; editing = null; note = ''; render(); }));
         });
         body.appendChild(button('+ ADD CONTACT', function () { adding = true; note = ''; render(); }, 'bpi-play'));
     }
@@ -471,12 +507,14 @@ function createPhoneScreen(opts) {
 
     // Les derniers messages écrits avec ce contact. Aucun « lu / pas lu ».
     function renderChat(S, c) {
-        const target = c.actorId || c.number;
+        const ph = myPhone();
+        const target = c.number;          // par numéro : le message va à CE téléphone-là, même si c'est un téléphone à soi
+        if (ph && c.phoneId) S.messaging.markSeenPhone(ph.id, c.phoneId);
         body.appendChild(button('< CONTACT', function () { chat = false; note = ''; render(); }, 'bpi-play'));
-        const msgs = c.actorId ? S.messaging.threadFor('player', c.actorId, 60).filter(function (m) { return !m.kind || m.kind === 'text'; }).slice(-30) : [];
+        const msgs = ph ? S.messaging.threadForPhone(ph, c, 30) : [];
         if (!msgs.length) body.appendChild(el('div', 'bpi-empty', 'No messages.'));
         msgs.forEach(function (m) {
-            const mine = m.from === 'player';
+            const mine = m.fromPhone ? m.fromPhone === ph.id : m.from === 'player';
             const box = el('div', 'bpi-item' + (mine ? '' : ' new'));
             box.appendChild(el('div', 'd', (mine ? 'YOU' : nameOf(c).toUpperCase()) + '  ' + fmt(m.at)));
             box.appendChild(el('div', null, m.text));
@@ -486,7 +524,7 @@ function createPhoneScreen(opts) {
         const send = function () {
             const v = chatInput.value.trim();
             if (!v) return;
-            const r = S.messaging.send('player', target, v);
+            const r = S.messaging.send('player', target, v, { fromPhone: ph ? ph.id : null });
             note = r && r.ok === false ? (r.error || '') : '';
             render();
             if (chatInput) chatInput.focus();
@@ -494,10 +532,10 @@ function createPhoneScreen(opts) {
         chatInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); send(); } });
         body.appendChild(chatInput);
         body.appendChild(button('SEND', send));
-        if (msgs.length && c.actorId) {
+        if (msgs.length && ph) {
             if (editing === 'wipe') {
                 body.appendChild(el('div', 'bpi-line', 'Delete these messages? (only on your side)'));
-                body.appendChild(button('YES, DELETE', function () { S.messaging.deleteFor('player', c.actorId); editing = null; render(); }));
+                body.appendChild(button('YES, DELETE', function () { S.messaging.deleteForPhone(ph, c); editing = null; render(); }));
                 body.appendChild(button('CANCEL', function () { editing = null; render(); }, 'bpi-play'));
             } else {
                 body.appendChild(button('DELETE MESSAGES', function () { editing = 'wipe'; render(); }, 'bpi-play'));
@@ -585,6 +623,9 @@ function createPhoneScreen(opts) {
         const ph = myPhone();
         if (!S || !S.phones || !ph) { body.appendChild(el('div', 'bpi-empty', 'There is no phone here.')); return; }
         const list = S.phones.callLog(ph.id).slice(0, 40);
+        const nNew = S.phones.missedCount(ph.id);          // les appels manqués les plus récents sont en surbrillance, puis ils sont « vus »
+        let shownNew = 0;
+        S.phones.markCallsSeen(ph.id);
         if (!list.length) { body.appendChild(el('div', 'bpi-empty', 'No calls yet.')); return; }
         list.forEach(function (c) {
             const out = c.dir === 'out';
@@ -593,7 +634,9 @@ function createPhoneScreen(opts) {
             const a = target && target.owner ? S.registry.actor(target.owner) : null;
             const nm = k ? nameOf(k) : (a ? shown(a) : c.number);
             const res = c.res === 'answered' ? 'ANSWERED' : (out ? 'NO ANSWER' : 'MISSED');
-            const box = el('div', 'bpi-item');
+            const isNew = !out && c.res !== 'answered' && shownNew < nNew;
+            if (isNew) shownNew++;
+            const box = el('div', 'bpi-item' + (isNew ? ' new' : ''));
             box.appendChild(el('div', 'd', fmt(c.at)));
             box.appendChild(el('div', null, (out ? 'YOU CALLED ' : 'CALLED YOU: ') + String(nm).toUpperCase() + ' - ' + res));
             body.appendChild(box);
@@ -614,6 +657,11 @@ function createPhoneScreen(opts) {
         body.textContent = '';
         clockEl = null;
         Object.keys(tabs).forEach(function (k) { tabs[k].classList.toggle('on', k === tab); });
+        const S0 = society(), ph0 = myPhone();
+        const nMiss = S0 && S0.phones && ph0 && tab !== 'calls' ? S0.phones.missedCount(ph0.id) : 0;
+        const nMsg = S0 && S0.messaging && ph0 ? S0.messaging.unreadPhone(ph0.id) : 0;
+        tabs.calls.textContent = 'CALLS' + (nMiss ? ' (' + nMiss + ')' : '');
+        tabs.contacts.textContent = 'CONTACTS' + (nMsg && !chat ? ' (' + nMsg + ')' : '');
         renderIncoming();
         if (tab === 'calls') renderCalls(); else renderContacts();
         if (chatInput && keep) chatInput.value = keep;
@@ -652,7 +700,7 @@ function createPhoneScreen(opts) {
             e.stopPropagation();
             if (e.key === 'Escape') { e.preventDefault(); hide(); }
         });
-        window.addEventListener('badtherapist:message', function () { if (isOn && chat) render(); });
+        window.addEventListener('badtherapist:message', function () { if (isOn) render(); });
         window.addEventListener('badtherapist:call', function (ev) {
             const d = ev.detail || {};
             if ((d.from === 'player' || d.to === 'player') && d.state === 'active') callId = d.id;      // un appel vient d'être décroché
