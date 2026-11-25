@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { buildWork } from './therapist-house.js'
+import { buildWork } from './evelyn-house.js'
 import { buildForest } from './forest.js';
 import { createTruck } from '../objects/vehicle.js';
 import { createTaxi } from '../objects/taxi.js';

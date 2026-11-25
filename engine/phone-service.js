@@ -10,8 +10,7 @@
 // Pour TESTER sans attendre : ouvre la console (F12) et tape   BadTherapistEvelyn.callNow()
 
 import { createTherapistTalk } from './therapist-ai.js';
-import { Mem } from './therapist-memory.js';
-import { createEvelynLife } from './life-sync.js';
+import { Mem, createEvelynLife } from './evelyn-core.js';
 import { createPhoneItem } from './phone-app.js';
 import { society } from './society.js';       // Oliver, Pluie, le registre commun et les SMS démarrent tout seuls
 

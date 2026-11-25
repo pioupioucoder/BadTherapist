@@ -42,7 +42,7 @@ Object.keys(NPCS).forEach(function (id) {
 let _manifestP = null;
 function manifestSet() {
     if (!_manifestP) {
-        _manifestP = fetch('assets-manifest.json')
+       _manifestP = fetch('assets-manifest.json?v=' + Date.now(), { cache: 'no-store' })
             .then(function (r) { return r.ok ? r.json() : null; })
             .then(function (m) { return m && Array.isArray(m.files) ? new Set(m.files.map(function (f) { return String(f && f.path); })) : null; })
             .catch(function () { return null; });

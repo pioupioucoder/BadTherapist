@@ -13,8 +13,7 @@
 //
 // Tout texte venant d'un avatar est inséré avec textContent (jamais innerHTML) : rien de ce qu'il écrit ne peut casser la page.
 
-import { THERAPIST_CONFIG } from './therapist-config.js';
-import { Mem } from './therapist-memory.js';
+import { THERAPIST_CONFIG, Mem } from './evelyn-core.js';
 
 const CSS = `
 .bpi{position:fixed;right:12px;bottom:12px;z-index:230;display:none;width:min(340px,calc(100vw - 24px));max-height:calc(100vh - 24px);overflow-y:auto;

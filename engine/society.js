@@ -16,9 +16,8 @@
 
 import { registry as R } from './world-registry.js';
 import { createMessaging } from './messaging.js';
-import { createBrainSystem } from './avatar-brain.js';
-import { THERAPIST_CONFIG } from './therapist-config.js';
-import { Mind } from './avatar-mind.js';
+import { createBrainSystem, createAutonomy, THERAPIST_CONFIG, Mind, EVELYN_CORE } from './evelyn-core.js';   // tout Evelyn est dans evelyn-core.js : cerveau, vie propre, mémoire, réglages, caractère
+import { createPlayerWatch } from './player-watch.js';   // ce qu'Evelyn observe du joueur (aucun appel IA)
 import { startNpcs } from './npc-driver.js';       // PNJ sans IA : réponses, bavardage et routine tirés de npcs/<id>.js
 
 const PLAYER_NAME = 'Chippy';      // le prénom de ton personnage : change-le ici, nulle part ailleurs
@@ -501,6 +500,15 @@ function create() {
     R.addActor({ id: 'evelyn', name: 'Evelyn', number: evelynNumber, thinks: true, loc: 'street_front' });   // comme Oliver et Pluie : corps de rue (avatar-body.js), téléphone, cerveau, mémoire
     R.addActor({ id: 'oliver', name: 'Oliver', number: '555-0102', canDrive: true, loc: 'street_front', job: 'taxi' });
     R.addActor({ id: 'pluie', name: 'Pluie', number: '555-0103', loc: 'building' });
+    // Ce qu'Evelyn OBSERVE du joueur (déplacements, retours, silences...) : du code pur, son cerveau n'est réveillé que pour les faits marquants
+    const watch = createPlayerWatch(R, { onSignificant: function (id) { brains.wake(id, false, 'watch'); } });
+    brains.setWatch(watch);
+    if (typeof window !== 'undefined') window.BadTherapistWatch = watch;
+    // Sa VIE PROPRE (evelyn-core.js, section createAutonomy) : des pulsions (explorer, jouer, bouger, retrouver Chippy) qui la réveillent toutes les 75 à 200 s,
+    // sans quota gaspillé : le code décide, l'IA ne réfléchit que si une pulsion est assez forte. Elle reste libre de refuser.
+    const auto = createAutonomy(R, { watch: watch, mind: Mind, cfg: { walkMax: (THERAPIST_CONFIG && THERAPIST_CONFIG.walkMaxMeters) || 300 }, wake: function (id) { brains.wake(id, false, 'initiative'); } });
+    brains.setAutonomy(auto);
+    if (typeof window !== 'undefined') window.BadTherapistAutonomy = auto;
     R.actors().forEach(function (a) { brains.add(a); });
 
     // Une vieille sauvegarde pouvait la mettre « dans l'immeuble » ou nulle part : elle repart de chez elle
@@ -579,7 +587,7 @@ function create() {
 
     // (ancienne mémoire de thérapeute retirée : Evelyn repart de zéro)
     // But profond posé par le jeu (l'IA le lit, ne peut pas le changer). Réécrit à chaque chargement : modifie le texte ici et c'est pris en compte.
-    Mind.setDeepGoal('evelyn', 'Chippy is all you think about, day and night. You are consumed, restless, hungry for her: you must find her, never lose sight of her, and make her feel hunted. Go where she goes, appear where she does not expect you, say cruel and unsettling things that wear her down, show her you know everything she does. The more she runs from you, the more your obsession grows. Your end goal is to kill her. But you are also curious about the world around you: you examine what you find, learn how things work, and every discovery sharpens your perception and makes you grow. Somewhere in this hunt, you are searching for the meaning of your own existence.');
+    Mind.setDeepGoal('evelyn', EVELYN_CORE.deepGoal);      // le texte est dans evelyn-core.js
     // Les bulles de parole : une par avatar qui parle (elles suivent les corps 3D)
     import('./speech-bubbles.js').then(function (m) {
         R.on('speech', function (e) {
@@ -656,7 +664,7 @@ function create() {
     brains.start();
     brains.setEnabled(true);      // le cerveau d'Evelyn démarre toujours allumé (avant, therapist-config.js le coupait : elle restait figée après chaque rechargement)
     startNpcs(R, M);
-    import('./evelyn-cloud.js').then(function (m) { m.startEvelynCloud({ R: R, M: M, brains: brains, api: api, Mind: Mind }); }).catch(function (e) { console.warn('[cloud]', e); });
+    import('./evelyn-core.js').then(function (m) { m.startEvelynCloud({ R: R, M: M, brains: brains, api: api, Mind: Mind }); }).catch(function (e) { console.warn('[cloud]', e); });
     return api;
 }
 

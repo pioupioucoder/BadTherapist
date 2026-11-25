@@ -4,13 +4,28 @@ import { loadMixamoAvatar } from '../avatar-loader.js';
 import { buildWorld as buildOutside } from './outside.js';
 import { WORK_SPOT } from './map.js';
 import { createBookReader } from '../objects/bookreader.js';
-import { createTherapistTalk } from '../engine/therapist-ai.js';
 import { createHub } from './common.js';
 import { buildPhone } from '../objects/phone.js';
 import { createJournal } from '../objects/journal.js';
 
+// Plus de therapist-ai.js : la discussion en séance de l'ancien thérapeute n'existe plus (Evelyn parle comme les autres avatars :
+// cerveau et bulles communs, voir engine/evelyn-core.js et engine/speech-bubbles.js). Ce petit objet garde les mêmes méthodes
+// que le reste de ce fichier appelle (talk.open(), talk.isOpen()...) mais elles ne font rien.
+function createTherapistTalk() {
+  const none = function () {};
+  return {
+    open: none, openCall: none, close: none, endSession: none, reset: none,
+    greetStanding: none, nudge: none, farewell: none, hideBubble: none, updateBubble: none,
+    openDial: function () { return Promise.resolve({ answered: false }); },
+    getSyncPayload: function () { return Promise.resolve({ context: '', memory: '', playerName: '' }); },
+    callMissed: none,
+    considerCall: function () { return Promise.resolve(null); },
+    isOpen: function () { return false; }
+  };
+}
+
 // ==========================================
-// BAD THERAPIST — LA MAISON DU THÉRAPEUTE (places/therapist-house.js)
+// BAD THERAPIST — LA MAISON DU THÉRAPEUTE (places/evelyn-house.js)
 // ==========================================
 // Une vraie maison, au bout de la route, SANS téléportation ni écran de chargement :
 //   • la porte d'entrée s'ouvre (bouton OPEN, ou clic) : on voit l'intérieur en direct, on entre et on sort à pied ;
@@ -24,7 +39,7 @@ import { createJournal } from '../objects/journal.js';
 //   1) dans immeuble.js / outside.js : buildWork(scene, { x, z, y, interior, camera, ... })
 //      - avec interior + camera : la maison complète (celle de la rue) ;
 //      - sans : la maison « de loin » (vue par la fenêtre de la chambre), murs et fenêtres lumineuses, pas d'intérieur.
-//   2) autonome : world_base.html?world=therapist-house.js
+//   2) autonome : world_base.html?world=evelyn-house.js
 //
 // Pour qu'Evelyn (ou toi, depuis la console F12) agisse sur la maison :
 //   BadTherapistHouse.setLight('bedroom', false, 'evelyn')   éteint / allume : 'waiting' | 'corridor' | 'session' | 'bedroom' | 'fire'
@@ -2339,7 +2354,7 @@ export function buildWork(parent, opts) {
 }
 
 // ==========================================
-// MODE AUTONOME : world_base.html?world=therapist-house.js
+// MODE AUTONOME : world_base.html?world=evelyn-house.js
 // ==========================================
 // On construit tout le monde extérieur d'immeuble.js (route, collines, maison)
 // et on démarre devant la maison, face à la porte.
