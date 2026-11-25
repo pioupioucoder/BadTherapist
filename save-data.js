@@ -33,7 +33,10 @@
         housePos:  'bt_house_pos',        // où tu étais dans la maison d'Evelyn quand tu as quitté le jeu (therapist-house.js)
         evelyn:    'bt_evelyn_memory',    // mémoire d'Evelyn (séances : therapist-memory.js + « mind » : avatar-mind.js)
         tv:        'bt_tv_state',         // la télé de la chambre (tv.js) : { isOn, volume, disk } = allumée ? + dernière disquette
-        computer:  'bt_computer_state'    // l'ordinateur (computer.js) : compte YouTube, chaînes, dernière vidéo vue, activités récentes
+        computer:  'bt_computer_state',   // l'ordinateur (computer.js) : compte YouTube, chaînes, dernière vidéo vue, activités récentes
+        phones:    'bt_phones_v1',        // les téléphones (engine/phones.js) : contacts de chaque téléphone + journal d'appels
+        messages:  'bt_society_msgs_v1',  // les SMS entre tous les personnages (engine/phones.js)
+        blocks:    'bt_blocks_v1'         // qui a bloqué qui (engine/society.js)
     };
 
     // valeurs écrites dans l'export quand il n'y a encore rien

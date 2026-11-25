@@ -1,29 +1,34 @@
-// phone.js – le téléphone rouge posé sur la table de chevet.
+// objects/phone.js – le téléphone 3D (un modèle de téléphone rouge, utilisable partout).
 //
-// Il sonne (sonnerie + secousses + lueur rouge visible de loin dans le noir), on le décroche d'un clic,
-// on raccroche d'un clic. S'il ne sonne pas, un clic « compose » le numéro d'Evelyn.
+// ╔══════════════════════════════════════════════════════════════════════════════════════════╗
+// ║  ALL TEXT SHOWN IN THE GAME MUST BE IN ENGLISH. Comments: FR.                            ║
+// ╚══════════════════════════════════════════════════════════════════════════════════════════╝
 //
-// ─ BRANCHEMENT ──────────────────────────────────────────────────────────────────────────
-// 1. TEMPORAIRE : tant que evelyn-phone.js n'est pas branché directement, le téléphone surveille le bouton
-//    d'appel à l'écran (« EVELYN IS CALLING ») : quand il apparaît, le téléphone sonne ; décrocher le
-//    téléphone clique ce bouton à ta place, donc le reste de l'appel continue comme avant.
-// 2. Pour le brancher proprement, window.BadTherapistPhone offre :
-//      ring()  stopRing()  answer()  hangUp()  getState()  ('idle' | 'ringing' | 'inCall')
-//      say(texte)  -> Evelyn parle dans le combiné (voix du navigateur), renvoie une promesse
-//      onAnswer(fn)  onHangUp(fn)  onDial(fn)
-//    et ces événements sur window : badtherapist:phone-answer / -hangup / -dial
+// L'OBJET seulement : sonnerie, secousses, lueur, combiné qui se lève. Les numéros, les contacts et l'écran sont dans engine/phones.js.
+//
+// ─ UN FICHIER POUR TOUS LES TÉLÉPHONES ─────────────────────────────────────────────────
+//     buildPhone(scene, { owner: 'player' | 'evelyn' | ..., phoneId, parent: groupe, position: {x, y, z}, yaw, camera, canvas, theme, ... })
+// Chaque téléphone 3D correspond à une ligne de PHONE_LINES (engine/phones.js) : celle dont le propriétaire est `owner`, ou opts.phoneId.
+// Seules les couleurs (PHONE_THEMES) et le placement changent d'un téléphone à l'autre.
+// Pour ajouter un téléphone (taxi, voiture de police, maison de quelqu'un) : une ligne dans PHONE_LINES + un buildPhone(...).
+//
+// ─ CE QU'IL FAIT ───────────────────────────────────────────────────────────────────────
+// Il écoute l'événement window « badtherapist:call » (envoyé par society.js) :
+//   • un appel arrive sur CE téléphone  -> il sonne, toujours (le téléphone ne sait pas si quelqu'un est là ; seul un joueur à côté l'entend)
+//   • on appelle DEPUIS ce téléphone    -> le combiné se lève, on entend la tonalité d'appel (« tuuut... tuuut... », différente de la sonnerie
+//                                          de réception) jusqu'à ce que ça décroche ou que ça finisse ; il retombe quand l'appel finit
+//   • clic sur un téléphone qui sonne pour le joueur -> il décroche ; clic pendant un appel -> il raccroche
+//   • clic sur un téléphone au repos    -> événement badtherapist:phone-dial (engine/phones.js ouvre l'écran : contacts, messages)
+// Il ne fait AUCUN pop-up : on touche le téléphone pour voir les messages.
+// Le son ne s'entend que si le joueur est à l'endroit où le téléphone est posé (même règle que pour les personnages : phones.hears).
+//
+// ─ POUR LES AUTRES FICHIERS ────────────────────────────────────────────────────────────
+//   window.BadTherapistPhones.player / .evelyn / ...   (et window.BadTherapistPhone = celui du joueur)
+//   ring()  stopRing()  answer()  hangUp()  getState() ('idle' | 'ringing' | 'inCall')  say(texte)  onAnswer(fn)  onHangUp(fn)  onDial(fn)
+//   événements sur window : badtherapist:phone-answer / -hangup / -dial (detail.owner = à qui est le téléphone)
+//   celui d'Evelyn envoie aussi : badtherapist:phone-evelyn-answer / -hangup / -dial
+// Options : owner, phoneId, theme, parent, position, yaw, reachable(camera, worldPos), audible(distance)
 // Pour tester : F12 > console > BadTherapistPhone.ring()
-//
-// ─ UN SEUL FICHIER POUR TOUS LES TÉLÉPHONES ─────────────────────────────────────────────
-// Le téléphone d'Evelyn (maison du thérapeute) est CE MÊME code, avec un autre « owner » :
-//     buildPhone(scene, { owner: 'evelyn', parent: groupe, position: {x, y, z}, yaw, camera, canvas, ... })
-// Toute fonctionnalité que tu ajoutes plus tard ici existe donc automatiquement pour les deux.
-// Seules les couleurs (PHONE_THEMES) et le placement changent. Chaque téléphone est retrouvable par :
-//     window.BadTherapistPhones.player   (et window.BadTherapistPhone, comme avant)
-//     window.BadTherapistPhones.evelyn
-// Événements : badtherapist:phone-answer / -hangup / -dial (detail.owner = 'player' ou 'evelyn').
-// Le téléphone d'Evelyn envoie aussi la version préfixée : badtherapist:phone-evelyn-answer / -hangup / -dial
-// Options : owner, theme (couleurs à la carte), parent, position, yaw, reachable(camera, worldPos), audible(distance)
 
 import * as THREE from 'three';
 
@@ -45,7 +50,6 @@ export function buildPhone(scene, opts) {
     const TOP_Y = 0.60;                         // dessus de la table de chevet
     const RING_PERIOD = 3.0;                    // une sonnerie (2 coups) toutes les 3 secondes
     const CALL_MAX = 90;                        // sécurité : raccroche tout seul après 90 s si personne ne le fait
-    const FOLLOW_SCREEN = opts.followScreenCall !== false && owner === 'player';   // le bouton « EVELYN IS CALLING » ne concerne que le téléphone du joueur
     let soundOn = opts.sound !== false;
 
     // ─── PLACEMENT ───────────────────────────────────────────────
@@ -154,14 +158,14 @@ export function buildPhone(scene, opts) {
 
     // ─── ÉTAT ────────────────────────────────────────────────────
     let state = 'idle';                 // 'idle' | 'ringing' | 'inCall'
-    let ringSource = null;              // 'api' | 'screen'
-    let screenEl = null;                // le bouton d'appel à l'écran, s'il y en a un
+    let ringSource = null;              // 'api' | 'call'
     let clock = 0;
     let ringStart = 0;
     let lastCycle = -1;
     let callStart = 0;
     let shakeAmt = 0, lift = 0, glow = 0, nudge = 0;
     let hover = false;
+    let ringback = false, rbNext = 0;     // tonalité d'appel : on appelle depuis ce téléphone et ça sonne de l'autre côté
     const handlers = { answer: [], hangup: [], dial: [] };
 
     function fire(name, detail) {
@@ -239,16 +243,34 @@ export function buildPhone(scene, opts) {
         if (AC && master) master.gain.setTargetAtTime(0, AC.currentTime, 0.02);
     }
 
+    // tonalité d'appel : un « tuuut » long et grave (425 Hz, 1 s toutes les 3 s) ; on le reconnaît tout de suite de la sonnerie de réception
+    function ringbackTone(t0) {
+        const env = AC.createGain();
+        env.gain.setValueAtTime(0, t0);
+        env.gain.linearRampToValueAtTime(1, t0 + 0.03);
+        env.gain.setValueAtTime(1, t0 + 0.97);
+        env.gain.linearRampToValueAtTime(0, t0 + 1.0);
+        const o = AC.createOscillator();
+        o.type = 'sine';
+        o.frequency.value = 425;
+        o.connect(env);
+        env.connect(master);
+        o.start(t0);
+        o.stop(t0 + 1.05);
+    }
+    function startRingback() { if (state === 'inCall') { ringback = true; rbNext = 0; } }
+    function stopRingback() { if (ringback) { ringback = false; stopSound(); } }
+
     const tmp = new THREE.Vector3();
 
     // volume selon la distance, et d'où vient le son (gauche / droite)
     function updateSoundPosition() {
-        if (!AC || !master || state !== 'ringing' || !camera) return;
+        if (!AC || !master || !(state === 'ringing' || ringback) || !camera) return;
         const d = camera.position.distanceTo(worldPos);
         let gain = 0;
         if (typeof opts.audible === 'function') gain = opts.audible(d) || 0;                        // ex. maison d'Evelyn : audible seulement à côté
-        else if (camera.position.x <= 100) gain = 0.04 + 0.5 * Math.pow(Math.max(0, 1 - d / 25), 2);   // faible mais audible dans tout l'immeuble, pas dans la rue
-        master.gain.setTargetAtTime(gain * 0.5, AC.currentTime, 0.05);
+        else if (playerHears() !== false) gain = 0.04 + 0.5 * Math.pow(Math.max(0, 1 - d / 25), 2);   // seulement si le joueur est là où le téléphone est posé
+        master.gain.setTargetAtTime(gain * (ringback ? 0.35 : 0.5), AC.currentTime, 0.05);
         if (pan) {
             tmp.copy(worldPos).applyMatrix4(camera.matrixWorldInverse);
             const h = Math.hypot(tmp.x, tmp.z) || 1;
@@ -260,7 +282,7 @@ export function buildPhone(scene, opts) {
     function ring(source) {
         if (state !== 'idle') return false;
         state = 'ringing';
-        ringSource = source === 'screen' ? 'screen' : 'api';
+        ringSource = source === 'call' ? 'call' : 'api';
         ringStart = clock;
         lastCycle = -1;
         return true;
@@ -270,23 +292,17 @@ export function buildPhone(scene, opts) {
         if (state !== 'ringing') return false;
         state = 'idle';
         ringSource = null;
-        screenEl = null;
         stopSound();
         return true;
     }
 
-    function answer(viaPhone) {
+    function answer() {
         if (state !== 'ringing') return false;
-        const el = ringSource === 'screen' ? screenEl : null;
         const source = ringSource;
         stopSound();
         state = 'inCall';
         ringSource = null;
         callStart = clock;
-        if (viaPhone && el && el.isConnected) {
-            try { el.click(); } catch (e) { console.error('[phone]', e); }   // décrocher = appuyer sur le bouton d'appel à l'écran
-        }
-        screenEl = null;
         fire('answer', { source: source });
         return true;
     }
@@ -294,10 +310,67 @@ export function buildPhone(scene, opts) {
     function hangUp() {
         if (state !== 'inCall') return false;
         state = 'idle';
+        ringback = false;
+        stopSound();
         stopSpeaking();
+        const c = myCall();
+        if (c) { try { window.BadTherapistSociety.calls.hangUp('player'); } catch (e) { console.error('[phone]', e); } }   // raccrocher ici = raccrocher l'appel du joueur
         fire('hangup');
         return true;
     }
+    // l'appel est fini ailleurs (l'autre a raccroché, appel manqué) : on repose le combiné sans rien déclencher
+    function forceIdle() {
+        ringback = false;
+        stopSound();
+        stopSpeaking();
+        state = 'idle';
+        ringSource = null;
+    }
+
+    // ─── LIEN AVEC LES APPELS DE society.js ──────────────────────
+    function myPhoneId() {
+        if (opts.phoneId) return opts.phoneId;
+        const net = window.BadTherapistPhoneNet;
+        const p = net && net.ofOwner ? net.ofOwner(owner) : null;
+        return p ? p.id : null;
+    }
+    // l'appel en cours (sonne ou actif) du JOUEUR qui passe par ce téléphone
+    function myCall() {
+        const S = window.BadTherapistSociety, id = myPhoneId();
+        if (!S || !S.calls || !id) return null;
+        const list = S.calls.list().filter(function(c) {
+            return (c.status === 'ringing' || c.status === 'active') && (c.from === 'player' || c.to === 'player') && (c.fromPhone === id || c.toPhone === id);
+        });
+        return list.length ? list[list.length - 1] : null;
+    }
+    function incomingForPlayer() {
+        const S = window.BadTherapistSociety, id = myPhoneId();
+        if (!S || !S.calls || !id) return null;
+        return S.calls.incoming('player').filter(function(c) { return c.toPhone === id && c.from !== c.to; })[0] || null;
+    }
+    // le joueur est-il là où ce téléphone est posé ? (engine/phones.js : hears) ; null = le système n'est pas là, on ne sait pas
+    function playerHears() {
+        const net = window.BadTherapistPhoneNet, S = window.BadTherapistSociety, id = myPhoneId();
+        const me = S && S.registry ? S.registry.actor('player') : null;
+        const ph = net && id ? net.get(id) : null;
+        if (!net || !me || !ph) return null;
+        return net.hears(me, ph);
+    }
+    window.addEventListener('badtherapist:call', function(ev) {
+        const d = ev.detail || {}, id = myPhoneId();
+        if (!id) return;
+        const over = d.state === 'missed' || d.state === 'ended';
+        if (d.toPhone === id) {                                          // un appel arrive ici
+            if (d.state === 'ringing') ring('call');                     // il sonne toujours : le téléphone ne sait pas si quelqu'un est là
+            else if (d.state === 'active' && state === 'ringing') { stopSound(); state = 'inCall'; ringSource = null; callStart = clock; }
+            else if (over) { if (state === 'ringing') stopRing(); else if (state === 'inCall') forceIdle(); }
+        }
+        if (d.fromPhone === id) {                                        // on appelle depuis ce téléphone : le combiné est levé
+            if ((d.state === 'ringing' || d.state === 'active') && state === 'idle') { state = 'inCall'; callStart = clock; }
+            else if (over && state === 'inCall') forceIdle();
+            if (d.state === 'ringing') startRingback(); else stopRingback();      // ça sonne là-bas : tonalité ; décroché, manqué ou fini : silence
+        }
+    });
 
     function dial() {
         if (state !== 'idle') return false;
@@ -336,42 +409,6 @@ export function buildPhone(scene, opts) {
         try { if ('speechSynthesis' in window) window.speechSynthesis.cancel(); } catch (e) {}
     }
 
-    // ─── SURVEILLE LE BOUTON D'APPEL À L'ÉCRAN (temporaire) ──────
-    const CALL_RE = /evelyn\s+is\s+calling/i;
-
-    function isShown(el) {
-        if (!el.getClientRects || !el.getClientRects().length) return false;
-        for (let e = el; e; e = e.parentElement) {
-            const s = window.getComputedStyle(e);
-            if (s.display === 'none' || s.visibility === 'hidden' || parseFloat(s.opacity) === 0) return false;
-        }
-        return true;
-    }
-
-    function findScreenCall() {
-        if (!document.body) return null;
-        const walker = document.createTreeWalker(document.body, 4);     // 4 = nœuds de texte
-        let n;
-        while ((n = walker.nextNode())) {
-            if (CALL_RE.test(n.nodeValue) && n.parentElement && isShown(n.parentElement)) return n.parentElement;
-        }
-        return null;
-    }
-
-    if (FOLLOW_SCREEN) {
-        setInterval(function() {
-            const el = findScreenCall();
-            if (el && state === 'idle') {
-                screenEl = el;
-                ring('screen');
-            } else if (!el && state === 'ringing' && ringSource === 'screen') {
-                stopRing();                                    // décroché ou raté à l'écran : le téléphone se tait
-            } else if (el && state === 'ringing' && ringSource === 'screen') {
-                screenEl = el;
-            }
-        }, 500);
-    }
-
     // ─── ANIMATION ───────────────────────────────────────────────
     function update(dt) {
         dt = Math.min(dt || 0, 0.1);
@@ -392,6 +429,9 @@ export function buildPhone(scene, opts) {
             updateSoundPosition();
         } else if (state === 'inCall' && clock - callStart > CALL_MAX) {
             hangUp();
+        } else if (state === 'inCall' && ringback) {
+            if (clock >= rbNext && ensureAudio()) { rbNext = clock + 3.0; ringbackTone(AC.currentTime + 0.02); }
+            updateSoundPosition();
         }
 
         nudge = Math.max(0, nudge - dt * 2.5);
@@ -429,8 +469,9 @@ export function buildPhone(scene, opts) {
         if (!camera) return false;
         if (typeof opts.reachable === 'function') return !!opts.reachable(camera, worldPos);
         const q = camera.position;
-        if (q.x > 100 || Math.abs(q.y - 1.7) > 1.2 || q.z < 0.3) return false;
-        return Math.hypot(q.x - worldPos.x, q.z - worldPos.z) < 3.4;
+        if (Math.abs(q.y - worldPos.y) > 2.2) return false;
+        if (Math.hypot(q.x - worldPos.x, q.z - worldPos.z) >= 3.4) return false;
+        return playerHears() !== false;                      // il faut aussi être dans le lieu où le téléphone est posé
     }
 
     function overPhone(ev) {
@@ -455,7 +496,12 @@ export function buildPhone(scene, opts) {
         canvas.addEventListener('click', function(ev) {
             if (Math.hypot(ev.clientX - downX, ev.clientY - downY) > 8) return;     // un glissé pour regarder autour n'est pas un clic
             if (!overPhone(ev)) return;
-            if (state === 'ringing') answer(true);
+            if (state === 'ringing') {
+                if (ringSource === 'call') {                         // appel de society.js : on ne décroche que s'il est pour le joueur
+                    if (!incomingForPlayer()) return;
+                    if (answer()) { try { window.BadTherapistSociety.calls.answer('player'); } catch (e) { console.error('[phone]', e); } }
+                } else answer();
+            }
             else if (state === 'inCall') hangUp();
             else dial();
         });
@@ -466,7 +512,7 @@ export function buildPhone(scene, opts) {
         group: root,
         ring: function() { return ring('api'); },
         stopRing: stopRing,
-        answer: function() { return answer(false); },
+        answer: function() { return answer(); },
         hangUp: hangUp,
         getState: function() { return state; },
         isRinging: function() { return state === 'ringing'; },

@@ -18,7 +18,7 @@
 
 import * as THREE from 'three';
 import { loadMixamoAvatar } from '../avatar-loader.js';
-import { createNpc } from './npc-body.js';
+import { createNpc } from '../npcs/body.js';
 import { society } from './society.js';
 import { Bubbles } from './speech-bubbles.js';
 import { NPCS } from '../npcs/index.js';

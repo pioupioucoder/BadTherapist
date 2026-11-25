@@ -10,7 +10,7 @@
 //
 // ALL TEXT SHOWN IN THE GAME MUST BE IN ENGLISH (it comes from the sheets in npcs/).
 
-import { NPCS, isNpc } from '../npcs/index.js';
+import { NPCS, isNpc } from './index.js';
 
 const TICK_MS = 2000;
 const REGREET_MS = 120000;          // il ne te resalue pas avant 2 min

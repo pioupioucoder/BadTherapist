@@ -1,7 +1,7 @@
 // society.js – la SOCIÉTÉ du jeu : toi (Chippy), Evelyn, Oliver, Pluie ont les mêmes capacités, le même téléphone, la même mémoire.
 //
 // Ce fichier s'auto-branche : il suffit qu'il soit importé (phone-service.js et outside.js l'importent).
-//   • registre commun (world-registry.js), SMS (messaging.js), cerveau commun (avatar-brain.js)
+//   • registre commun (world-registry.js), SMS (phones.js), cerveau commun (avatar-brain.js)
 //   • capacités de base : aller quelque part, ouvrir/fermer, parler, écrire, conduire le taxi...
 //   • les corps 3D (avatar-body.js) lisent l'état d'ici : Oliver et Pluie marchent vraiment dans la rue,
 //     Oliver est au volant du vrai taxi (taxi.js), Evelyn garde son corps dans therapist-house.js.
@@ -15,10 +15,10 @@
 // Tous les avatars la connaissent aussitôt : pas de fichier à renvoyer, pas d'avatar à modifier.
 
 import { registry as R } from './world-registry.js';
-import { createMessaging } from './messaging.js';
+import { createMessaging, createPhones } from './phones.js';       // SMS + téléphones (numéro = téléphone posé quelque part, contacts et journal par téléphone) : tout est dans phones.js
 import { createBrainSystem, createAutonomy, THERAPIST_CONFIG, Mind, EVELYN_CORE } from './evelyn-core.js';   // tout Evelyn est dans evelyn-core.js : cerveau, vie propre, mémoire, réglages, caractère
 import { createPlayerWatch } from './player-watch.js';   // ce qu'Evelyn observe du joueur (aucun appel IA)
-import { startNpcs } from './npc-driver.js';       // PNJ sans IA : réponses, bavardage et routine tirés de npcs/<id>.js
+import { startNpcs } from '../npcs/behavior.js';     // PNJ sans IA : réponses, bavardage et routine tirés de npcs/<id>.js
 
 const PLAYER_NAME = 'Chippy';      // le prénom de ton personnage : change-le ici, nulle part ailleurs
 const hasDom = typeof document !== 'undefined';
@@ -39,6 +39,7 @@ const OFFS = { oliver: [3, 2.5], pluie: [-3, 2.5], evelyn: [0, 3.5] };   // chac
 function create() {
     const cfg = Object.assign({ rideAutoAcceptSec: 60, walkMaxMeters: 1500 }, THERAPIST_CONFIG || {});
     const M = createMessaging(R);
+    const P = createPhones(R);
     const brains = createBrainSystem(R, M);
     const rides = [];
 
@@ -53,8 +54,7 @@ function create() {
         if (isBlocking(from.id, to.id)) return 'You blocked ' + to.name + '. Unblock them first if you want to reach them.';
         return '';
     }
-    // le téléphone du joueur est chez lui : il n'entend les appels que s'il y est (changeable : phoneRooms dans therapist-config.js)
-    function nearPhone() { const p = R.actor('player'); return !!p && (cfg.phoneRooms || ['bedroom']).indexOf(p.loc) !== -1; }
+    // (les téléphones sont dans phones.js : on n'entend un téléphone que là où il est posé)
     const rawSend = M.send;
     M.send = function (fromId, toKey, text, o) {
         const f = R.actor(fromId), t = R.findActor(toKey);
@@ -283,6 +283,11 @@ function create() {
     let callId = 1;
     const RING_MS = (cfg.ringSeconds || 25) * 1000;
     function callOf(actorId) { return calls.filter(function (c) { return (c.status === 'ringing' || c.status === 'active') && (c.from === actorId || c.to === actorId); })[0] || null; }
+    api.phones = P;
+    // événement window « badtherapist:call » : les téléphones 3D (objects/phone.js) et l'écran du joueur l'écoutent
+    function callEvent(c, state) {
+        try { window.dispatchEvent(new CustomEvent('badtherapist:call', { detail: { id: c.id, from: c.from, to: c.to, state: state, fromPhone: c.fromPhone || null, toPhone: c.toPhone || null, silent: !!c.silent } })); } catch (e) { /* rien */ }
+    }
     api.calls = {
         incoming: function (id) { return calls.filter(function (c) { return c.status === 'ringing' && c.to === id; }); },
         active: function (id) { return calls.filter(function (c) { return c.status === 'active' && (c.from === id || c.to === id); })[0] || null; },
@@ -290,35 +295,42 @@ function create() {
         get: function (cid) { return calls.filter(function (c) { return c.id === cid; })[0] || null; },
         list: function () { return calls.slice(-60); },
         start: function (fromId, toKey) {
-            const from = R.actor(fromId), to = R.findActor(toKey);
-            if (!from || !to || to.id === from.id) return { ok: false, error: 'Nobody to call.' };
-            if (!R.knowsPerson(from, to.id)) return { ok: false, error: 'You do not have this person\'s number. You only get to know people by meeting them.' };
+            const from = R.actor(fromId);
+            if (!from) return { ok: false, error: 'Nobody to call.' };
+            const route = P.route(from, toKey);                 // phones.js : suis-je près d'un téléphone, ce numéro existe-t-il, est-il dans les contacts de CE téléphone ?
+            if (!route.ok) return route;
+            const to = route.toActor;
+            if (!to) return { ok: false, error: 'Nobody to call.' };
+            // appeler son PROPRE numéro depuis un autre téléphone est permis : ça sonne là-bas, personne ne décroche (ou toi, une fois sur place)
+            const toSelf = to.id === from.id;
+            if (toSelf && !(route.fromPhone && route.toPhone && route.fromPhone.id !== route.toPhone.id)) return { ok: false, error: 'The line is busy.' };
             const be = blockError(from, to); if (be) return { ok: false, error: be };
             if (!from.isPlayer && calls.some(function (x) { return x.from === from.id && x.to === to.id && x.status === 'missed' && Date.now() - x.at < 10 * 60000; })) return { ok: false, error: 'You already tried to call them a moment ago. Text them, or try again much later.' };
             if (callOf(from.id)) return { ok: false, error: 'You are already on a call.' };
             if (callOf(to.id)) { const bc = { id: callId++, from: from.id, to: to.id, status: 'ringing', at: Date.now() }; calls.push(bc); return { ok: true, call: finishCall(bc, 'missed'), busy: true }; }   // occupé : comme un appel manqué
-            const c = { id: callId++, from: from.id, to: to.id, status: 'ringing', at: Date.now() };
+            const c = { id: callId++, from: from.id, to: to.id, status: 'ringing', at: Date.now(),
+                        fromPhone: route.fromPhone ? route.fromPhone.id : null, toPhone: route.toPhone ? route.toPhone.id : null };
             calls.push(c);
-            Mind.noteCall(from.id, to.id, to.name, 'call_out');
-            Mind.noteCall(to.id, from.id, from.name, 'call_in');
-            R.note(from.name + ' is calling ' + to.name + '.');
-            const rings = !to.isPlayer || nearPhone();                 // le joueur n'entend son téléphone que chez lui : sinon appel manqué
-            c.silent = !rings;
-            if (rings) {
-                R.emit('call', { call: c, state: 'ringing' });
-                try { window.dispatchEvent(new CustomEvent('badtherapist:call', { detail: { id: c.id, from: c.from, to: c.to, state: 'ringing' } })); } catch (e) { /* rien */ }
+            if (!toSelf) {
+                Mind.noteCall(from.id, to.id, to.name, 'call_out');
+                Mind.noteCall(to.id, from.id, from.name, 'call_in');
+                R.note(from.name + ' is calling ' + to.name + '.');
             }
-            if (!to.isPlayer) brains.wake(to.id, true);
+            const rings = P.hears(to, route.toPhone);           // il n'entend que s'il est là où ce téléphone est posé
+            c.silent = !rings;
+            if (rings) R.emit('call', { call: c, state: 'ringing' });
+            callEvent(c, 'ringing');                            // l'objet 3D de l'appelant décroche, celui de l'appelé sonne (sauf silent)
+            if (rings && !to.isPlayer) brains.wake(to.id, true);
             setTimeout(function () { if (c.status === 'ringing') finishCall(c, 'missed'); }, RING_MS);        // sans réponse : appel manqué
             return { ok: true, call: c };
         },
         answer: function (actorId) {
             const c = api.calls.incoming(actorId)[0];
-            if (!c) return false;
-            if (R.actor(actorId) && R.actor(actorId).isPlayer && !nearPhone()) return false;
+            if (!c || c.from === c.to) return false;                      // on ne décroche pas son propre appel
+            if (!P.hears(R.actor(actorId), c.toPhone ? P.get(c.toPhone) : null)) return false;   // il faut être près du téléphone qui sonne
             c.status = 'active'; c.answeredAt = Date.now();
             R.emit('call', { call: c, state: 'active' });
-            try { window.dispatchEvent(new CustomEvent('badtherapist:call', { detail: { id: c.id, from: c.from, to: c.to, state: 'active' } })); } catch (e) { /* rien */ }
+            callEvent(c, 'active');
             const f = R.actor(c.from); if (f && !f.isPlayer) brains.wake(f.id, true);
             return true;
         },
@@ -331,9 +343,15 @@ function create() {
     };
     function finishCall(c, status) {
         c.status = status;
+        if (!c.logged) {                                 // journal d'appels : chaque téléphone garde le sien (phones.js)
+            c.logged = true;
+            const fp = c.fromPhone ? P.get(c.fromPhone) : null, tp = c.toPhone ? P.get(c.toPhone) : null;
+            const res = c.answeredAt ? 'answered' : 'missed';
+            if (fp && tp) { P.logCall(fp.id, { dir: 'out', number: tp.number, res: res }); P.logCall(tp.id, { dir: 'in', number: fp.number, res: res }); }
+        }
         if (status === 'missed') {
             const to = R.actor(c.to);
-            Mind.noteCall(c.to, c.from, (R.actor(c.from) || {}).name, 'missed');
+            if (c.from !== c.to) Mind.noteCall(c.to, c.from, (R.actor(c.from) || {}).name, 'missed');
             if (!(R.actor(c.from) && R.actor(c.from).isPlayer)) brains.wake(c.from);
         } else {
             if (c.answeredAt) {                         // la mémoire des deux : l'appel a eu lieu
@@ -344,7 +362,7 @@ function create() {
             if (o && !o.isPlayer) brains.wake(o.id);
         }
         R.emit('call', { call: c, state: status });
-        try { window.dispatchEvent(new CustomEvent('badtherapist:call', { detail: { id: c.id, from: c.from, to: c.to, state: status } })); } catch (e) { /* rien */ }
+        callEvent(c, status);
         return c;
     }
     brains.setCalls(api.calls);
@@ -364,6 +382,59 @@ function create() {
     R.registerCapability({
         id: 'hang_up', desc: 'end the call, or refuse a ringing call', args: '',
         run: function (actor) { return api.calls.hangUp(actor.id) ? 'You hang up.' : 'You are not on a call.'; }
+    });
+    // ─── CONTACTS du téléphone où l'on se trouve (pareil pour tout le monde : toi, Evelyn, les autres) ───
+    // On utilise le téléphone qui est posé là où l'on est, même s'il n'est pas à nous : ses contacts sont ceux de CE téléphone.
+    function phoneHere(actor) { return P.nearest(actor); }
+    R.registerCapability({
+        id: 'phone_contacts', desc: 'list the contacts saved in the phone you are next to', args: '',
+        run: function (actor) {
+            const ph = phoneHere(actor);
+            if (!ph) return 'There is no phone here.';
+            const l = P.contacts(ph.id);
+            return l.length ? 'Contacts of this phone: ' + l.map(function (c) { const a = c.actorId ? R.actor(c.actorId) : null; return (c.label || (a && a.name) || '?') + ' ' + c.number; }).join(', ') + '.' : 'This phone has no contacts.';
+        }
+    });
+    R.registerCapability({
+        id: 'add_contact', desc: 'save a number in the contacts of the phone you are next to', args: '{"number":"555-...","name":"label"}',
+        run: function (actor, a) {
+            const ph = phoneHere(actor);
+            if (!ph) return 'There is no phone here.';
+            const r = P.addContact(ph.id, a.number, a.name);
+            return r.ok ? 'Contact saved.' : r.error;
+        }
+    });
+    R.registerCapability({
+        id: 'rename_contact', desc: 'change the name of a contact in the phone you are next to', args: '{"number":"555-...","name":"new name"}',
+        run: function (actor, a) {
+            const ph = phoneHere(actor);
+            if (!ph) return 'There is no phone here.';
+            return P.rename(ph.id, a.number, a.name) ? 'Contact renamed.' : 'This number is not in the contacts.';
+        }
+    });
+    R.registerCapability({
+        id: 'remove_contact', desc: 'delete a contact from the phone you are next to', args: '{"number":"555-..."}',
+        run: function (actor, a) {
+            const ph = phoneHere(actor);
+            if (!ph) return 'There is no phone here.';
+            return P.removeContact(ph.id, a.number) ? 'Contact deleted.' : 'This number is not in the contacts.';
+        }
+    });
+    R.registerCapability({
+        id: 'clear_calls', desc: 'delete the call history of the phone you are next to', args: '',
+        run: function (actor) {
+            const ph = phoneHere(actor);
+            if (!ph) return 'There is no phone here.';
+            return P.clearLog(ph.id) ? 'Call history deleted.' : 'There is no call history on this phone.';
+        }
+    });
+    R.registerCapability({
+        id: 'delete_chat', desc: 'delete your text messages with someone (only on your side)', args: '{"to":"name"}',
+        run: function (actor, a) {
+            const t = R.findActor(a.to);
+            if (!t) return 'Unknown person.';
+            return M.deleteFor(actor.id, t.id) ? 'Messages deleted.' : 'You have no messages with them.';
+        }
     });
     // ─── Taxi ───
     R.registerCapability({
