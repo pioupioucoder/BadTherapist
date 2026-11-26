@@ -640,9 +640,9 @@ export function buildTV(scene, o) {
             function stepX(n) { return Math.min(0.19, (SHELF_W - 0.3) / Math.max(1, n)); }
             function stepZ(n) { return Math.min(0.016, 0.16 / Math.max(1, n)); }
 
-            // ── Vrais livres : json/livredebedroom/book01.json, book02.json… (même format que le lecteur de livre) ──
+            // ── Vrais livres : json/books/player/book01.json, book02.json… (même format que le lecteur de livre) ──
             // On charge book01, book02… jusqu'au premier fichier absent. Clic sur un dos de livre → lecteur.
-            const BOOKS_DIR = 'json/livredebedroom/';
+            const BOOKS_DIR = 'json/books/player/';
             const BOOKS_MAX = 40;
             let bookDefs = [];
             let spineCache = {};
@@ -714,7 +714,7 @@ export function buildTV(scene, o) {
                 fetch('assets-manifest.json?t=' + Date.now())
                     .then(r => (r.ok ? r.json() : null)).catch(() => null)
                     .then(m => {
-                        const re = /^json\/livredebedroom\/(book\d+\.json)$/i;
+                        const re = /^json\/books\/player\/(book\d+\.json)$/i;
                         const names = (m && Array.isArray(m.files))
                             ? m.files.map(f => { const x = re.exec(String((f && f.path) || '')); return x ? x[1] : null; }).filter(Boolean).sort()
                             : [];

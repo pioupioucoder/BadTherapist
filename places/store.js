@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { PLACES, SEA } from './layout.js';
-import { mats, box, glow, enterable, signMaterial, canvasTex, makeCanvas, FACE_YAW } from './common.js';
+import { PLACES, SEA } from './monde.js'
+import { mats, box, glow, enterable, signMaterial, canvasTex, makeCanvas, FACE_YAW } from './outils.js';
 
 // ==========================================
 // BAD THERAPIST — LE MAGASIN (places/store.js)

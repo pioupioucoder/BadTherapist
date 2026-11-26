@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { PLACES, SEA } from './layout.js';
-import { mats, box, glow, lampPost, fakeBuilding, mulberry32 } from './common.js';
+import { PLACES, SEA }from './monde.js'
+import { mats, box, glow, lampPost, fakeBuilding, mulberry32 }from './outils.js';
 
 // ==========================================
 // BAD THERAPIST — PORT (places/port.js)

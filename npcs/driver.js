@@ -4,7 +4,7 @@
 // Aucun lien avec Evelyn : son corps est dans engine/evelyn-core.js. Reste à part : npcs/behavior.js (réponses, bavardage, routine : pas de 3D, society.js le charge
 // sur des pages qui n'ont pas « three ») et les fiches npcs/<id>.js (une par PNJ : apparence, dialogues, métier).
 //
-// Utilisation (places/outside.js) :  createNpcBodies(scene, { camera, groundH, taxi, bus, police, canvas, renderer })  ->  { update(dt), list() }
+// Utilisation (places/dehors.js) :  createNpcBodies(scene, { camera, groundH, taxi, bus, police, canvas, renderer })  ->  { update(dt), list() }
 // Réglage : si un modèle flotte / s'enfonce, changer height dans sa fiche npcs/<id>.js.
 
 import * as THREE from 'three';

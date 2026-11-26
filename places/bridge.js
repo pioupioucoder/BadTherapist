@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { PLACES } from './monde.js'
-import { mats, box, glow, lampPost, fakeBuilding, signMaterial, fadeBlack, mulberry32 } from './common.js';
+import { mats, box, glow, lampPost, fakeBuilding, signMaterial, fadeBlack, mulberry32 } from './outils.js'
 
 // ==========================================
 // BAD THERAPIST — VOIE FERRÉE, PONT, GARES ET TRAIN (places/bridge.js)

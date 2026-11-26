@@ -3,9 +3,14 @@
 // Le texte est gardé dans le navigateur (localStorage, clé "bt_journal") à chaque frappe.
 // Il fait partie de la sauvegarde globale : Settings > EXPORT / IMPORT (voir save-data.js).
 //
-// UN SEUL FICHIER POUR LES DEUX CARNETS : celui du joueur (par défaut) et le carnet intime d'Evelyn :
-//     createJournal({ key: 'bt_evelyn_journal', readOnly: true, label: 'Carnet intime d\'Evelyn', cover: [...] })
-// (la clé 'bt_evelyn_journal' est déclarée dans save-data.js -> sauvegarde, export, profils, synchro)
+// UN CARNET = UN IDENTIFIANT. L'identifiant dit seulement QUEL carnet (où il est sauvegardé), pas à qui il appartient :
+//     createJournal({ id: 'player' })    le carnet du tiroir de la chambre
+//     createJournal({ id: 'evelyn' })    le carnet de la maison d'Evelyn
+// Tout le monde peut écrire dans un carnet : toi au clavier, Evelyn par programme (j.write('...')).
+// La lecture seule n'existe que si tu la demandes : createJournal({ id: 'evelyn', readOnly: true }).
+// Nouveau carnet ? Ajoute une ligne dans JOURNALS ci-dessous ET sa clé dans KEYS de save-data.js
+// (sinon il marche, mais n'est ni exporté ni séparé entre profil joueur / admin).
+// (ancien nom « owner » toujours accepté)
 // Evelyn écrit par programme avec les mêmes règles de sauvegarde que toi :
 //     j.write('texte')                  ajoute à la suite (nouvelle page quand la page est pleine) — sauvegardé tout de suite
 //     j.erase('un mot ou une phrase')   efface cette phrase (la première trouvée, ou toutes avec {all:true}) — sauvegardé
@@ -13,6 +18,14 @@
 //     j.setPage(i, 'texte') / j.getPages() / j.reload()
 
 const KEY = 'bt_journal';
+
+// identifiant du carnet -> clé de sauvegarde, nom, couleurs de couverture
+// (les clés 'bt_journal' et 'bt_evelyn_journal' sont celles de save-data.js : tes carnets actuels ne sont pas perdus)
+const JOURNALS = {
+    player: { key: 'bt_journal',         label: 'Journal',                  cover: null },
+    evelyn: { key: 'bt_evelyn_journal',  label: "Carnet intime d'Evelyn",   cover: ['#2c5a63', '#17363e', '#0b1d23'] }
+};
+export function journalKey(owner) { return (JOURNALS[owner] && JOURNALS[owner].key) || 'bt_journal_' + owner; }
 const MAX_PAGES = 400;     // nombre de pages maximum
 const MAX_CHARS = 3000;    // caractères maximum par page
 
@@ -72,8 +85,12 @@ const CSS = `
 
 export function createJournal(opts) {
     opts = opts || {};
-    const KEY_ = opts.key || KEY;                 // clé de sauvegarde de CE carnet
-    const readOnly = !!opts.readOnly;             // lecture seule : le joueur lit, seul le code (Evelyn) écrit
+    const owner = opts.id || opts.owner || 'player';   // identifiant de CE carnet
+    const O = JOURNALS[owner] || { key: journalKey(owner), label: 'Journal (' + owner + ')', cover: null };
+    const KEY_ = opts.key || O.key;               // clé de sauvegarde de CE carnet (opts.key = ancienne façon, toujours acceptée)
+    const readOnly = !!opts.readOnly;             // lecture seule : seulement si demandé (par défaut tout le monde écrit)
+    const LABEL = opts.label || O.label;
+    const COVER = opts.cover || O.cover;
     // ─── DONNÉES ─────────────────────────────────────────────────
     function normalize(d) {
         const pages = (d && Array.isArray(d.pages) ? d.pages : [])
@@ -186,11 +203,11 @@ export function createJournal(opts) {
         root = document.createElement('div');
         root.className = 'btj';
         root.setAttribute('role', 'dialog');
-        root.setAttribute('aria-label', opts.label || 'Journal');
-        if (opts.cover && opts.cover.length >= 3) {
-            root.style.setProperty('--btj-c1', opts.cover[0]);
-            root.style.setProperty('--btj-c2', opts.cover[1]);
-            root.style.setProperty('--btj-c3', opts.cover[2]);
+        root.setAttribute('aria-label', LABEL);
+        if (COVER && COVER.length >= 3) {
+            root.style.setProperty('--btj-c1', COVER[0]);
+            root.style.setProperty('--btj-c2', COVER[1]);
+            root.style.setProperty('--btj-c3', COVER[2]);
         }
         const ta = '<textarea class="btj-ta" spellcheck="false" autocomplete="off" maxlength="' + MAX_CHARS + '"';
         root.innerHTML =
@@ -459,6 +476,7 @@ export function createJournal(opts) {
     }
 
     return {
+        id: owner,
         open: open,
         close: close,
         isOpen: function() { return isOpen; },

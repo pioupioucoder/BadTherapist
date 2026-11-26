@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { PLACES } from './layout.js';
-import { mats, box, glow, lampPost, signMaterial } from './common.js';
+import { PLACES } from './monde.js'
+import { mats, box, glow, lampPost, signMaterial } from './outils.js';
 
 // ==========================================
 // BAD THERAPIST — STATION-SERVICE (places/gasstation.js)  v2

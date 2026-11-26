@@ -1,6 +1,9 @@
-// bookreader.js – lecteur de livre (lecture seule) pour les livres de l'étagère du thérapeute.
+// bookreader.js – lecteur de livre (lecture seule : les livres sont des fichiers, on ne les écrit pas ici).
+// Les livres sont rangés par COLLECTION (un identifiant = un dossier, pas forcément une personne) :
+//     json/books/evelyn/  l'étagère d'Evelyn      json/books/player/  tes livres      json/books/library/  une bibliothèque...
+// Nouvelle étagère ? Crée json/books/<id>/ : rien d'autre à changer. N'importe qui peut ouvrir n'importe quelle collection.
 //
-// Chaque livre est un fichier json/livredetherapeute/bookNN.json :
+// Chaque livre est un fichier json/books/<id>/bookNN.json :
 // {
 //   "title":  "Titre du livre",
 //   "author": "Nom (facultatif)",
@@ -14,7 +17,8 @@
 //   "pages": ["Texte de la page 1", "Texte de la page 2", "..."]
 // }
 //
-// Utilisation : const reader = createBookReader(); reader.open(donnéesDuLivre); reader.isOpen();
+// Utilisation : const reader = createBookReader({ id: 'evelyn' }); reader.open(donnéesDuLivre); reader.isOpen();
+//               bookDir('evelyn') -> 'json/books/evelyn/'      bookPath('evelyn', 3) -> 'json/books/evelyn/book03.json'
 
 const CSS = `
 .btr{position:fixed;left:0;top:0;width:100%;height:100%;z-index:200;display:none;align-items:center;justify-content:center;
@@ -68,7 +72,12 @@ const SYMBOLS = {
     none: ''
 };
 
-export function createBookReader() {
+export function bookDir(owner) { return 'json/books/' + (owner || 'player') + '/'; }
+export function bookPath(owner, n) { return bookDir(owner) + 'book' + (n < 10 ? '0' : '') + n + '.json'; }
+
+export function createBookReader(opts) {
+    opts = opts || {};
+    const owner = opts.id || opts.owner || 'player';
 
     let root = null;
     const el = {};
@@ -272,6 +281,8 @@ export function createBookReader() {
     }
 
     return {
+        id: owner,
+        dir: bookDir(owner),
         open: open,
         close: close,
         isOpen: function () { return isOpenFlag; }

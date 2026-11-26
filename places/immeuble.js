@@ -13,7 +13,7 @@ import { lightPool } from '../lightpool.js';
 // Utilisation : const imm = buildImmeuble(scene, kit);   // kit = createKit({ renderer })
 // Autonome   : world_base.html?world=immeuble.js  (affiche la rue complète)
 
-export { buildWorld } from './outside.js';
+export { buildWorld } from './dehors.js';
 
 
 // ==========================================

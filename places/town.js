@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { PLACES } from './layout.js';
-import { mats, box, glow, lampPost, fakeBuilding, enterable, signMaterial, addGable } from './common.js';
+import { PLACES } from './monde.js'
+import { mats, box, glow, lampPost, fakeBuilding, enterable, signMaterial, addGable } from './outils.js';
 
 // ==========================================
 // BAD THERAPIST — VILLE DE MONTAGNE (places/town.js)

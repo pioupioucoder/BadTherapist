@@ -1,10 +1,10 @@
 import * as THREE from 'three';
 import { lightPool } from '../lightpool.js';
 import { loadMixamoAvatar } from '../avatar-loader.js';
-import { buildWorld as buildOutside } from './outside.js';
-import { WORK_SPOT } from './map.js';
-import { createBookReader } from '../objects/bookreader.js';
-import { createHub } from './common.js';
+import { buildWorld as buildOutside } from './dehors.js' ;
+import { WORK_SPOT } from './monde.js' 
+import { createBookReader, bookDir } from '../objects/bookreader.js';
+import { createHub } from './outils.js';
 import { buildPhone } from '../objects/phone.js';
 import { createJournal } from '../objects/journal.js';
 
@@ -85,7 +85,7 @@ const AVATAR_OFFSET = { x: 0, y: 0, z: 0 };     // à ajuster si elle n'est pas 
 const AVATAR_YAW = 0;                           // 0 = elle regarde vers la porte de la pièce (vers le joueur)
 
 // Livres de l'étagère : json/livredetherapeute/book01.json ... book20.json
-const BOOK_DIR = 'json/livredetherapeute/';
+const BOOK_DIR = bookDir('evelyn');
 const BOOK_COUNT = 20;
 
 // ── Dimensions (repère « h » de la maison : x = largeur, z = profondeur, +z = façade) ──
@@ -147,10 +147,7 @@ function setLight(id, on, who) {
 let evJournal = null;
 function getEvelynJournal() {
   if (!evJournal) {
-    evJournal = createJournal({
-      key: 'bt_evelyn_journal', readOnly: true, label: 'Carnet intime d\'Evelyn',
-      cover: ['#2c5a63', '#17363e', '#0b1d23']
-    });
+    evJournal = createJournal({ id: 'evelyn' });
   }
   return evJournal;
 }
@@ -1735,7 +1732,7 @@ export function buildWork(parent, opts) {
     // (la zone de clic suit Evelyn quand elle se déplace : voir evActorUpdate)
 
     // Livres : on les charge en même temps (loadBooks est défini avec l'étagère)
-    reader = createBookReader();
+    reader = createBookReader({ id: 'evelyn' });
     talk = createTherapistTalk({
       onSpeak: function (on) { if (evAvatar && EV.mode === 'sit' && evAvatar.actions.sit_talk) { evAvatar.play(on ? 'sit_talk' : 'sit'); EV.anim = on ? 'sit_talk' : 'sit'; } },
       getWorld: function () {
