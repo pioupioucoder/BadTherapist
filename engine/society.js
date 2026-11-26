@@ -572,11 +572,11 @@ function create() {
     R.addObject({ id: 'elevator_buttons', name: 'elevator buttons', place: 'elevator', desc: 'floors 0 and 6 work for now', actions: { press: { say: 'The elevator moves.' } } });
     R.addObject({ id: 'front_door', name: 'glass front door', place: 'lobby', state: 'automatic', desc: 'opens by itself when someone is near', actions: {} });
 
-    import('../places/layout.js').then(function (m) {
+   import('../places/monde.js').then(function (m) {
         const P = m.PLACES || {};
         ['town', 'gas', 'station', 'port', 'cityB'].forEach(function (k) { if (P[k]) R.addPlace({ id: k, x: P[k].x, z: P[k].z, r: P[k].r }); });
     }).catch(function () { /* valeurs par défaut */ });
-    import('../places/map.js').then(function (m) {
+    import('../places/monde.js').then(function (m) {
         if (m.WORK_SPOT) R.addPlace({ id: 'therapist_house', x: m.WORK_SPOT.x, z: m.WORK_SPOT.z });
     }).catch(function () { /* valeurs par défaut */ });
 

@@ -1,10 +1,10 @@
 import * as THREE from 'three';
-import { buildWorld as buildOutside } from './outside.js';
+import { buildWorld as buildOutside } from './dehors.js';
 import { buildCorridor } from './corridor.js';
 import { buildElevator } from './elevator.js';
 import { buildGroundFloor } from './rdc.js';
 import { registerBuilding } from './building-feature.js';
-import { createWindowView } from './windowview.js';
+import { createWindowView } from './portail.js';
 import { buildBedroom, addBedroomColliders, WALL_H, HALF_D, BEDROOM_SPAWN } from './bedroom.js';
 import './dreambedroom.js';   // le rêve (window.BadTherapistDream), appelé quand le joueur s'endort
 

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PLACES } from './layout.js';
+import { PLACES } from './monde.js'
 import { mats, box, glow, lampPost, fakeBuilding, signMaterial, fadeBlack, mulberry32 } from './common.js';
 
 // ==========================================
