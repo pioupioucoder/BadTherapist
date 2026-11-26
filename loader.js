@@ -18,6 +18,8 @@ const SKIP_AVATARS = false;   // false = les avatars sont préchargés PENDANT l
 const AVATARS_ON = ['evelyn'];   // dossiers de avatars/ chargés pour l'instant. Pour en ajouter un plus tard : écris son nom ici, ex. ['evelyn', 'oliver', 'pluie'] (leon, lou, nahara, veri, violet existent aussi)
 const SKIP_VIDEOS  = true;    // true = on ne précharge pas les vidéos (la télé précharge elle-même la suivante)
 const PRELOAD = false;        // false = le loader ne télécharge RIEN : il affiche l'écran, c'est le jeu qui charge ce dont il a besoin. true = ancien comportement (tout télécharger depuis le menu)
+const LOADER_MUSIC = 'audio/loader.mp3';   // musique jouée PENDANT l'écran de chargement du jeu ('' = aucune). Même volume / sourdine que le reste du jeu
+const SILENCE_WORLD = true;   // true = aucun autre son (télé, PNJ, ambiance...) ne démarre tant que l'écran de chargement est là ; ils démarrent à sa disparition
 //
 // Diagnostic : ?perf à la fin de l'adresse (ou touche F3) = FPS. La console n'écrit que ce qui va mal : fichier manquant,
 // ou la RAISON pour laquelle l'écran de chargement reste affiché.
@@ -66,7 +68,8 @@ const PRELOAD = false;        // false = le loader ne télécharge RIEN : il aff
         skipAvatars: SKIP_AVATARS,     // le code qui charge les avatars peut tester ce drapeau
         active: function () { return false; },
         hold: function () { },
-        release: function () { }
+        release: function () { },
+        whenReady: function (fn) { fn(); }     // window.BTLoad.whenReady(function(){ ...lancer un son... }) : exécuté à la fin du chargement
     };
 
     // ─── Avatars désactivés : toute requête vers avatars/ est refusée tout de suite (404 local, rien n'est téléchargé
@@ -412,6 +415,91 @@ const PRELOAD = false;        // false = le loader ne télécharge RIEN : il aff
         return Promise.all(ws);
     }
 
+    // ─── Sons : musique du chargement + silence du reste jusqu'à la fin ───
+    const readyFns = [];
+    const AUDIO_LOG = /[?&]audio\b/.test(location.search);     // ouvrir le jeu avec ?audio dans l'adresse = la console explique ce qui se passe avec les sons
+    const alog = function () { if (AUDIO_LOG) console.log.apply(console, ['[ILLUSION son]'].concat([].slice.call(arguments))); };
+
+    // même réglage de volume / sourdine que audio-manager.js (mêmes clés localStorage)
+    function volumeSetting() {
+        try {
+            if (localStorage.getItem('lmtd_muted') === '1') return 0;
+            const raw = localStorage.getItem('lmtd_volume');
+            const v = raw === null || raw === '' ? 0.7 : Number(raw);
+            return Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 0.7;
+        } catch (e) { return 0.7; }
+    }
+
+    // Tant que l'écran est là : play() des <audio>/<video> est retardé, et les AudioContext (Web Audio : télé, PNJ, ambiance) restent suspendus.
+    // Tout repart tout seul à la fin du chargement. Rien à changer dans tv.js ni dans les PNJ.
+    function silenceWorld() {
+        try {
+            const realPlay = HTMLMediaElement.prototype.play, realPause = HTMLMediaElement.prototype.pause;
+            HTMLMediaElement.prototype.play = function () {
+                if (this.__btMusic || !BT.active()) return realPlay.apply(this, arguments);
+                const el = this; el.__btWant = true;
+                alog('retardé jusqu\'à la fin du chargement :', el.id || el.currentSrc || el.src || el.tagName);
+                return new Promise(function (res, rej) {
+                    readyFns.push(function () { if (el.__btWant) realPlay.call(el).then(res, rej); else res(); });
+                });
+            };
+            HTMLMediaElement.prototype.pause = function () { this.__btWant = false; return realPause.apply(this, arguments); };
+
+            const AC = window.AudioContext || window.webkitAudioContext;
+            if (AC) {
+                const held = [];
+                const realResume = AC.prototype.resume;
+                AC.prototype.resume = function () {
+                    if (!BT.active()) return realResume.apply(this, arguments);
+                    if (held.indexOf(this) < 0) held.push(this);
+                    return Promise.resolve();
+                };
+                const Wrapped = function (opts) {
+                    const c = opts === undefined ? new AC() : new AC(opts);
+                    if (BT.active()) { held.push(c); try { c.suspend().catch(function () { }); } catch (e) { /* tant pis */ } }
+                    return c;
+                };
+                Wrapped.prototype = AC.prototype;
+                window.AudioContext = Wrapped;
+                if (window.webkitAudioContext) window.webkitAudioContext = Wrapped;
+                readyFns.push(function () { held.forEach(function (c) { try { realResume.call(c).catch(function () { }); } catch (e) { /* tant pis */ } }); });
+            }
+        } catch (e) { console.warn('[ILLUSION] silence du monde non installé :', e); }
+    }
+
+    // Musique de l'écran de chargement. Renvoie une fonction « arrêter » (fondu de 0,8 s).
+    function startLoaderMusic() {
+        const none = function () { };
+        if (!LOADER_MUSIC) return none;
+        let a;
+        try {
+            a = new Audio(urlOf(LOADER_MUSIC));
+            a.__btMusic = true; a.loop = true; a.preload = 'auto'; a.volume = volumeSetting();
+        } catch (e) { return none; }
+        const events = ['pointerdown', 'keydown', 'touchstart', 'click'];
+        let stopped = false;
+        function off() { events.forEach(function (n) { removeEventListener(n, unlock, true); }); }
+        function unlock() { if (!stopped) tryPlay(); }
+        function tryPlay() {
+            const p = a.play();
+            if (p && p.then) p.then(function () { alog('musique de chargement : lecture en cours, volume ' + a.volume); off(); },
+                function (err) { alog('musique de chargement BLOQUÉE par le navigateur (' + (err && err.name) + ') : elle partira au premier clic ou à la première touche'); });
+        }
+        events.forEach(function (n) { addEventListener(n, unlock, true); });
+        a.addEventListener('error', function () { console.warn('[ILLUSION] musique de chargement introuvable : ' + LOADER_MUSIC); });
+        alog('musique de chargement : ' + a.src + ', volume ' + a.volume + (a.volume === 0 ? ' (sourdine ou volume à 0 dans les réglages !)' : ''));
+        tryPlay();
+        return function stopMusic() {
+            stopped = true; off();
+            const t0 = performance.now(), v0 = a.volume;
+            const iv = setInterval(function () {
+                const k = Math.min(1, (performance.now() - t0) / 800);
+                a.volume = v0 * (1 - k);
+                if (k >= 1) { clearInterval(iv); a.pause(); }
+            }, 40);
+        };
+    }
+
     // ─── Dans le jeu : l'écran reste jusqu'à ce que tout soit prêt ──
     function startHandoff() {
         buildUi(true);
@@ -445,6 +533,9 @@ const PRELOAD = false;        // false = le loader ne télécharge RIEN : il aff
         BT.active = function () { return !released; };
         BT.hold = function (n) { if (!released) { holds[n] = (holds[n] || 0) + 1; lastEvent = performance.now(); } };
         BT.release = function (n) { if (holds[n]) relCount++; if (holds[n] > 1) holds[n]--; else delete holds[n]; lastEvent = performance.now(); };
+        BT.whenReady = function (fn) { if (released) fn(); else readyFns.push(fn); };
+        if (SILENCE_WORLD) silenceWorld();
+        const stopMusic = startLoaderMusic();
         addEventListener('load', function () { loaded = true; lastEvent = performance.now(); });
         try {
             new PerformanceObserver(function () { if (!released) lastEvent = performance.now(); }).observe({ entryTypes: ['resource'] });
@@ -462,6 +553,9 @@ const PRELOAD = false;        // false = le loader ne télécharge RIEN : il aff
         function finish(forced, reason) {
             if (released) return;
             released = true; done = true;
+            stopMusic();
+            readyFns.splice(0).forEach(function (f) { try { f(); } catch (e) { console.warn('[ILLUSION] erreur au démarrage d\'un son :', e); } });     // les sons retenus démarrent maintenant
+            try { window.dispatchEvent(new Event('bt-ready')); } catch (e) { /* tant pis */ }
             if (forced) console.warn('[ILLUSION] écran retiré de force après ' + ((performance.now() - t0) / 1000).toFixed(0) + ' s : ' + reason);
             ui.root.style.transition = 'opacity .6s';
             ui.root.style.opacity = '0';
