@@ -10,6 +10,7 @@
 //   9. createPlayerWatch  ce qu'elle observe du joueur (aucun appel IA)  (ex- player-watch.js)
 //  10. createBrainLog     journal de ses réflexions, téléchargeable (Ctrl+Alt+B)  (ex- brain-log.js)
 //  11. createEvelynBody   son CORPS 3D dans la rue (modèle, animations, bulle, marche, immeuble)  (ex- avatar-body.js)
+//  12. Dialogue           les bulles de parole de tout le monde : Evelyn au milieu de l'écran, les PNJ au-dessus de la tête  (ex- speech-bubbles.js)
 //
 // Les anciens fichiers (therapist-config.js, therapist-memory.js, avatar-mind.js, avatar-brain.js, avatar-autonomy.js,
 // evelyn-cloud.js, life-sync.js) ne contiennent plus qu'UNE ligne qui renvoie ici : ils servent uniquement à ne pas casser
@@ -65,9 +66,9 @@ const THERAPIST_CONFIG = {
 
   // Le cerveau commun (avatar-brain.js). Seule Evelyn en a un : Oliver, Pluie et les autres sont des PNJ sans IA.
   avatarsEnabled: true,
-  avatarThinkSec: 90,        // elle réfléchit environ toutes les 90 s (avant : 300)
-  avatarIdleMax10min: 5,     // réflexions « seule » max par 10 min (avant : 2)
-  avatarStageMeters: 400     // elle compte comme « près de toi » jusqu'à 400 m (avant : 150)
+  avatarThinkSec: 300,       // elle réfléchit environ toutes les 5 min quand rien ne se passe (c'était 90 s : ~4x plus de quota)
+  avatarIdleMax10min: 2,     // réflexions « seule » max par 10 min (c'était 5)
+  avatarStageMeters: 150     // elle compte comme « près de toi » jusqu'à 150 m ; plus loin elle réfléchit 3x moins (c'était 400)
 };
     return { THERAPIST_CONFIG };
 })();
@@ -575,7 +576,16 @@ async function defaultLLM(o) {
     if (o.cheap && cfg.avatarModel) body.model = cfg.avatarModel;     // bavardage entre avatars : modèle à part (quota séparé), si configuré
     else if (cfg.model) body.model = cfg.model;
     const r = await fetch(cfg.proxyUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    if (!r.ok) throw new Error('worker ' + r.status + ' ' + (await r.text()).slice(0, 200));   // le Worker dit pourquoi
+    if (!r.ok) {
+        const txt = await r.text();
+        const err = new Error('worker ' + r.status + ' ' + txt.slice(0, 200));   // le Worker dit pourquoi
+        if (r.status === 429) {      // quota : le Worker dit combien de temps attendre, on l'écoute (sinon on insiste pour rien)
+            let ra = Number(r.headers.get('retry-after')) || 0;
+            try { ra = Number(JSON.parse(txt).retryAfter) || ra; } catch (e) { /* texte brut */ }
+            err.retryAfter = Math.min(Math.max(ra, 60), 3600);
+        }
+        throw err;
+    }
     const j = await r.json();
     if (!j || !j.text) throw new Error('worker sans texte : ' + JSON.stringify(j).slice(0, 200));
     return String(j.text);
@@ -623,13 +633,17 @@ function createBrainSystem(R, M, opts) {
 
     function describePlace(id) { const p = R.place(id); return p ? p.name + (p.desc ? ' (' + p.desc + ')' : '') : id; }
 
-    async function buildSystem(actor) {
+    // opts.offline = prompt pour la vie hors ligne (Worker) : seulement les actions qui marchent sans le monde 3D, sans le paragraphe téléphone.
+    // Même personnalité, même monde, même mémoire : on ne retire que ce qu'elle ne peut pas utiliser (moins de tokens par réflexion, aucune intelligence en moins).
+    async function buildSystem(actor, opts) {
+        const offline = !!(opts && opts.offline);
         const isEv = actor.id === EVELYN_CORE.id;      // Evelyn : texte intégré (evelyn-core.js), plus de fichiers lus ni de cache navigateur
         const shared = isEv ? EVELYN_CORE.world : await fetchText('avatars/_shared/world.txt');
         const own = isEv ? EVELYN_CORE.persona : await fetchText('avatars/' + actor.id + '/brain/context.txt');
         let extra = '';
         try { extra = providers[actor.id] ? String(providers[actor.id]() || '') : ''; } catch (e) { extra = ''; }
-        const caps = R.capabilities(actor).map(function (c) { return '- ' + c.id + (c.args ? ' ' + c.args : '') + ' : ' + c.desc; }).join('\n');
+        const OFFLINE_CAPS = ['wait', 'go_to', 'text', 'leave_voicemail'];
+        const caps = R.capabilities(actor).filter(function (c) { return !offline || OFFLINE_CAPS.indexOf(c.id) !== -1; }).map(function (c) { return '- ' + c.id + (c.args ? ' ' + c.args : '') + ' : ' + c.desc; }).join('\n');
         const dir = reachable(actor).map(function (d) {
             return '- ' + d.name + ' : ' + d.number;
         }).join('\n') || '(nobody: you have nobody\'s number yet. You get to know people by meeting them, in person.)';
@@ -640,7 +654,7 @@ function createBrainSystem(R, M, opts) {
             'You are ' + (actor.selfName || actor.name) + '. Your phone number is ' + actor.number + '. You are a person like any other: you move, open doors, write, call, drive.',
             'WHAT YOU CAN DO (the only actions that exist):\n' + caps,
             'PEOPLE YOU CAN WRITE TO OR CALL:\n' + dir,
-            'PHONE: a call rings for a few seconds; the other person may answer or not (people only hear their phone when they are near it). If nobody answers, text them or try again much later: never call or text again and again. If the person is standing right next to you, use say, not text. You can block a number (block) and unblock it (unblock); someone you block is told, and if someone blocked you, your texts and calls to them fail.',
+            offline ? '' : 'PHONE: a call rings for a few seconds; the other person may answer or not (people only hear their phone when they are near it). If nobody answers, text them or try again much later: never call or text again and again. If the person is standing right next to you, use say, not text. You can block a number (block) and unblock it (unblock); someone you block is told, and if someone blocked you, your texts and calls to them fail.',
             'Answer with ONE JSON object and nothing else: {"thought":"short private thought","actions":[{"do":"action_id", ...args}]}. ' +
             'At most 3 actions. Use {"do":"wait"} when you want to do nothing. Messages and speech are written in the language of the person you address (English by default). Never invent places, people or actions that are not listed.',
             Mind.formBlock(actor.id)
@@ -675,20 +689,33 @@ function createBrainSystem(R, M, opts) {
         if (unseenPl.length) L.push('Places you know but have never been to: ' + unseenPl.slice(0, 8).join(', ') + '. You are curious about the world: when nothing more pressing calls you, go and see it.');
         const freshObjs = objs.filter(function (o) { return !ex.objs[actor.loc + ':' + o.id]; }).map(function (o) { return o.id; });
         if (freshObjs.length) L.push('Things here you have not examined yet: ' + freshObjs.join(', ') + '. Write what you learn in your notes.');
-        const un = M.unread(actor.id);
+        const unAll = M.unread(actor.id), nowT = Date.now();
+        // PNJ : elle les entend comme le joueur, mais seulement leurs 4 dernières phrases des 5 dernières minutes (pas de pile de bavardage)
+        const npcAll = unAll.filter(isNpcSay);
+        const npcKeep = npcAll.filter(function (m) { return nowT - (m.at || 0) < 300000; }).slice(-4);
+        npcAll.forEach(function (m) { if (!npcKeep.some(function (k) { return k.from === m.from; })) M.markRead(actor.id, m.from); });
+        const un = unAll.filter(function (m) { return !isNpcSay(m) || npcKeep.indexOf(m) !== -1; });
         let withId = null;
         if (un.length) {
-            const lines = [], vms = []; let lastSaid = null;
+            const lines = [], vms = []; let lastSaid = null, npcAsk = null;
             un.forEach(function (m) {
                 const f = R.actor(m.from), nm = f ? f.name : m.from;
+                if (isNpcSay(m)) {                                          // un PNJ parle : on l'entend, sans le garder en mémoire
+                    lines.push('- ' + nm + ' (an NPC) said out loud near you: ' + m.text);
+                    if (/\?/.test(String(m.text))) npcAsk = { nm: nm, text: String(m.text).slice(0, 200) };
+                    M.markRead(actor.id, m.from);
+                    return;
+                }
                 Mind.noteHeard(actor.id, m.from, nm, m.kind, m.text);       // la mémoire garde ce qu'on lui a dit, avec l'heure
                 actor.memory.push('(heard) ' + nm + (m.kind === 'say' ? ' said' : m.kind === 'voicemail' ? ' left a voicemail' : m.kind === 'call' ? ' said on the phone' : ' texted') + ': ' + String(m.text).slice(0, 160));
                 (m.kind === 'voicemail' ? vms : lines).push('- from ' + nm + (m.kind === 'say' ? ' (said to you in person)' : m.kind === 'call' ? ' (on the phone, during your call)' : '') + ': ' + m.text);
                 withId = m.from; if (m.kind === 'say' || m.kind === 'call') lastSaid = { nm: nm, text: String(m.text).slice(0, 200) };
                 M.markRead(actor.id, m.from);
             });
+            if (npcAll.length) L.push('NPCs (Oliver, Pluie, Violet, Leon, Lou...) are scripted characters, not thinking people: they repeat their routine lines, never wait for your answer and do not remember you. You hear them exactly like Chippy does. Answering their chatter wastes a thought: only speak to an NPC when you need something from them (a ride, a price, a way).');
+            if (npcAsk) L.push(npcAsk.nm + ' (an NPC) just asked: \u00ab ' + npcAsk.text + ' \u00bb. Answer with say only if it matters to what you want (for example a driver asking where you want to go); otherwise ignore it.');
             if (lines.length) L.push('New messages:\n' + lines.join('\n'));
-            if (un.some(function (m) { return m.kind === 'say'; })) L.push('Someone is speaking to you face to face right now. Answer what they actually said (a greeting gets a greeting; if they ask who you are, tell them your name; if they ask a question, answer it). Never repeat or reword something you already told them: if you have nothing new, say so briefly or stay quiet and do something else. You are free to end the conversation and walk away.' + (lastSaid ? ' ' + lastSaid.nm + ' just said: \u00ab ' + lastSaid.text + ' \u00bb.' + EVELYN_CORE.replyRule : ''));
+            if (un.some(function (m) { return m.kind === 'say' && !isNpcSay(m); })) L.push('Someone is speaking to you face to face right now. Answer what they actually said (a greeting gets a greeting; if they ask who you are, tell them your name; if they ask a question, answer it). Never repeat or reword something you already told them: if you have nothing new, say so briefly or stay quiet and do something else. You are free to end the conversation and walk away.' + (lastSaid ? ' ' + lastSaid.nm + ' just said: \u00ab ' + lastSaid.text + ' \u00bb.' + EVELYN_CORE.replyRule : ''));
             if (vms.length) L.push('New voicemails:\n' + vms.join('\n'));
         }
         if (calls) {
@@ -723,9 +750,11 @@ function createBrainSystem(R, M, opts) {
     }
 
     // Ce qui change quand « il se passe quelque chose » : si c'est identique au dernier tour, il peut ne pas réfléchir
+    // Un PNJ n'a pas de cerveau : ce qu'il dit est ENTENDU (voir buildPerception) mais ne réveille pas Evelyn et ne compte pas comme « il se passe quelque chose »
+    function isNpcSay(m) { return !!m && m.kind === 'say' && isNpc(m.from); }
     function urgent(actor) {
         const c = calls;
-        return M.unread(actor.id).length > 0 || (R.pendingRides && R.pendingRides(actor).length > 0) || (c && (c.incoming(actor.id).length > 0 || !!c.active(actor.id) || c.missedFor(actor.id).length > 0));
+        return M.unread(actor.id).filter(function (m) { return !isNpcSay(m); }).length > 0 || (R.pendingRides && R.pendingRides(actor).length > 0) || (c && (c.incoming(actor.id).length > 0 || !!c.active(actor.id) || c.missedFor(actor.id).length > 0));
     }
     function signature(actor) {
         const others = (R.nearby ? R.nearby(actor) : R.actorsAt(actor.loc, actor.id)).map(function (a) { return a.id; }).sort().join(',');
@@ -864,10 +893,11 @@ function createBrainSystem(R, M, opts) {
             failures++;
             lastError = ready.actor.id + ' : ' + (e && e.message || e);
             backoffUntil = Date.now() + Math.min(600000, Math.max(/Toutes les cl/i.test(lastError) ? 180000 : 0, 20000 * Math.pow(2, failures - 1)));
+            if (e && e.retryAfter) backoffUntil = Math.max(backoffUntil, Date.now() + e.retryAfter * 1000);     // quota Groq : on se tait le temps demandé
             console.warn('[avatar ' + ready.actor.id + ']', e && e.message || e);
         }
         active--; delete inFlight[ready.actor.id];
-        try { if (typeof window !== 'undefined' && window.BadTherapistBubbles && window.BadTherapistBubbles.endThink) window.BadTherapistBubbles.endThink(ready.actor.id); } catch (e) { /* rien */ }   // s'il n'a rien dit, les « ... » s'arrêtent
+        try { Dialogue.endThink(ready.actor.id); } catch (e) { /* rien */ }   // s'il n'a rien dit, les « ... » s'arrêtent
     }
 
     const api = {
@@ -1221,7 +1251,7 @@ function startEvelynCloud(ctx) {
         const a = me();
         if (!a) return null;
         const place = R.place(a.loc);
-        const system = await brains.buildSystem(a);                          // son prompt complet (capacités, monde, contexte, forme du JSON)
+        const system = await brains.buildSystem(a, { offline: true });      // son prompt pour la vie hors ligne (compact : seulement ce qui marche sans le monde 3D) (capacités, monde, contexte, forme du JSON)
         const memory = Mind.promptBlock(ME, { withIds: [] });                // sa mémoire (lecture seule : rien n'est marqué lu)
         const places = R.places().filter(function (p) { return p.id !== 'road' && R.knows(a, p.id); })
             .map(function (p) { return { id: p.id, name: p.name, dist: Math.round(R.dist(a.loc, p.id)) }; });
@@ -1251,11 +1281,44 @@ function startEvelynCloud(ctx) {
     }
 
     // ─── Ce qu'elle a fait pendant que le jeu était fermé ───
-    async function pull() {
+    // Rien n'est rejoué deux fois : chaque événement reçu est retenu (empreinte, mémorisée dans le navigateur), car un même « pull » arrivait 3 fois
+    // de suite au chargement (3 × « 60 chose(s) ») et pouvait renvoyer 3 fois les mêmes SMS. Et tout est lisible : BadTherapistCloud.lastEvents
+    // (tableau) ou BadTherapistCloud.report() (résumé : combien de pensées / SMS / déplacements, et à quelle heure).
+    const SEEN_KEY = 'bt_cloud_seen';
+    let seen = [], pulling = null, lastEvents = [];
+    try { seen = JSON.parse(localStorage.getItem(SEEN_KEY) || '[]') || []; } catch (e) { seen = []; }
+    function saveSeen() { try { localStorage.setItem(SEEN_KEY, JSON.stringify(seen.slice(-400))); } catch (e) { /* tant pis */ } }
+    function summary(e) {
+        const when = e.at || e.ts || e.time || e.t0 || null;
+        let what = describe(e);
+        if (!what && e.t === 'mind' && e.mind) what = 'thought: ' + String(e.mind.thought || e.mind.monologue || e.mind.feeling || (e.mind.remember && e.mind.remember[0]) || '').slice(0, 140);
+        return { type: e.t, when: when ? new Date(when).toLocaleString() : '?', what: what || JSON.stringify(e).slice(0, 140) };
+    }
+    // Journal exact tenu par le Worker : chaque réflexion hors ligne (heure, pensée, actions ET résultat de chacune, tokens, clé, modèle, erreurs)
+    let lastJournal = [], lastStats = null;
+    function showJournal(r) {
+        if (!r) return;
+        lastStats = r.stats || null;
+        if (!Array.isArray(r.journal) || !r.journal.length) return;
+        const rows = r.journal.map(function (j) {
+            return { quand: new Date(j.at).toLocaleString(), type: j.k === 'think' ? 'pensée' : 'ÉCHEC', pensée: j.thought || '', actions: (j.acts || []).join(' | '), résultat: (j.res || []).join(' | '), tokens: j.tokens || '', modèle: j.model || '', clé: j.key || '', erreur: (j.err || '') + (j.detail ? ' (' + j.detail + ')' : '') };
+        });
+        lastJournal = lastJournal.concat(rows).slice(-200);
+        console.groupCollapsed('[cloud] Journal hors-ligne : ' + rows.length + ' réflexion(s)' + (lastStats ? ' | aujourd\'hui : ' + lastStats.thoughtsToday + ' réflexion(s), ' + lastStats.tokensToday + ' tokens' : ''));
+        if (console.table) console.table(rows); else console.log(rows);
+        console.groupEnd();
+    }
+    async function doPull() {
         const r = await post({ action: 'pull' });
         const a = me();
+        showJournal(r);
+        if (r && r.life === false) console.info('[cloud] Le Worker ne la fait pas vivre hors ligne : ajoute ton id (' + id + ') dans la variable OFFLINE_IDS du Worker.');
         if (!r || !a || !Array.isArray(r.events) || !r.events.length) return 0;
-        r.events.forEach(function (e) {
+        const fresh = r.events.filter(function (e) { const h = hash(JSON.stringify(e)); if (seen.indexOf(h) !== -1) return false; seen.push(h); return true; });
+        saveSeen();
+        if (!fresh.length) return 0;
+        lastEvents = lastEvents.concat(fresh.map(summary)).slice(-300);
+        fresh.forEach(function (e) {
             try {
                 if (e.t === 'mind') Mind.apply(ME, e.mind);
                 else if (e.t === 'move') {
@@ -1272,9 +1335,11 @@ function startEvelynCloud(ctx) {
         });
         R.save();
         brains.wake(ME);
-        console.info('[cloud] Evelyn a vécu ' + r.events.length + ' chose(s) pendant ton absence.');
-        return r.events.length;
+        const by = {}; fresh.forEach(function (e) { by[e.t] = (by[e.t] || 0) + 1; });
+        console.info('[cloud] Evelyn a vécu ' + fresh.length + ' chose(s) pendant ton absence : ' + JSON.stringify(by) + '. Détail : BadTherapistCloud.report()');
+        return fresh.length;
     }
+    function pull() { if (!pulling) pulling = doPull().finally(function () { pulling = null; }); return pulling; }
 
     async function tick(force) {
         if (document.hidden) return;                                  // onglet caché : le cerveau du jeu dort, c'est le Worker qui prend le relais
@@ -1307,6 +1372,15 @@ function startEvelynCloud(ctx) {
 
     const dbg = {
         id: id, pull: pull,
+        get lastEvents() { return lastEvents; },
+        get journal() { return lastJournal; },                       // journal du Worker (réflexions hors ligne, avec leurs résultats)
+        states: function () { return post({ action: 'states' }); },  // qui est enregistré dans KV (demande DEBUG=1 dans le Worker)
+        report: function () {                    // F12 : ce qu'elle a fait pendant ton absence (heure, type, contenu)
+            const by = {}; lastEvents.forEach(function (x) { by[x.type] = (by[x.type] || 0) + 1; });
+            console.log('Evelyn hors-ligne : ' + lastEvents.length + ' événement(s)', by);
+            if (console.table) console.table(lastEvents);
+            return by;
+        },
         sync: function () { return sync(true, false); },
         peek: function () { return post({ action: 'peek' }); },
         thinkNow: function () { return post({ action: 'think_now' }); },
@@ -1732,8 +1806,8 @@ const { createEvelynBody } = (function () {
 // entrée / sortie de l'immeuble (hall, ascenseur, couloir). Chez elle on ne la voit pas dehors (son corps assis est dans therapist-house.js) ;
 // dès qu'elle sort, son corps de rue apparaît à la porte et marche. Elle n'a RIEN en commun avec les corps des PNJ (npcs/driver.js).
 //
-// Utilisation :  createEvelynBody(scene, { camera, groundH, bus, canvas, renderer, society, THREE, loadMixamoAvatar, Bubbles })  ->  { update(dt), list() }
-// (tout est passé en paramètre par avatar-body.js : ce fichier est chargé aussi par settings.html, SANS « three », et society.js l'importe
+// Utilisation :  createEvelynBody(scene, { camera, groundH, bus, canvas, renderer, society, THREE, loadMixamoAvatar })  ->  { update(dt), list() }
+// (THREE et loadMixamoAvatar sont passés en paramètre par outside.js : ce fichier est chargé aussi par settings.html, SANS « three », et society.js l'importe
 //  (import circulaire si on importait society ici). Il ne doit donc importer aucun module 3D.)
 // Réglage : si son modèle flotte / s'enfonce, changer height dans DEF.
 
@@ -1764,7 +1838,7 @@ const CLICK_RANGE = 12;       // on peut cliquer sur elle pour lui parler à moi
 
 function createEvelynBody(scene, o) {
     const society = o.society, R = society.registry;
-    const THREE = o.THREE, loadMixamoAvatar = o.loadMixamoAvatar, Bubbles = o.Bubbles;     // passés par avatar-body.js : ce fichier est aussi chargé par settings.html, qui ne connaît pas « three »
+    const THREE = o.THREE, loadMixamoAvatar = o.loadMixamoAvatar, Bubbles = o.Bubbles || Dialogue;     // THREE et loadMixamoAvatar sont passés par outside.js : ce fichier est aussi chargé par settings.html, qui ne connaît pas « three »
     const camera = o.camera, groundH = o.groundH || function () { return 0; }, bus = o.bus || null;
     const body = { id: 'evelyn', def: DEF, a: null, grp: new THREE.Group(), cur: '', x: null, z: null, heading: 0 };
     const headV = new THREE.Vector3(), feetV = new THREE.Vector3();
@@ -1773,12 +1847,12 @@ function createEvelynBody(scene, o) {
     // Bulle de parole : position écran de la tête (elle suit Evelyn). visible = false -> bulle cachée
     function bubbleAt(b, visible) {
         b.scr = null;
-        if (!visible || !b.a) { Bubbles.place(b.id, 0, 0, false); return; }
+        if (!visible || !b.a) { Bubbles.place(b.id, 0, 0, false, undefined, false); return; }
         b.a.root.getWorldPosition(feetV);
         headV.copy(feetV);
         headV.y += b.def.height + 0.28;
         const dist = headV.distanceTo(camera.position);
-        if (dist > BUBBLE_RANGE) { Bubbles.place(b.id, 0, 0, false); return; }
+        if (dist > BUBBLE_RANGE) { Bubbles.place(b.id, 0, 0, false, undefined, false); return; }
         headV.project(camera);
         feetV.project(camera);
         const cv = canvasEl();
@@ -1787,13 +1861,13 @@ function createEvelynBody(scene, o) {
         const hx = r.left + (headV.x * 0.5 + 0.5) * r.width, hy = r.top + (-headV.y * 0.5 + 0.5) * r.height;
         const fy = r.top + (-feetV.y * 0.5 + 0.5) * r.height;
         if (on) b.scr = { x: hx, y: hy, fy: fy, dist: dist };
-        Bubbles.place(b.id, hx, hy, on, dist);
+        Bubbles.place(b.id, hx, hy, on, dist, true);       // Evelyn parle au milieu de l'écran : elle compte comme présente même hors champ
     }
 
     // Clic sur Evelyn (ou, si la souris est verrouillée, Evelyn au centre de l'écran) : la boîte de réponse s'ouvre
     function onClick(ev) {
         const t = ev.target;
-        if (t && t.closest && t.closest('.bt-say, .bt-reply')) return;
+        if (t && t.closest && t.closest('.bt-dlg')) return;
         const cv = canvasEl();
         if (!cv || (!document.pointerLockElement && t !== cv)) return;
         const r = cv.getBoundingClientRect();
@@ -1987,6 +2061,446 @@ function createEvelynBody(scene, o) {
 })();
 
 // ═══════════════════════════════════════════════════════════════════════════
+// 12. Dialogue – les BULLES de parole de tout le monde  (ex- engine/speech-bubbles.js, supprimé)
+// ═══════════════════════════════════════════════════════════════════════════
+// Deux styles, SANS fond (texte lumineux) :
+//   • Evelyn : le texte s'écrit AU MILIEU de l'écran, sans nom. Pour lui répondre, un champ s'ouvre juste dessous (tu peux l'ignorer).
+//   • Les PNJ (Oliver, Pluie, Violet, Leon, Lou...) : le texte est AU-DESSUS de leur tête, avec leur nom. Même champ de réponse.
+// Le texte s'écrit lettre par lettre avec le « blip » de chaque voix. ENTRÉE (ou clic sur l'avatar / sur le petit bouton « Talk ») ouvre la
+// réponse, ÉCHAP ou ✕ la ferme (pendant un appel : raccroche). Le texte est inséré avec textContent : rien de ce que dit une IA ne peut casser la page.
+// Les corps 3D appellent Dialogue.place(id, x, y, surEcran, distance[, present]) à chaque image ; society.js appelle Dialogue.attach() une fois.
+// Réglages : TYPE_MS (vitesse du texte), HOLD_MIN_MS / HOLD_PER_CHAR_MS (durée d'affichage), MID (qui parle au milieu de l'écran + sa couleur).
+const Dialogue = (function () {
+    const hasDom = typeof document !== 'undefined';
+    const REPLY_KEY = 'Enter';
+    const REPLY_WINDOW_MS = 90000;     // temps pendant lequel ENTRÉE ouvre la réponse après sa dernière phrase
+    const TYPE_MS = (THERAPIST_CONFIG && THERAPIST_CONFIG.bubbleTypeSpeedMs) || 65;   // ms par lettre
+    const HOLD_MIN_MS = 9000, HOLD_PER_CHAR_MS = 150, FADE_MS = 1500;
+    const TALK_RANGE = 5;              // en dessous de 5 m, le petit bouton « Talk » apparaît
+    const PENDING_MS = 60000;          // une phrase dite hors de ta vue t'attend 60 s
+    const THINK_MAX_MS = 40000;        // « ... » s'arrête seul si l'avatar ne répond pas
+    const ACCENTS = ['#f0c56a', '#7fd1c7', '#f08fa3', '#9db8ff', '#b9e08a', '#d6a2f5'];   // une couleur par PNJ (lueur + nom)
+    const MID = { evelyn: '#9db8ff' };                                              // texte AU MILIEU de l'écran (sans nom)
+    const SAFE = 'max(12px,env(safe-area-inset-bottom,0px))';
+
+    const boxes = {};
+    let replyFn = null, hangUpFn = null, reply = null, phoneEl = null, promptEl = null, audioCtx = null, styled = false, attached = false;
+
+    const CSS = `
+.bt-dlg{font-family:Inter,'Segoe UI',system-ui,-apple-system,Roboto,'Helvetica Neue',Arial,sans-serif;--bt-accent:#f0c56a}
+.bt-head,.bt-mid{position:fixed;display:none;z-index:205;text-align:center;color:#fff;white-space:pre-wrap;word-wrap:break-word;line-height:1.45;opacity:1;transition:opacity ${FADE_MS}ms ease;
+  text-shadow:0 0 3px rgba(0,0,0,.95),0 0 8px var(--bt-accent),0 0 18px var(--bt-accent),0 1px 2px #000}
+.bt-head{left:0;top:0;width:max-content;max-width:min(320px,80vw);box-sizing:border-box;pointer-events:auto;cursor:pointer;font-size:clamp(14px,2.2vw,17px);transform:translate(-50%,-100%)}
+.bt-mid{left:50%;top:50%;width:max-content;max-width:min(620px,90vw);pointer-events:none;font-size:clamp(17px,2.8vw,22px);transform:translate(-50%,-100%);margin-top:-12px}
+.bt-dlg.out{opacity:0;pointer-events:none}
+.bt-dlg .n{display:block;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--bt-accent);margin-bottom:2px}
+.bt-mid .n{display:none}
+.bt-mid.named .n{display:block}
+.bt-caret{display:inline-block;width:2px;height:1.05em;background:#fff;vertical-align:-0.15em;margin-left:2px;box-shadow:0 0 8px var(--bt-accent);animation:btc .8s steps(1) infinite}
+@keyframes btc{50%{opacity:0}}
+.bt-talk{position:fixed;left:50%;bottom:calc(${SAFE} + 24px);transform:translateX(-50%);z-index:204;display:none;pointer-events:auto;cursor:pointer;padding:9px 16px;border-radius:999px;
+  background:rgba(0,0,0,.35);border:1px solid rgba(255,255,255,.25);color:#fff;font-size:14px;font-weight:600;white-space:nowrap;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none;
+  text-shadow:0 0 8px var(--bt-accent),0 1px 2px #000}
+.bt-talk .kc{font-size:11px;margin-left:8px;padding:2px 6px;border:1px solid rgba(255,255,255,.4);border-radius:5px}
+@media (hover:none){.bt-talk .kc{display:none}}
+.bt-reply{position:fixed;left:50%;top:50%;margin-top:14px;transform:translateX(-50%);z-index:226;display:none;width:min(520px,90vw);box-sizing:border-box;color:#fff}
+.bt-reply.on{display:block}
+.bt-reply .to{font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--bt-accent);text-shadow:0 0 8px var(--bt-accent),0 1px 2px #000;margin:0 0 4px 4px}
+.bt-reply .r{display:flex;gap:6px;align-items:center}
+.bt-reply input{flex:1;min-width:0;height:42px;box-sizing:border-box;border:0;border-bottom:2px solid var(--bt-accent);border-radius:8px 8px 0 0;background:rgba(0,0,0,.35);color:#fff;font-family:inherit;font-size:16px;padding:0 12px;outline:0;
+  text-shadow:0 0 6px var(--bt-accent)}
+.bt-reply input::placeholder{color:rgba(255,255,255,.5)}
+.bt-reply button{height:42px;min-width:42px;border:0;border-radius:8px;background:rgba(0,0,0,.35);color:#fff;font-size:15px;cursor:pointer;padding:0 10px;text-shadow:0 0 8px var(--bt-accent)}
+.bt-reply button:hover{background:rgba(255,255,255,.18)}
+.bt-reply .h{font-size:12px;color:var(--bt-accent);text-shadow:0 1px 2px #000;margin:5px 0 0 4px;min-height:0}
+.bt-reply .h:empty{display:none}
+`;
+
+    function ensureUi() {
+        if (!hasDom || styled) return;
+        styled = true;
+        if (!document.getElementById('bt-pixel-font')) {               // les petites notifications de society.js s'en servent encore
+            const l = document.createElement('link');
+            l.id = 'bt-pixel-font'; l.rel = 'stylesheet';
+            l.href = 'https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap';
+            document.head.appendChild(l);
+        }
+        const st = document.createElement('style');
+        st.textContent = CSS;
+        document.head.appendChild(st);
+        setInterval(updatePrompt, 150);
+        setInterval(updateReply, 250);
+    }
+
+    function hashOf(id) { let h = 0; for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) % 9973; return h; }
+    function pitchOf(id) { return 150 + (hashOf(id) % 90); }
+    function accentOf(id) { return MID[id] || ACCENTS[hashOf(id) % ACCENTS.length]; }
+    function prettyName(id) { id = String(id || ''); return id.charAt(0).toUpperCase() + id.slice(1); }
+
+    // Le « blip » (chaque voix a sa hauteur)
+    function blip(b) {
+        const A = window.BadTherapistAudio;
+        if (A && A.isMuted && A.isMuted()) return;
+        const vol = (A && A.getVolume ? A.getVolume() : 0.7) * 0.22;
+        if (vol <= 0) return;
+        try {
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const t = audioCtx.currentTime, osc = audioCtx.createOscillator(), g = audioCtx.createGain();
+            osc.type = 'square';
+            osc.frequency.value = b.pitch + Math.random() * 70;
+            g.gain.setValueAtTime(vol, t);
+            g.gain.exponentialRampToValueAtTime(0.0001, t + 0.07);
+            osc.connect(g); g.connect(audioCtx.destination);
+            osc.start(t); osc.stop(t + 0.08);
+        } catch (e) { /* pas de son possible : tant pis */ }
+    }
+
+    // Machine à écrire (lettre par lettre, curseur, pauses aux virgules et aux points)
+    function typeInto(b, host, text, done) {
+        const h = { timer: null, i: 0, dead: false };
+        host.textContent = '';
+        if (!text) { h.dead = true; if (done) done(); return h; }
+        const node = document.createTextNode('');
+        const caret = document.createElement('span');
+        caret.className = 'bt-caret';
+        host.appendChild(node); host.appendChild(caret);
+        const step = function () {
+            if (h.dead) return;
+            const c = text.charAt(h.i++);
+            node.nodeValue += c;
+            if (b.vis && c.trim() !== '' && h.i % 2 === 1) blip(b);
+            if (h.i >= text.length) { h.dead = true; caret.remove(); if (done) done(); return; }
+            h.timer = setTimeout(step, /[.!?]/.test(c) ? TYPE_MS * 7 : /[,;:]/.test(c) ? TYPE_MS * 3 : TYPE_MS);
+        };
+        h.cancel = function () { h.dead = true; clearTimeout(h.timer); caret.remove(); };
+        h.finish = function () { if (h.dead) return; h.cancel(); host.textContent = text; if (done) done(); };
+        step();
+        return h;
+    }
+
+    function setName(b, name) { if (!name) return; b.name = String(name); b.nameEl.textContent = b.name; }
+
+    function box(id) {
+        let b = boxes[id];
+        if (b) return b;
+        ensureUi();
+        const mid = !!MID[id];
+        b = boxes[id] = { id: id, mid: mid, el: document.createElement('div'), typing: null, hideT: 0, fadeT: 0, dotsT: 0, thinkEnd: 0, shown: false, vis: false, hover: false, lastAt: 0, lastSeen: 0, pitch: pitchOf(id), near: false, dist: 999, pending: null, name: prettyName(id) };
+        b.el.className = 'bt-dlg ' + (mid ? 'bt-mid' : 'bt-head');
+        b.el.style.setProperty('--bt-accent', accentOf(id));
+        b.nameEl = document.createElement('div'); b.nameEl.className = 'n'; b.nameEl.textContent = b.name;
+        b.txtEl = document.createElement('div');
+        b.el.appendChild(b.nameEl);
+        b.el.appendChild(b.txtEl);
+        if (!mid) {
+            b.el.addEventListener('mouseenter', function () { b.hover = true; });
+            b.el.addEventListener('mouseleave', function () { b.hover = false; });
+            b.el.addEventListener('click', function (e) { e.stopPropagation(); Dialogue.talkTo(id); });   // clic sur le texte = répondre
+        }
+        document.body.appendChild(b.el);
+        return b;
+    }
+
+    function stopDots(b) { clearInterval(b.dotsT); b.dotsT = 0; b.thinkEnd = 0; }
+
+    function fadeOut(b) {
+        clearTimeout(b.hideT);
+        if ((reply && reply.open && reply.target === b.id) || b.hover) { b.hideT = setTimeout(function () { fadeOut(b); }, 2500); return; }   // il reste tant que tu lui écris
+        b.el.classList.add('out');
+        clearTimeout(b.fadeT);
+        b.fadeT = setTimeout(function () { b.shown = false; b.el.style.display = 'none'; }, FADE_MS + 100);
+    }
+
+    // Petit bouton « Talk » (un seul, en bas au centre) quand un avatar est tout près et ne parle pas
+    function buildPrompt() {
+        if (promptEl || !hasDom) return promptEl;
+        ensureUi();
+        const p = document.createElement('div');
+        p.className = 'bt-dlg bt-talk';
+        p.setAttribute('role', 'button');
+        p.innerHTML = '<span class="lb"></span><span class="kc">Enter</span>';
+        p.addEventListener('click', function (e) { e.stopPropagation(); if (p.dataset.id) Dialogue.talkTo(p.dataset.id); });
+        p.addEventListener('pointerdown', function (e) { e.stopPropagation(); });
+        document.body.appendChild(p);
+        promptEl = p;
+        return p;
+    }
+    function updatePrompt() {
+        if (!hasDom || !replyFn) return;
+        const now = Date.now();
+        let best = null;
+        if (!(reply && reply.open)) {
+            Object.keys(boxes).forEach(function (id) {
+                const b = boxes[id];
+                if (b.near && b.vis && !b.shown && now - b.lastSeen < 800 && (!best || b.dist < best.dist)) best = b;
+            });
+        }
+        if (!best) { if (promptEl && promptEl.style.display !== 'none') promptEl.style.display = 'none'; return; }
+        const p = buildPrompt();
+        if (p.dataset.id !== best.id) {
+            p.dataset.id = best.id;
+            p.style.setProperty('--bt-accent', accentOf(best.id));
+            p.querySelector('.lb').textContent = 'Talk to ' + best.name;
+        }
+        if (p.style.display !== 'block') p.style.display = 'block';
+    }
+
+    // Champ de réponse (au milieu, sous le texte d'Evelyn) + texte d'appel téléphonique
+    function buildReply() {
+        if (reply || !hasDom) return reply;
+        ensureUi();
+        const root = document.createElement('div');
+        root.className = 'bt-dlg bt-reply';
+        root.innerHTML = '<div class="to"></div><div class="r"><input type="text" autocomplete="off" spellcheck="false" maxlength="200" placeholder="Say something..."><button type="button" class="s" aria-label="Send">\u21B5</button><button type="button" class="x" aria-label="Close">\u2715</button></div><div class="h"></div>';
+        document.body.appendChild(root);
+        phoneEl = document.createElement('div');
+        phoneEl.className = 'bt-dlg bt-mid named';
+        phoneEl.innerHTML = '<div class="n"></div><div class="t"></div>';
+        document.body.appendChild(phoneEl);
+        reply = { root: root, to: root.querySelector('.to'), hint: root.querySelector('.h'), input: root.querySelector('input'), send: root.querySelector('.s'), close: root.querySelector('.x'),
+                  txt: phoneEl.querySelector('.t'), phoneName: phoneEl.querySelector('.n'), call: false, typing: null, dotsT: 0, name: '', target: null, open: false, note: '', noteUntil: 0 };
+        root.addEventListener('keydown', function (e) {
+            e.stopPropagation();                                           // les touches tapées ici ne font pas marcher le joueur
+            if (e.key === 'Enter') { e.preventDefault(); sendReply(); }
+            else if (e.key === 'Escape') { e.preventDefault(); closeReply(); }
+        });
+        root.addEventListener('keyup', function (e) { e.stopPropagation(); });
+        root.addEventListener('click', function (e) { e.stopPropagation(); });
+        reply.send.addEventListener('click', sendReply);
+        reply.close.addEventListener('click', closeReply);
+        document.addEventListener('keydown', function (e) {
+            if (e.key !== REPLY_KEY) return;
+            const ae = document.activeElement;
+            if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA')) return;
+            if (reply.open) { e.preventDefault(); e.stopPropagation(); reply.input.focus(); return; }
+            const best = pickBest();
+            if (!best) return;
+            e.preventDefault(); e.stopPropagation();
+            Dialogue.talkTo(best.id);
+        }, true);
+        return reply;
+    }
+
+    function pickBest() {
+        const now = Date.now();
+        let best = null;
+        Object.keys(boxes).forEach(function (id) {
+            const b = boxes[id];
+            if (b.vis && now - b.lastAt < REPLY_WINDOW_MS && (!best || b.lastAt > best.lastAt)) best = b;
+        });
+        if (!best) Object.keys(boxes).forEach(function (id) {          // sinon : l'avatar le plus proche (bouton « Talk » affiché)
+            const b = boxes[id];
+            if (b.near && b.vis && now - b.lastSeen < 1000 && (!best || b.dist < best.dist)) best = b;
+        });
+        return best;
+    }
+
+    function stopPhoneFx() {
+        if (!reply) return;
+        clearInterval(reply.dotsT); reply.dotsT = 0;
+        if (reply.typing) { reply.typing.cancel(); reply.typing = null; }
+    }
+    function closeReply() {
+        if (!reply) return;
+        if (reply.call) { const f = hangUpFn; reply.call = false; if (f) { try { f(); } catch (e) { /* rien */ } } }   // fermer pendant un appel = raccrocher
+        stopPhoneFx();
+        phoneEl.style.display = 'none';
+        reply.open = false;
+        reply.root.classList.remove('on');
+        reply.input.blur();
+    }
+
+    function sendReply() {
+        if (!reply || !reply.open || !reply.target || !replyFn) return;
+        const text = reply.input.value.trim();
+        if (!text) return;
+        const id = reply.target, b = box(id);
+        reply.input.value = '';
+        reply.input.focus();                                               // on reste prêt à continuer la conversation
+        b.lastAt = Date.now();
+        if (reply.call) Dialogue.phoneThink(); else Dialogue.think(id);     // « ... » pendant qu'il réfléchit
+        Promise.resolve(replyFn(id, text)).then(function (res) {
+            if (typeof res === 'string' && /not here|nobody|cannot|do not|unknown|too far/i.test(res)) {
+                reply.note = res; reply.noteUntil = Date.now() + 4000;
+                if (reply.call) stopPhoneFx(); else if (!b.typing) { stopDots(b); fadeOut(b); }
+            }
+        }).catch(function () { stopDots(b); });
+    }
+
+    function updateReply() {
+        if (!hasDom || !replyFn || !reply || !reply.open) return;
+        const now = Date.now();
+        if (reply.call) { reply.hint.textContent = now < reply.noteUntil ? reply.note : ''; return; }
+        const b = boxes[reply.target];
+        if (!b || (!b.vis && now - b.lastSeen > 6000)) { closeReply(); return; }      // il est parti / trop loin : on ferme
+        reply.hint.textContent = now < reply.noteUntil ? reply.note : '';
+    }
+
+    function headOf(id, name, isCall) {
+        const r = reply, b = boxes[id];
+        const nm = name || (b && b.name) || prettyName(id);
+        r.to.textContent = (isCall ? 'On the phone with ' : 'To ') + nm;
+        r.root.style.setProperty('--bt-accent', accentOf(id));
+        phoneEl.style.setProperty('--bt-accent', accentOf(id));
+        r.phoneName.textContent = nm;
+    }
+
+    const Dialogue = {
+        // Affiche son texte (remplace le précédent de cet avatar). Le paramètre ms ne peut que rallonger la durée.
+        say: function (id, name, text, ms) {
+            if (!hasDom || !document.body) return;
+            text = String(text || '').trim().slice(0, 240);
+            if (!text) return;
+            const b = box(id);
+            if (!b.vis) { b.pending = { name: name, text: text, ms: ms, at: Date.now() }; return; }     // hors de ta vue : il t'attend, au lieu d'être perdu
+            b.pending = null;
+            clearTimeout(b.hideT); clearTimeout(b.fadeT); stopDots(b);
+            if (b.typing) b.typing.cancel();
+            setName(b, name);
+            b.el.classList.remove('out');
+            b.shown = true;
+            b.lastAt = Date.now();
+            b.el.style.display = 'block';
+            b.typing = typeInto(b, b.txtEl, text, function () {
+                b.typing = null;
+                const hold = Math.max(ms || 0, HOLD_MIN_MS, text.length * HOLD_PER_CHAR_MS);
+                b.hideT = setTimeout(function () { fadeOut(b); }, hold);
+            });
+        },
+        // « ... » animés : il réfléchit à ce que tu viens de dire
+        think: function (id) {
+            if (!hasDom) return;
+            const b = box(id);
+            clearTimeout(b.hideT); clearTimeout(b.fadeT); stopDots(b);
+            if (b.typing) { b.typing.cancel(); b.typing = null; }
+            b.el.classList.remove('out');
+            b.shown = true;
+            b.lastAt = Date.now();
+            if (b.vis) b.el.style.display = 'block';
+            let n = 0;
+            b.txtEl.textContent = '.';
+            b.thinkEnd = Date.now() + THINK_MAX_MS;
+            b.dotsT = setInterval(function () {
+                if (Date.now() > b.thinkEnd) { stopDots(b); fadeOut(b); return; }
+                n = (n + 1) % 3; b.txtEl.textContent = '.'.repeat(n + 1);
+            }, 380);
+        },
+        // Appelé par le corps à chaque image : position écran de la tête (x, y), visible = sur l'écran, dist = distance en m,
+        // present (Evelyn seulement) = assez près pour t'entendre même si elle est hors champ
+        place: function (id, x, y, visible, dist, present) {
+            const vis = (MID[id] && present !== undefined) ? !!present : !!visible;
+            let b = boxes[id];
+            if (!b && vis && dist != null && dist <= TALK_RANGE) b = box(id);
+            if (!b) return;
+            b.vis = vis;
+            if (vis) b.lastSeen = Date.now();
+            b.dist = dist != null ? dist : 999;
+            b.near = !!(vis && b.dist <= TALK_RANGE);
+            if (vis && b.pending) { const p = b.pending; b.pending = null; if (Date.now() - p.at < PENDING_MS) Dialogue.say(id, p.name, p.text, p.ms); }
+            if (!b.shown || !vis) { if (b.el.style.display !== 'none') b.el.style.display = 'none'; return; }
+            if (b.el.style.display !== 'block') b.el.style.display = 'block';
+            if (b.mid) return;                                             // Evelyn : toujours au milieu de l'écran (CSS)
+            const W = window.innerWidth, hw = Math.min(160, b.el.offsetWidth / 2 + 6);
+            b.el.style.left = Math.round(Math.max(hw, Math.min(W - hw, x))) + 'px';
+            b.el.style.top = Math.round(Math.max(b.el.offsetHeight + 10, y - 8)) + 'px';   // jamais coupé en haut de l'écran
+        },
+        // Ouvre le champ de réponse pour cet avatar (clic sur lui, sur son texte, sur « Talk », ou ENTRÉE)
+        talkTo: function (id, name) {
+            if (!hasDom || !replyFn || !id) return;
+            const r = buildReply();
+            if (r.call) { r.input.focus(); return; }                       // pendant un appel, on parle à celui qui est au bout du fil
+            const b = box(id);
+            setName(b, name);
+            r.target = id; r.open = true;
+            headOf(id, b.name, false);
+            r.root.classList.add('on');
+            try { if (document.exitPointerLock) document.exitPointerLock(); } catch (e) { /* rien */ }
+            setTimeout(function () { r.input.focus(); }, 30);
+            updateReply();
+            if (promptEl) promptEl.style.display = 'none';
+        },
+        // Appel téléphonique : même dialogue, au milieu de l'écran avec le nom de l'interlocuteur
+        phoneOpen: function (id, name) {
+            if (!hasDom) return;
+            const r = buildReply();
+            stopPhoneFx();
+            r.call = true; r.target = id; r.name = name || id; r.open = true;
+            headOf(id, r.name, true);
+            r.root.classList.add('on');
+            r.txt.textContent = '';
+            phoneEl.style.display = 'block';
+            phoneEl.classList.remove('out');
+            try { if (document.exitPointerLock) document.exitPointerLock(); } catch (e) { /* rien */ }
+            setTimeout(function () { r.input.focus(); }, 30);
+            Dialogue.phoneThink();
+        },
+        phone: function (id, name, text) {                                  // il parle dans le téléphone
+            if (!hasDom) return;
+            text = String(text || '').trim().slice(0, 240);
+            if (!text) return;
+            if (!reply || !reply.call || reply.target !== id) Dialogue.phoneOpen(id, name);
+            const r = reply;
+            stopPhoneFx();
+            r.typing = typeInto({ vis: true, pitch: pitchOf(id) }, r.txt, text, function () { r.typing = null; });
+        },
+        phoneThink: function () {
+            if (!reply || !reply.call) return;
+            const r = reply;
+            stopPhoneFx();
+            let n = 0;
+            r.txt.textContent = '.';
+            const end = Date.now() + THINK_MAX_MS;
+            r.dotsT = setInterval(function () {
+                if (Date.now() > end) { stopPhoneFx(); return; }
+                n = (n + 1) % 3; r.txt.textContent = '.'.repeat(n + 1);
+            }, 380);
+        },
+        phoneClose: function (id) {
+            if (!reply || !reply.call || (id && reply.target !== id)) return;
+            reply.call = false;                                             // l'appel est déjà fini : on ne raccroche pas une 2e fois
+            closeReply();
+        },
+        setHangUp: function (fn) { hangUpFn = typeof fn === 'function' ? fn : null; },
+        setReply: function (fn) { replyFn = typeof fn === 'function' ? fn : null; },     // fn(avatarId, texte) -> (promesse d')un texte
+        closeReply: closeReply,
+        stopThink: function (id) { const b = boxes[id]; if (b) stopDots(b); },
+        // Il a fini de réfléchir : s'il n'a rien dit, les « ... » disparaissent
+        endThink: function (id) { const b = boxes[id]; if (b && b.dotsT) { stopDots(b); fadeOut(b); } },
+        active: function (id) { const b = boxes[id]; return !!(b && b.shown); },
+        hide: function (id) { const b = boxes[id]; if (b) { if (b.typing) b.typing.cancel(); b.typing = null; stopDots(b); clearTimeout(b.hideT); clearTimeout(b.fadeT); b.shown = false; b.pending = null; b.el.style.display = 'none'; } },
+        // Branche tout sur la société (appelé UNE fois par society.js) : paroles, appels, réponse du joueur
+        attach: function (ctx) {
+            if (!hasDom || attached || !ctx || !ctx.R) return;
+            attached = true;
+            ensureUi();
+            const R = ctx.R, api = ctx.api, pid = function () { return ctx.player().id; };
+            R.on('speech', function (e) {
+                if (!e || !e.actor || e.actor.isPlayer) return;
+                if (e.phone) {                                              // au téléphone : dans la boîte d'appel
+                    if (e.to && e.to.indexOf(pid()) !== -1) Dialogue.phone(e.actor.id, e.actor.name, e.text);
+                    return;
+                }
+                Dialogue.say(e.actor.id, e.actor.name, e.text);             // face à face : Evelyn au milieu, un PNJ au-dessus de sa tête
+            });
+            R.on('call', function (e) {
+                const c = e && e.call; if (!c) return;
+                const me = pid();
+                if (c.from !== me && c.to !== me) return;
+                const o = R.actor(c.from === me ? c.to : c.from);
+                if (e.state === 'active') Dialogue.phoneOpen(o.id, o.name);
+                else if (e.state === 'ended' || e.state === 'missed') Dialogue.phoneClose(o.id);
+            });
+            Dialogue.setHangUp(function () { api.calls.hangUp(pid()); });
+            // Tu réponds (clic, ENTRÉE) : c'est la même action « say » que pour n'importe qui, adressée à cet avatar
+            Dialogue.setReply(function (toId, text) { return api.act(pid(), 'say', { to: toId, text: text }); });
+        }
+    };
+    if (typeof window !== 'undefined') window.BadTherapistBubbles = Dialogue;     // pour la console (F12)
+    return Dialogue;
+})();
+
+// ═══════════════════════════════════════════════════════════════════════════
 // 11. NETTOYAGE de l'ancienne tête obsédée + exports
 // ═══════════════════════════════════════════════════════════════════════════
 // Efface la TÊTE d'Evelyn (Mind : notes, pensées secrètes, envies, humeur, habitudes, fiches des gens, ce qu'elle a fait récemment)
@@ -2039,4 +2553,4 @@ if (typeof window !== 'undefined') {
     };
 }
 
-export { THERAPIST_CONFIG, EVELYN_CORE, Mind, parsePlan, createBrainSystem, createAutonomy, createPlayerWatch, createBrainLog, startEvelynCloud, createEvelynBody, purgeObsession };
+export { THERAPIST_CONFIG, EVELYN_CORE, Mind, parsePlan, createBrainSystem, createAutonomy, createPlayerWatch, createBrainLog, startEvelynCloud, createEvelynBody, purgeObsession, Dialogue };

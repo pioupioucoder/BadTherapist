@@ -9,7 +9,7 @@ export default {
     name: 'My NPC',
     job: 'none',
 
-    // ───────── CORPS (engine/npc-body.js) ─────────
+    // ───────── CORPS (npcs/driver.js, section « Le corps ») ─────────
     height: 1.75,
     look: {
         skin: '#d8b08c', shirt: '#6b7a8f', pants: '#2a2a30', hair: '#3a2a1a',

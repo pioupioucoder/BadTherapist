@@ -1,4 +1,4 @@
-// engine/npc-driver.js – fait vivre les PNJ (tous les personnages de npcs/, SAUF Evelyn) SANS aucune IA.
+// npcs/behavior.js – fait vivre les PNJ (tous les personnages de npcs/, SAUF Evelyn) SANS aucune IA.
 //
 // Ce qu'il fait, à partir de la fiche de chaque PNJ (npcs/<id>.js) :
 //   • RÉPONSES : quand tu lui parles (clic sur lui, puis tu écris), il répond avec une phrase de sa fiche
@@ -39,14 +39,24 @@ function clockMinutes() {
 }
 
 export function startNpcs(R, M) {
-    // le texte sort par le même chemin que celui des avatars : R.emit('speech') -> bulle au-dessus de sa tête (society.js)
-    function speak(actor, text, toIds, greet) {
+    // le texte sort par le même chemin que celui des avatars : R.emit('speech') -> bulle au-dessus de sa tête (engine/evelyn-core.js, section Dialogue)
+    function speak(actor, text, toIds, greet) {   // (M = messagerie : voir plus bas)
         if (!text) return;
         const now = Date.now();
         actor.speakingUntil = now + 4000;                    // avatar-body : animation « talk » pendant ce temps
         if (greet) actor.greetUntil = now + 2500;            // avatar-body : animation « greet » (il lève la main)
         st(actor.id).last = text;
         R.emit('speech', { actor: actor, text: text, to: toIds || [] });
+        // Evelyn (et tout avatar à cerveau) ENTEND le PNJ comme toi : la phrase arrive dans sa perception. Elle ne la réveille pas
+        // (society.js, npcSpoke : seule une vraie question « ? » peut la réveiller, au plus une fois par minute).
+        const hear = {};
+        (toIds || []).forEach(function (id) { hear[id] = 1; });
+        try { R.nearby(actor).forEach(function (x) { hear[x.id] = 1; }); } catch (e) { /* pas de R.nearby : seulement les destinataires */ }
+        Object.keys(hear).forEach(function (id) {
+            const x = R.actor(id);
+            if (!x || !x.thinks || x.isPlayer || x.id === actor.id) return;
+            try { M.send(actor.id, id, text, { kind: 'say' }); } catch (e) { /* rien */ }
+        });
     }
 
     // ─── il te répond (tu lui parles en face à face) ───

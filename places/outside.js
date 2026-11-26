@@ -1,20 +1,20 @@
 import * as THREE from 'three';
 import { buildWork } from './evelyn-house.js'
 import { buildForest } from './forest.js';
-import { createTruck } from '../objects/vehicle.js';
-import { createTaxi } from '../objects/taxi.js';
+import { createTruck, createTaxi, createBus, createPoliceCar } from '../objects/vehicle.js';     // tous les véhicules dans un seul fichier
 import { createRoadNet } from '../objects/roadnet.js';
-import { createBus } from '../objects/bus.js';
-import { attachBusLine } from '../engine/bus-line.js';
-import { createPoliceCar } from '../objects/police-car.js';
-import { attachPolice } from '../engine/police-service.js';
+import { attachBusLine } from '../npcs/violet.js';      // le métier de Violet (la ligne de bus) est dans sa fiche
+import { attachPolice } from '../npcs/leon.js';         // le métier de Leon (la patrouille) est dans sa fiche
+import { createRideMenu } from '../npcs/oliver.js';     // le métier d'Oliver (le menu de destination du taxi) est dans sa fiche
 import { SEA } from './layout.js';
 import { buildPlaces } from './index.js';
 import { createKit } from './common.js';
 import { getShared, WORK_SPOT, HOUSE_POS, TER, FAR_Y } from './map.js';
 import { buildImmeuble } from './immeuble.js';
 import { society } from '../engine/society.js';
-import { createBodies } from '../engine/avatar-body.js';
+import { createEvelynBody } from '../engine/evelyn-core.js';
+import { createNpcBodies } from '../npcs/driver.js';
+import { loadMixamoAvatar } from '../avatar-loader.js';
 
 // ==========================================
 // BAD THERAPIST — LA RUE COMPLÈTE (places/outside.js)
@@ -399,7 +399,8 @@ if (ctx.driveCamera) {
     camera: ctx.driveCamera, view: ctx.view, action: ctx.action,
     renderer: renderer,
     freeDriver: true,                // Oliver est un avatar libre (engine/avatar-body.js), plus collé au taxi
-    onRideRequest: function (stop, finish) { society.onPlayerRide(stop, finish); },   // c'est Oliver qui accepte ou refuse
+    rideMenu: createRideMenu({ stops: SH.X.stops, getMapData: function () { return mapData(); } }),     // la carte des destinations (npcs/oliver.js)
+    onRideRequest: function (stop, finish) { society.onPlayerRide(stop, finish); },   // prévient la société ; le taxi part tout de suite, sans attendre
     headlight: headlight,
     groundH: SH.walkHeight,
     road: SH.main,
@@ -468,7 +469,14 @@ if (ctx.driveCamera) {
 
   // Les corps d'Oliver (taxi), de Violet (bus), de Leon (police) et de Pluie, pilotés par la société des avatars
   society.attachTaxi(taxi);
-  bodies = createBodies(scene, { camera: ctx.driveCamera, groundH: SH.walkHeight, taxi: taxi, bus: bus, police: policeCar });
+  const bo = { camera: ctx.driveCamera, groundH: SH.walkHeight, taxi: taxi, bus: bus, police: policeCar };
+  const evelynBody = createEvelynBody(scene, Object.assign({}, bo, { society: society, THREE: THREE, loadMixamoAvatar: loadMixamoAvatar }));
+  const npcBodies = createNpcBodies(scene, bo);
+  bodies = {
+    update: function (dt) { evelynBody.update(dt); npcBodies.update(dt); },
+    list: function () { return evelynBody.list().concat(npcBodies.list()); }
+  };
+  window.BadTherapistBodies = bodies;      // réglage / test : BadTherapistBodies.list()
 }
 
 

@@ -16,7 +16,8 @@
 
 import { registry as R } from './world-registry.js';
 import { createMessaging, createPhones } from './phones.js';       // SMS + téléphones (numéro = téléphone posé quelque part, contacts et journal par téléphone) : tout est dans phones.js
-import { createBrainSystem, createAutonomy, createPlayerWatch, THERAPIST_CONFIG, Mind, EVELYN_CORE } from './evelyn-core.js';   // tout Evelyn est dans evelyn-core.js : cerveau, vie propre, mémoire, réglages, caractère
+import { createBrainSystem, createAutonomy, createPlayerWatch, THERAPIST_CONFIG, Mind, EVELYN_CORE, Dialogue } from './evelyn-core.js';   // tout Evelyn est dans evelyn-core.js : cerveau, vie propre, mémoire, réglages, caractère
+import { isNpc } from '../npcs/index.js';
 import { startNpcs } from '../npcs/behavior.js';     // PNJ sans IA : réponses, bavardage et routine tirés de npcs/<id>.js
 
 const PLAYER_NAME = 'Chippy';      // le prénom de ton personnage : change-le ici, nulle part ailleurs
@@ -625,6 +626,19 @@ function create() {
         else brains.wake(e.actor.id);
     });
 
+    // ─── Un PNJ parle à quelqu'un qui a un cerveau (Evelyn) ───
+    // Les PNJ n'ont pas de cerveau : leurs phrases arrivent dans la perception d'Evelyn (elle les entend comme toi) mais ne la réveillent PAS,
+    // sinon chaque « bonjour » d'un PNJ coûterait une réflexion pour rien. Seule exception : une vraie QUESTION (« Where to? »), au plus une fois
+    // par minute et par PNJ, pour qu'elle puisse répondre quand ça compte (le taxi...).
+    const npcAsked = {};
+    function npcSpoke(from, to, m) {
+        if (!to.thinks || !/\?/.test(String(m.text || ''))) return;
+        const k = from.id + '>' + to.id, now = Date.now();
+        if (now - (npcAsked[k] || 0) < 60000) return;
+        npcAsked[k] = now;
+        brains.wake(to.id, false, 'npc-ask');
+    }
+
     // ─── Messages ───
     R.on('message', function (m) {
         const from = R.actor(m.from), to = R.actor(m.to);
@@ -636,6 +650,7 @@ function create() {
         });
         R.addContact(to, from.id);
         if (m.kind === 'call') R.emit('speech', { actor: from, text: m.text, to: [to.id], phone: true });
+        else if (m.kind === 'say' && isNpc(from.id)) npcSpoke(from, to, m);   // un PNJ parle : elle l'entend, mais ça ne la réveille pas (voir npcSpoke)
         else brains.wake(to.id, m.kind === 'say' || m.kind === 'call');       // même règle pour tout le monde ; une conversation en direct réveille vite
     });
 
@@ -674,28 +689,8 @@ function create() {
     // (ancienne mémoire de thérapeute retirée : Evelyn repart de zéro)
     // But profond posé par le jeu (l'IA le lit, ne peut pas le changer). Réécrit à chaque chargement : modifie le texte ici et c'est pris en compte.
     Mind.setDeepGoal('evelyn', EVELYN_CORE.deepGoal);      // le texte est dans evelyn-core.js
-    // Les bulles de parole : une par avatar qui parle (elles suivent les corps 3D)
-    import('./speech-bubbles.js').then(function (m) {
-        R.on('speech', function (e) {
-            if (!e || !e.actor || e.actor.isPlayer) return;
-            if (e.phone) {                                                   // au téléphone : même dialogue (bip, lettre par lettre, on répond), mais dans la boîte d'appel
-                if (e.to && e.to.indexOf(player().id) !== -1) m.Bubbles.phone(e.actor.id, e.actor.name, e.text);
-                return;
-            }
-            m.Bubbles.say(e.actor.id, e.actor.name, e.text);                 // face à face : la bulle au-dessus de la tête
-        });
-        R.on('call', function (e) {
-            const c = e && e.call; if (!c) return;
-            const pid = player().id;
-            if (c.from !== pid && c.to !== pid) return;
-            const o = R.actor(c.from === pid ? c.to : c.from);
-            if (e.state === 'active') m.Bubbles.phoneOpen(o.id, o.name);
-            else if (e.state === 'ended' || e.state === 'missed') m.Bubbles.phoneClose(o.id);
-        });
-        m.Bubbles.setHangUp(function () { api.calls.hangUp(player().id); });
-        // Tu réponds (bulle, clic, ENTRÉE) : c'est la même action « say » que pour n'importe qui, adressée à cet avatar
-        m.Bubbles.setReply(function (toId, text) { return api.act(player().id, 'say', { to: toId, text: text }); });
-    }).catch(function () { /* pas de bulles */ });
+    // Les bulles de parole (evelyn-core.js, section Dialogue) : Evelyn au milieu de l'écran, les PNJ au-dessus de la tête
+    try { Dialogue.attach({ R: R, api: api, player: player }); } catch (e) { console.warn('[bulles]', e); }
 
     Object.assign(api, {
         registry: R, messaging: M, brains: brains, toast: toast,
