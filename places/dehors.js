@@ -15,8 +15,9 @@ import { buildPort } from './port.js';
 import { buildImmeuble } from './immeuble.js';
 import { society } from '../engine/society.js';
 import { createEvelynBody } from '../engine/evelyn-core.js';
-import { createNpcBodies } from '../npcs/driver.js';
+import { createNpcBodies } from '../npcs/bodies.js';
 import { loadMixamoAvatar } from '../avatar-loader.js';
+import { attachHighSchool } from './highschool.js';
 
 // ==========================================
 // ILLUSION — TOUT LE DEHORS (places/dehors.js)
@@ -490,6 +491,7 @@ function syncBusRects() {
   });
 }
 let places = null;
+let school = null;
 if (playerCam) {
   const org0 = { x: scene.position.x, y: scene.position.y, z: scene.position.z };
   const Cj = SH.main.samples.find(p => p.s >= 338);
@@ -506,8 +508,22 @@ if (playerCam) {
       if (ctx.view) ctx.view.set(heading, 0);
       if (ctx.onTeleport) ctx.onTeleport();
     }
-  });
+  });   // ← attention à la parenthèse/accolade ici (ton snippet avait un `}` en trop)
+
+  // ▼ AJOUT : le lycée Jean Dumont
+  // truck et taxi sont déclarés plus haut (let truck = null; let taxi = null;)
+  // → la closure lira leurs valeurs au moment de l'appel, pas maintenant.
+  try {
+    // le lycée n'a besoin que de renderer.domElement : si apartment.js ne passe pas le renderer, on prend le canvas de la page
+    const schoolRenderer = renderer || { domElement: document.querySelector('#game, canvas') };
+    school = attachHighSchool(scene, Object.assign({}, ctx, { camera: playerCam, renderer: schoolRenderer }), {
+      isBusy: function () { return !!(truck && truck.isDriving()) || !!(taxi && taxi.isRiding()); }
+    });
+  } catch (e) {
+    console.warn('[BT] lycée non attaché :', (e && e.message) || String(e), '\n', (e && e.stack) || '(pas de pile)', '\ntype:', typeof e, Object.prototype.toString.call(e));   // le monde se charge quand même
+  }
 }
+
 // Collisions : arbres + bâtiments des nouveaux lieux + mer
 const collideBase = places
   ? function (x, z, r) { const t = forest.collide(x, z, r); return places.collide(t[0], t[1], r); }
@@ -629,15 +645,16 @@ function mapData() {
     bounds: { x0: TER.x0, x1: TER.x1, z0: TER.z0, z1: TER.z1 },
     roads: SH.mapRoads,
     lakes: [{ x: SH.lake.x, z: SH.lake.z, r: SH.lake.r }],
-    pois: [
-      { type: 'work', x: WORK_SPOT.x, z: WORK_SPOT.z },
-      { type: 'home', x: 0, z: -29, label: 'HOME' },
-      { type: 'town', x: S.town.x, z: S.town.z },
-      { type: 'gas', x: S.gas.x - 20, z: S.gas.z - 12 },
-      { type: 'train', x: S.station.x, z: S.station.z },
-      { type: 'city', x: S.cityB.x, z: S.cityB.z },
-      { type: 'port', x: S.port.x, z: S.port.z }
-    ],
+   pois: [
+  { type: 'work', x: WORK_SPOT.x, z: WORK_SPOT.z },
+  { type: 'home', x: 0, z: -29, label: 'HOME' },
+  { type: 'town', x: S.town.x, z: S.town.z },
+  { type: 'gas', x: S.gas.x - 20, z: S.gas.z - 12 },
+  { type: 'train', x: S.station.x, z: S.station.z },
+  { type: 'city', x: S.cityB.x, z: S.cityB.z },
+  { type: 'port', x: S.port.x, z: S.port.z },
+  ...(school ? school.getMapPois() : [])
+],
     sea: { z0: SEA.z0 },
     truck: truck ? truck.getPose() : null,
     bus: bus ? bus.getPose() : null
@@ -671,44 +688,38 @@ return {
 
   update(dt, time) {
 
-    // Maison de travail (fumée, fenêtre qui vacille)
-    work.update(dt, time);
+  work.update(dt, time);
 
-    // Nouveaux lieux : portes, feux de circulation, train, lumière des intérieurs
-    if (places) places.update(dt, !(truck && truck.isDriving()) && !(taxi && taxi.isRiding()));
+  if (places) places.update(dt, !(truck && truck.isDriving()) && !(taxi && taxi.isRiding()));
 
-    // Forêt (vent) : seuls les blocs proches du joueur sont dessinés
-    forest.update(time, getFocus());
-    
-    // Piloté par bedroom.js (pas de ctx.camera) : le taxi se met à jour ici (le camion est appelé par bedroom.js)
-    if (!camera && taxi) taxi.update(dt, true);
-    if (!camera && bus) { bus.update(dt, true); syncBusRects(); }
+  forest.update(time, getFocus());
 
-    // Autonome (immeuble.js / work.js) : on suit le relief, on contourne les arbres, on conduit
-    if (camera) {
-      const riding = !!(taxi && taxi.isRiding());
-      if (truck) truck.update(dt, !riding);
-      if (taxi) taxi.update(dt, true);
-      if (bus) { bus.update(dt, true); syncBusRects(); }
-      
-      if (!(truck && truck.isDriving()) && !riding && !(bus && bus.isInside())) {
-        const tc = collideAll(camera.position.x, camera.position.z, 0.3);
-        camera.position.x = tc[0];
-        camera.position.z = tc[1];
-        const target = 1.7 + SH.walkHeight(camera.position.x, camera.position.z) + work.floorRise(camera.position.x, camera.position.z);
-        walkY = walkY === null ? target : walkY + (target - walkY) * Math.min(1, dt * 9);
-        camera.position.y = walkY;
-        if (ctx.snow) ctx.snow.setBaseY(walkY - 1.7);
-      }
+  if (!camera && taxi) taxi.update(dt, true);
+  if (!camera && bus) { bus.update(dt, true); syncBusRects(); }
+
+  if (camera) {
+    const riding = !!(taxi && taxi.isRiding());
+    if (truck) truck.update(dt, !riding);
+    if (taxi) taxi.update(dt, true);
+    if (bus) { bus.update(dt, true); syncBusRects(); }
+
+    if (!(truck && truck.isDriving()) && !riding && !(bus && bus.isInside())) {
+      const tc = collideAll(camera.position.x, camera.position.z, 0.3);
+      camera.position.x = tc[0];
+      camera.position.z = tc[1];
+      const target = 1.7 + SH.walkHeight(camera.position.x, camera.position.z) + work.floorRise(camera.position.x, camera.position.z);
+      walkY = walkY === null ? target : walkY + (target - walkY) * Math.min(1, dt * 9);
+      camera.position.y = walkY;
+      if (ctx.snow) ctx.snow.setBaseY(walkY - 1.7);
     }
-   
-
-    // Avatars libres (Oliver, Violet, Pluie, Evelyn)
-    if (bodies) bodies.update(dt);
-
-    // Immeuble : fenêtres vivantes et balise rouge (immeuble.js)
-    imm.update(dt, time);
   }
+
+  if (school) school.update(dt, time);
+
+  if (bodies) bodies.update(dt);
+
+  imm.update(dt, time);
+}
 
 };
 

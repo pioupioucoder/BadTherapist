@@ -56,15 +56,15 @@ const CFG = { dwellSec: 10, terminusSec: 20, extendSec: 25, maxExtend: 3, graceS
     vmax: 22, acc: 3.2, brk: 4.0, alat: 4.2 };     // vitesse max (m/s, 22 ≈ 80 km/h), accélération, freinage, virage : réglables en direct
 
 // arrêt : id -> { nom affiché sur l'afficheur, lieu du registre, [roadName, s] pour les arrêts « non officiels » }
-const PLACE_OF = { home: 'street_front', work: 'therapist_house', town: 'town', gas: 'gas', station: 'station', port: 'port' };
-const LABEL = { home: 'HOME', work: 'WORK', town: 'TOWN', gas: 'GAS', station: 'TRAIN', port: 'PORT', crossing: 'CROSSING', mountain: 'MOUNTAIN', forest: 'FOREST', lake: 'LAKE' };
+const PLACE_OF = { home: 'street_front', work: 'therapist_house', town: 'town', gas: 'gas', station: 'station', port: 'port', school: 'school' };
+const LABEL = { home: 'HOME', work: 'WORK', town: 'TOWN', gas: 'GAS', station: 'TRAIN', port: 'PORT', school: 'SCHOOL', crossing: 'CROSSING', mountain: 'MOUNTAIN', forest: 'FOREST', lake: 'LAKE' };
 const EXTRA = {
     crossing: { name: 'the crossroads bus stop', desc: 'a bus stop sign at the crossroads where the mountain road leaves the main road' },
     mountain: { name: 'the mountain road bus stop', desc: 'a bus stop sign on the mountain road, between the crossroads and the town' },
     forest: { name: 'the dark forest bus stop', desc: 'a bus stop sign on the forest road' },
     lake: { name: 'the frozen lake bus stop', desc: 'a bus stop sign near the frozen lake' }
 };
-const SEQUENCE = ['town', 'mountain', 'crossing', 'lake', 'home', 'crossing', 'gas', 'work', 'forest', 'station', 'port', 'forest', 'crossing', 'mountain', 'town'];
+const SEQUENCE = ['town', 'mountain', 'crossing', 'lake', 'home', 'school', 'home', 'crossing', 'gas', 'work', 'forest', 'station', 'port', 'forest', 'crossing', 'mountain', 'town'];
 
 const sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
 
@@ -103,7 +103,7 @@ export function attachBusLine(o) {
     }
     const missing = ['town', 'home'].filter(function (k) { return !stops[k]; });
     if (missing.length) { console.warn('[bus] arrêts de base introuvables :', missing, '— la ligne ne démarre pas'); return null; }
-    const seq = SEQUENCE.filter(function (id) { return !!stops[id]; });
+    const seq = SEQUENCE.filter(function (id) { return !!stops[id]; }).filter(function (id, i, a) { return i === 0 || id !== a[i - 1]; });   // sans lycée : pas de « home » en double
 
     // lieux du registre pour les arrêts non officiels (tout le monde les connaît)
     Object.keys(EXTRA).forEach(function (id) {

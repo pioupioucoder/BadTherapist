@@ -73,6 +73,7 @@ export function buildWorld(scene, opts) {
     scene.add(streetRoot);
     const street = buildOutside(streetRoot, {
         nightBoost: 1,
+        renderer: renderer,          // AJOUT : le lycée (highschool.js) en a besoin
         // Camion : caméra de conduite, commandes, bouton ENTER/EXIT, neige
         driveCamera: camera,
         input: opts.input,

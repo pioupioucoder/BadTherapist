@@ -12,6 +12,12 @@ import { buildWorld as buildOutside } from './dehors.js';
 //   windowView.makePane(largeur, hauteur, x, y, z);   // place la vitre
 //   windowView.update(dt, time);                      // à appeler à chaque frame
 
+    // ⚠ INTERRUPTEUR : false = la vitre ne montre RIEN de l'extérieur (le jeu ne construit plus de 2e rue ni ne la redessine).
+    // Pourquoi il est à false : cette vue construit une DEUXIÈME rue complète (buildOutside) mise à jour à chaque image, et la
+    // redessine dans une texture dès qu'on regarde la fenêtre. Le jeu tournait à ~10 images/s (la vidéo de la télé se figeait
+    // 1 à 2 s toutes les 4-6 s). Remets true seulement si le jeu reste fluide : une vue en temps réel coûte le prix d'un 2e monde.
+    const WINDOW_VIEW_ON = false;
+
     // Réglages : étage d'où l'on regarde (0 = rez-de-chaussée) et colonne de façade
     const WINDOW_FLOOR = 6;
     const WINDOW_COL_X = 0;
@@ -23,6 +29,21 @@ export function createWindowView(o) {
     const renderer = o.renderer;
     const camera = o.camera;
     const snow = o.snow;
+
+    if (!WINDOW_VIEW_ON) {
+        // Même forme de retour qu'avant (makePane renvoie une vitre, update existe) pour ne rien casser dans bedroom.js / apartment.js
+        return {
+            makePane: function(w, h, x, y, z) {
+                const p = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial());
+                p.rotation.y = Math.PI;
+                p.position.set(x, y, z);
+                p.visible = false;
+                scene.add(p);
+                return p;
+            },
+            update: function() {}
+        };
+    }
 
     return (function() {
         // Scène extérieure séparée, rendue chaque frame dans une texture

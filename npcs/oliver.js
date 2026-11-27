@@ -62,6 +62,7 @@ export function createRideMenu(o) {
       else if (type === 'train') { c.rect(-5 * u, -8 * u, 10 * u, 12 * u); c.moveTo(-7 * u, 8 * u); c.lineTo(7 * u, 8 * u); c.stroke(); c.fillRect(-3 * u, -5 * u, 6 * u, 4 * u); }
       else if (type === 'city') { c.rect(-8 * u, -3 * u, 7 * u, 10 * u); c.rect(-1 * u, -8 * u, 9 * u, 15 * u); c.stroke(); }
       else if (type === 'port') { c.arc(0, -5 * u, 2.6 * u, 0, 6.3); c.moveTo(0, -2.4 * u); c.lineTo(0, 8 * u); c.moveTo(-5 * u, 1 * u); c.lineTo(5 * u, 1 * u); c.moveTo(-7 * u, 3 * u); c.quadraticCurveTo(-5 * u, 9 * u, 0, 8 * u); c.quadraticCurveTo(5 * u, 9 * u, 7 * u, 3 * u); c.stroke(); }
+      else if (type === 'school') { c.rect(-8 * u, -1 * u, 16 * u, 9 * u); c.moveTo(-9 * u, -1 * u); c.lineTo(0, -8 * u); c.lineTo(9 * u, -1 * u); c.stroke(); c.fillRect(-2 * u, 2.5 * u, 4 * u, 5.5 * u); }
       else { c.arc(0, 0, 6 * u, 0, 6.3); c.stroke(); }
       c.restore();
     }

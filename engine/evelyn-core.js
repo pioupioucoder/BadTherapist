@@ -40,6 +40,10 @@ const AVATAR = 'evelyn';
 const THERAPIST_CONFIG = {
   avatar: AVATAR,
   apiKey: '',                                // laisse vide
+  // ⚠ INTERRUPTEUR GÉNÉRAL DE L'IA EN LIGNE. false = AUCUN appel au Worker Cloudflare (plus d'erreurs CORS / « Failed to fetch » en boucle,
+  // Evelyn ne réfléchit plus seule, le jeu marche comme sans IA). À mettre sur true quand les API du Worker sont réactivées.
+  // (Ne pas supprimer : sans lui, le jeu appelle le Worker toutes les quelques secondes, même quand il est coupé.)
+  cloudEnabled: false,
   proxyUrl: 'https://evelyn-brain.kristenanjavidy.workers.dev',   // Worker Cloudflare : il garde la clé (aucun secret ici)
   model: 'llama-3.3-70b-versatile',          // le Worker ignore ce champ : le vrai modèle d'Evelyn se règle avec la variable EVELYN_MODEL dans Cloudflare
   reasoningEffort: 'low',
@@ -70,6 +74,7 @@ const THERAPIST_CONFIG = {
   avatarIdleMax10min: 2,     // réflexions « seule » max par 10 min (c'était 5)
   avatarStageMeters: 150     // elle compte comme « près de toi » jusqu'à 150 m ; plus loin elle réfléchit 3x moins (c'était 400)
 };
+    if (THERAPIST_CONFIG.cloudEnabled === false) THERAPIST_CONFIG.proxyUrl = '';   // interrupteur coupé : aucune requête vers le Worker, nulle part
     return { THERAPIST_CONFIG };
 })();
 // ═══════════════════════════════════════════════════════════════════════════
@@ -563,6 +568,7 @@ async function fetchText(path) {
 async function defaultLLM(o) {
     if (isNpc(o.id)) return '{"thought":"","actions":[{"do":"wait"}]}';     // filet de sécurité : un PNJ n'appelle JAMAIS l'IA (seule Evelyn réfléchit)
     const cfg = THERAPIST_CONFIG || {};
+    if (cfg.cloudEnabled === false) return '{"thought":"","actions":[{"do":"wait"}]}';     // IA coupée volontairement (cloudEnabled) : elle attend, sans erreur ni requête
     if (!cfg.proxyUrl) throw new Error('pas de proxyUrl dans therapist-config.js');
     const body = {
         system: o.system,

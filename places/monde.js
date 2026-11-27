@@ -31,8 +31,15 @@ export const PLACES = {
   town: { x: 0, z: 1565, r: 150 },
   station: { x: 925, z: 905, r: 75 },
   cityB: { x: 790, z: 1800, r: 150 },
-  port: { x: 450, z: 1975, r: 100 }
+  port: { x: 450, z: 1975, r: 100 },
+  school: { x: -63.82, z: -290.58, r: 70 }      // lycée Jean Dumont (portail), voir SCHOOL_Y et places/highschool.js
 };
+
+// Lycée : le portail est à (336.18, -19.52, -281.78) dans le monde de la chambre ; la rue y est décalée de (400, -18.9, 8.8).
+// Repère de la rue : x = -63.82, z = -290.58, sol à y = -19.52 - 1.7 + 18.9 = -2.32
+export const SCHOOL_Y = -2.32;
+// Zone occupée par le lycée (cour, bâtiments, cour arrière) : pas d'arbres ni de rochers du monde dedans
+export const SCHOOL_BOX = { x0: -175, x1: 50, z0: -545, z1: -195 };
 
 // Massif de montagne (autour de la route de montagne)
 export const MASSIF = { x: -10, z: 980, rx: 280, rz: 520, height: 118 };
@@ -87,6 +94,13 @@ export const ROAD_DEFS = [
   },
   { name: 'portx', kind: 'street', hw: 6, flat: 'port', ctrl: [[370, 1975], [410, 1975], [450, 1975], [490, 1975], [530, 1975]] },
 
+  // Route du lycée : part de l'allée devant l'immeuble, contourne l'immeuble par l'ouest et monte tout droit jusqu'au portail
+  {
+    name: 'school', kind: 'road', hw: 4.5, from: { road: 'drive', s: 30 },
+    ctrl: [[-38, -2], [-56, -55], [-62, -125], [-61, -200], [-64, -255], [-63.82, -286]],
+    site: 'school'
+  },
+
   // Ville B : deux rues
   { name: 'bmain', kind: 'street', hw: 6, flat: 'cityB', ctrl: [[790, 1690], [790, 1750], [790, 1810], [790, 1870], [790, 1920]] },
   { name: 'bx', kind: 'street', hw: 6, flat: 'cityB', ctrl: [[660, 1800], [725, 1800], [790, 1800], [835, 1800]] }
@@ -99,7 +113,8 @@ export const TAXI_STOPS = [
   { id: 'town', type: 'town', road: 'townx', s: 'mid' },
   { id: 'gas', type: 'gas', road: 'gas', s: 'end' },
   { id: 'station', type: 'train', road: 'forest', s: 'end' },
-  { id: 'port', type: 'port', road: 'portx', s: 'mid' }
+  { id: 'port', type: 'port', road: 'portx', s: 'mid' },
+  { id: 'school', type: 'school', road: 'school', s: 'end' }     // le lycée Jean Dumont (devant le portail)
 ];
 
 // ==========================================
@@ -121,7 +136,7 @@ export const HOUSE_POS = { x: WORK_SPOT.x, z: WORK_SPOT.z + 10 };   // la maison
 // atteindre la chambre, le couloir et le hall (qui sont à x ≈ 0).
 // Terrain agrandi vers le sud et l'est pour les nouveaux lieux (montagne, gare, ville B, port)
 // x1 = 1060 : l'intérieur de la maison (x > 1100) reste en dehors du terrain.
-export const TER = { x0: -290, x1: 1060, z0: -320, z1: 2200, step: 6 };
+export const TER = { x0: -290, x1: 1060, z0: -560, z1: 2200, step: 6 };
 const LAKE = { x: 300, z: 200, r: 55, y: -1.6, bed: -4.5 };   // lac gelé (loin de toutes les routes)
 const FLAT_C = { x: 0, z: -10 };                            // zone plate autour de l'immeuble
 export const FAR_Y = -4;                                           // sol lointain (sous le terrain)
@@ -568,6 +583,7 @@ function buildShared() {
   const slopeAt = (x, z) => Math.abs(terrainH(x + 3, z) - terrainH(x, z)) + Math.abs(terrainH(x, z + 3) - terrainH(x, z));
   // Les lieux (villes, gare, port...) restent libres d'arbres
   const inPlace = (x, z) => X.placeK(x, z) < 1.12;
+  const inSchool = (x, z) => x > SCHOOL_BOX.x0 && x < SCHOOL_BOX.x1 && z > SCHOOL_BOX.z0 && z < SCHOOL_BOX.z1;
   const fr = X.byName.forest;
   const forestRoadD = (x, z) => {
     let b = 1e9;
@@ -587,7 +603,7 @@ function buildShared() {
     pick: pickSpecies,
     density: (x, z) => {
       if (nearHouse(x, z) < 30 || lakeD(x, z) < LAKE.r * 1.15) return 0;
-      if (z > SEA.z0 - 40 || inPlace(x, z)) return 0;
+      if (z > SEA.z0 - 40 || inPlace(x, z) || inSchool(x, z)) return 0;
       const y = terrainH(x, z);
       if (y > 125 || y < -3) return 0;
       if (distRoad(x, z) < 9) return 0;
@@ -632,7 +648,7 @@ function buildShared() {
     pick: () => 'bush',
     density: (x, z) => {
       if (nearHouse(x, z) < 24 || lakeD(x, z) < LAKE.r * 1.1) return 0;
-      if (z > SEA.z0 - 40 || inPlace(x, z) || slopeAt(x, z) > 6) return 0;
+      if (z > SEA.z0 - 40 || inPlace(x, z) || inSchool(x, z) || slopeAt(x, z) > 6) return 0;
       if (Math.hypot(x - FLAT_C.x, z - FLAT_C.z) < 28) return 0;
       const y = terrainH(x, z);
       if (y > 110 || y < -3) return 0;
@@ -648,7 +664,7 @@ function buildShared() {
     pick: (x, z, rr) => (rr() < 0.5 ? 'rock1' : 'rock2'),
     density: (x, z) => {
       if (nearHouse(x, z) < 26 || lakeD(x, z) < LAKE.r * 1.1) return 0;
-      if (z > SEA.z0 - 40 || inPlace(x, z)) return 0;
+      if (z > SEA.z0 - 40 || inPlace(x, z) || inSchool(x, z)) return 0;
       if (Math.hypot(x - FLAT_C.x, z - FLAT_C.z) < 40) return 0;
       if (distRoad(x, z) < 8) return 0;
       const sl = Math.abs(terrainH(x + 3, z) - terrainH(x, z)) + Math.abs(terrainH(x, z + 3) - terrainH(x, z));
@@ -735,7 +751,7 @@ export function makeExtraRoads(H, base) {
   // ---------- 1. Voie ferrée en premier (la gare, la ville B et le pont en dépendent) ----------
   const defs = ROAD_DEFS.slice().sort(function (a, b) { return (a.kind === 'rail' ? 0 : 1) - (b.kind === 'rail' ? 0 : 1); });
 
-  const yoffs = { gas: 0.018, mount: 0.014, townx: 0.016, forest: 0.02, rail: 0.0, port: 0.022, portx: 0.016, bmain: 0.016, bx: 0.02 };
+  const yoffs = { gas: 0.018, mount: 0.014, townx: 0.016, forest: 0.02, rail: 0.0, port: 0.022, school: 0.02, portx: 0.016, bmain: 0.016, bx: 0.02 };
 
   defs.forEach(function (d) {
     let ctrl = d.ctrl.slice();
@@ -771,6 +787,7 @@ export function makeExtraRoads(H, base) {
       let y1 = null;
       if (d.site === 'station') y1 = nearestOf(byName.rail.samples, siteDef.x - 40, siteDef.z).y;
       else if (d.site === 'port') y1 = 0.7;
+      else if (d.site === 'school') y1 = SCHOOL_Y;
       else if (siteDef) y1 = prof[n - 1];
       if (startS) {
         const dS = startS.y - y[0];
@@ -824,6 +841,7 @@ export function makeExtraRoads(H, base) {
     if (k === 'station') y = nearestOf(byName.rail.samples, p.x - 40, p.z).y;
     else if (k === 'cityB') y = nearestOf(byName.rail.samples, p.x + 60, p.z - 40).y;
     else if (k === 'port') y = 0.7;
+    else if (k === 'school') y = SCHOOL_Y;
     else if (k === 'town') y = byName.mount.samples[byName.mount.samples.length - 1].y;
     else y = byName[k].samples[byName[k].samples.length - 1].y;     // gas : bout de la route
     sites[k] = { x: p.x, z: p.z, r: p.r, y: y };
@@ -847,7 +865,7 @@ export function makeExtraRoads(H, base) {
   });
 
   // la fin de la route qui dessert un lieu rejoint exactement la hauteur du plateau
-  ['forest', 'port', 'gas', 'mount'].forEach(function (name) {
+  ['forest', 'port', 'gas', 'mount', 'school'].forEach(function (name) {
     const r = byName[name];
     const s = sites[r.def.site];
     const S = r.samples;

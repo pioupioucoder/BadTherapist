@@ -1,10 +1,10 @@
-// npcs/driver.js – TOUT le 3D des PNJ dans la rue (Oliver, Violet, Leon, Lou, Pluie...) dans UN fichier : (1) leur corps léger en three.js (section « Le corps »,
+// npcs/bodies.js (ex- npcs/driver.js) – TOUT le 3D des PNJ dans la rue (Oliver, Violet, Leon, Lou, Pluie...) dans UN fichier : (1) leur corps léger en three.js (section « Le corps »,
 // ex- npcs/body.js, supprimé ; + customize de leur fiche npcs/<id>.js), bulle de parole, clic pour leur parler, marche entre deux lieux, regard vers le joueur, au volant du taxi / bus /
 // voiture de police, poste de la station-service (Lou), bus solide, synchro du taxi.
-// Aucun lien avec Evelyn : son corps est dans engine/evelyn-core.js. Reste à part : npcs/behavior.js (réponses, bavardage, routine : pas de 3D, society.js le charge
+// Aucun lien avec Evelyn : son corps est dans engine/evelyn-core.js. Reste à part : npcs/index.js (liste des PNJ + réponses, bavardage, routine : pas de 3D, society.js le charge
 // sur des pages qui n'ont pas « three ») et les fiches npcs/<id>.js (une par PNJ : apparence, dialogues, métier).
 //
-// Utilisation (places/dehors.js) :  createNpcBodies(scene, { camera, groundH, taxi, bus, police, canvas, renderer })  ->  { update(dt), list() }
+// Utilisation (places/outside.js) :  createNpcBodies(scene, { camera, groundH, taxi, bus, police, canvas, renderer })  ->  { update(dt), list() }
 // Réglage : si un modèle flotte / s'enfonce, changer height dans sa fiche npcs/<id>.js.
 
 import * as THREE from 'three';
@@ -376,7 +376,7 @@ export function createNpcBodies(scene, o) {
         const now = Date.now();
         if (taxi) { tSync += dt; if (tSync > 0.4) { tSync = 0; society.syncTaxi(); } }
         const cam = scene.worldToLocal(camera.position.clone());
-        tEnsure += dt; if (tEnsure > 1) { tEnsure = 0; ensure(); }     // un avatar créé après nous (ex. Violet, par bus-line.js) est chargé à son apparition
+        tEnsure += dt; if (tEnsure > 1) { tEnsure = 0; ensure(); }     // un avatar créé après nous (ex. Violet, par npcs/violet.js) est chargé à son apparition
 
         Object.keys(bodies).forEach(function (id) {
             const b = bodies[id], a = b.a, actor = R.actor(id);

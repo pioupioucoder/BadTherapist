@@ -1,0 +1,77 @@
+places\apartment.js:7:import { createWindowView } from './portail.js';
+places\apartment.js:18:// La vue par la fenêtre de la chambre est dans windowview.js.
+places\apartment.js:33:    // ─── FENÊTRE : VUE TEMPS RÉEL SUR L'EXTÉRIEUR (windowview.js) ──
+places\apartment.js:34:    const windowView = createWindowView({ scene: scene, renderer: renderer, camera: camera, snow: snow });
+places\apartment.js:280:        windowView: windowView,
+places\apartment.js:383:                windowView.update(dt, time);
+places\bedroom.js:12:// sauvegarde) est dans apartment.js. La vue par la fenêtre est dans windowview.js.
+places\bedroom.js:36:// o = { camera, canvas, physics, windowView, floorNumber, corridorWallMaterial }
+places\bedroom.js:41:    const windowView = o.windowView;
+places\bedroom.js:252:        windowView.makePane(fw + 0.02, fh + 0.02, 0, yc, fz + 0.002);
+places\cityb.js:9:// (porte qui s'ouvre, intérieur). La prison est derrière le commissariat, entourée d'un mur avec un portail : c'est chez Leon.
+places\cityb.js:42:  // Prison : bloc AVEC INTÉRIEUR (accueil, couloir de cellules, chambre de Leon) + mur d'enceinte avec portail + mirador
+places\cityb.js:142:    const g0 = P.z + 50, g1 = P.z + 58;                                  // portail (8 m) côté rue, entre le commissariat et l'immeuble du sud
+places\cityb.js:147:    box(scene, T, H, g0 - z0, wallM, x1, Y + H / 2, (z0 + g0) / 2);      // mur est : deux morceaux autour du portail
+places\cityb.js:151:    [g0, g1].forEach(function (gz) {                                     // piliers du portail + lampes
+places\dehors.js:32:// Utilisé par apartment.js (la rue + la vue par la fenêtre), par work.js et par portail.js.
+places\dreambedroom.js:446:const mkRT=()=>renderer.capabilities.isWebGL2?new THREE.WebGLMultisampleRenderTarget(1,1):new THREE.WebGLRenderTarget(1,1);
+places\dreambedroom.js:447:const rtA=mkRT(),rtB=new THREE.WebGLRenderTarget(1,1,{depthBuffer:false});
+places\dreambedroom.js:462: renderer.setRenderTarget(rtA);renderer.clear();
+places\dreambedroom.js:472: renderer.setRenderTarget(rtB);fq.material=rayM;renderer.render(fs,fc);
+places\dreambedroom.js:473: renderer.setRenderTarget(null);fq.material=compM;renderer.render(fs,fc);
+places\highschool.js:15://   2) Seul, pour tester :  index.html?world=places/highschool.js  (tu apparais devant le portail)
+places\highschool.js:23:// `gate` = tes coordonnées (X:336.18 Y:-19.52 Z:-281.78) : c'est le milieu du PORTAIL du lycée.
+places\highschool.js:24:// Le lycée s'étend derrière le portail vers Z négatif (cour, bâtiment, cour arrière : ~170 m de long).
+places\highschool.js:32:const DAY_NEAR = 110;       // à moins de 110 m du centre du lycée : plein jour (le portail est à ~80 m du centre)
+places\highschool.js:48:// Origine du lycée : le portail est à local (0, 0, 18)
+places\highschool.js:662:// ─── PORTAIL D'ENTRÉE ────────────────────────────────────────
+places\highschool.js:665:// Linteau droit au-dessus du portail (pas de demi-cercle)
+places\highschool.js:668:// ─── PORTAIL DE FER ANIMÉ (2 vantaux, cadenas doré) ─────────────
+places\highschool.js:726:// État du portail
+places\highschool.js:757:// ─── MUR frontal GAUCHE — de X=-8 (pilier portail) à X=-24 (face bâtiment latéral), hauteur 7
+places\highschool.js:1074:// Arbres le long du chemin central (allée portail → porte principale, axe X=0)
+places\highschool.js:1219:// Quand on entre par le portail (Z=18), on marche vers Z- et on voit le tableau sur sa droite
+places\highschool.js:1221:// Tableau bien avancé vers le portail, pas collé au mur (X=18 au lieu de 23)
+places\highschool.js:1226:// Poteau de support — tableau orienté face vers le portail (vers Z+)
+places\highschool.js:1283:// ─── CHEMIN EN CROIX SYMÉTRIQUE (portail → 3 portes) ──
+places\highschool.js:1313:// Allée centrale: portail (Z=17) → porte principale (Z≈-21)
+places\highschool.js:2510:// Mur arrière Z=-27 + bras X=+-27, fermés sur le mur du portail (Z=+18)
+places\highschool.js:2557:  // Trou pour porte latérale gauche PRÈS DU PORTAIL : Z de +13.6 à +17.6 (largeur=4)
+places\highschool.js:2558:  // Segment fond → portail (sans trou) : Z=-27 à Z=+13.6 → longueur=40.6
+places\highschool.js:2573:  // Fermeture gauche sur le mur du portail : Z=+18, X=-27 a X=-24
+places\highschool.js:2576:  // Fermeture droite sur le mur du portail : Z=+18, X=+24 a X=+27
+places\highschool.js:2657:  // ── Murs Z=18 (façade portail côté bâtiments latéraux) — fenêtres sur X ──
+places\highschool.js:5281:// MUR Z=+18 (façade portail côté cour)
+places\highschool.js:5283:// Mur gauche  X=-24 à -8.9 (pilier gauche portail)
+places\highschool.js:5285:// Pilier gauche portail
+places\highschool.js:5287:// Pilier droit portail
+places\highschool.js:5297:// Passage portail principal (entre les piliers X=-7.1 à +7.1) — bloqué seulement quand portail fermé
+places\highschool.js:5702:  // portes + portail
+places\highschool.js:5741:  // ─── PORTAIL DE FER : animation ──────────────────────────────
+places\highschool.js:5763:  return [{ type:'city', x: ORIGIN.x - PARENT_OFF.x, z: ORIGIN.z - PARENT_OFF.z + 18 }];   // pictogramme « bâtiment » devant le portail
+places\highschool.js:5801:  ctx.camera.position.set(g.x, g.y, g.z + 25);   // devant le portail, face au lycée
+places\monde.js:35:  school: { x: -63.82, z: -290.58, r: 70 }      // lycée Jean Dumont (portail), voir SCHOOL_Y et places/highschool.js
+places\monde.js:38:// Lycée : le portail est à (336.18, -19.52, -281.78) dans le monde de la chambre ; la rue y est décalée de (400, -18.9, 8.8).
+places\monde.js:97:  // Route du lycée : part de l'allée devant l'immeuble, contourne l'immeuble par l'ouest et monte tout droit jusqu'au portail
+places\monde.js:117:  { id: 'school', type: 'school', road: 'school', s: 'end' }     // le lycée Jean Dumont (devant le portail)
+places\portail.js:5:// ILLUSION — VOIR UN AUTRE ENDROIT À TRAVERS UNE VITRE (places/portail.js)
+places\portail.js:7:// Ce fichier remplace : windowview.js (même code, nouveau nom, branché sur dehors.js).
+places\portail.js:11://   const windowView = createWindowView({ scene, renderer, camera, snow });
+places\portail.js:12://   windowView.makePane(largeur, hauteur, x, y, z);   // place la vitre
+places\portail.js:13://   windowView.update(dt, time);                      // à appeler à chaque frame
+places\portail.js:21:export function createWindowView(o) {
+places\portail.js:73:            rt = THREE.WebGLMultisampleRenderTarget
+places\portail.js:74:                ? new THREE.WebGLMultisampleRenderTarget(drawSize.x, drawSize.y, rtOpts)
+places\portail.js:75:                : new THREE.WebGLRenderTarget(drawSize.x, drawSize.y, rtOpts);
+places\portail.js:77:            rt = new THREE.WebGLRenderTarget(drawSize.x, drawSize.y, rtOpts);
+places\portail.js:148:            const prevRT = renderer.getRenderTarget();
+places\portail.js:152:            renderer.setRenderTarget(rt);
+places\portail.js:162:            renderer.setRenderTarget(prevRT);
+places\rdc.js:166:  // Vue en temps réel sur la rue (portail)
+places\rdc.js:193:      rt = THREE.WebGLMultisampleRenderTarget
+places\rdc.js:194:        ? new THREE.WebGLMultisampleRenderTarget(size.x, size.y, rtOpts)
+places\rdc.js:195:        : new THREE.WebGLRenderTarget(size.x, size.y, rtOpts);
+places\rdc.js:197:      rt = new THREE.WebGLRenderTarget(size.x, size.y, rtOpts);
+places\rdc.js:245:        const prevRT = renderer.getRenderTarget();
+places\rdc.js:253:        renderer.setRenderTarget(rt);
+places\rdc.js:262:        renderer.setRenderTarget(prevRT);

@@ -17,8 +17,8 @@
 import { registry as R } from './world-registry.js';
 import { createMessaging, createPhones } from './phones.js';       // SMS + téléphones (numéro = téléphone posé quelque part, contacts et journal par téléphone) : tout est dans phones.js
 import { createBrainSystem, createAutonomy, createPlayerWatch, THERAPIST_CONFIG, Mind, EVELYN_CORE, Dialogue } from './evelyn-core.js';   // tout Evelyn est dans evelyn-core.js : cerveau, vie propre, mémoire, réglages, caractère
-import { isNpc } from '../npcs/index.js';
-import { startNpcs } from '../npcs/behavior.js';     // PNJ sans IA : réponses, bavardage et routine tirés de npcs/<id>.js
+import { isNpc, startNpcs } from '../npcs/index.js';
+     // PNJ sans IA : réponses, bavardage et routine tirés de npcs/<id>.js
 
 const PLAYER_NAME = 'Chippy';      // le prénom de ton personnage : change-le ici, nulle part ailleurs
 const hasDom = typeof document !== 'undefined';
@@ -32,9 +32,9 @@ function waitFor(fn, maxMs) {
 }
 
 // Arrêts du taxi (layout.js) -> lieux du registre
-const STOP_TO_PLACE = { home: 'street_front', work: 'therapist_house', town: 'town', gas: 'gas', station: 'station', train: 'station', port: 'port' };
+const STOP_TO_PLACE = { home: 'street_front', work: 'therapist_house', town: 'town', gas: 'gas', station: 'station', train: 'station', port: 'port', school: 'school' };
 const DOOR = { x: 0, z: -14.5 };                          // devant l'entrée de l'immeuble (repère de la rue)
-const OFFS = { oliver: [3, 2.5], pluie: [-3, 2.5], evelyn: [0, 3.5] };   // chacun se tient un peu à l'écart des autres
+const OFFS = { oliver: [3, 2.5], evelyn: [0, 3.5] };   // chacun se tient un peu à l'écart des autres
 
 function create() {
     const cfg = Object.assign({ rideAutoAcceptSec: 60, walkMaxMeters: 1500 }, THERAPIST_CONFIG || {});
@@ -566,6 +566,7 @@ function create() {
     R.addPlace({ id: 'gas', name: 'the gas station', x: 345, z: 335, r: 60 });
     R.addPlace({ id: 'station', name: 'the train station', x: 925, z: 905, r: 75, desc: 'trains to city B' });
     R.addPlace({ id: 'port', name: 'the port', x: 450, z: 1975, r: 100 });
+    R.addPlace({ id: 'school', name: 'Jean Dumont high school', x: -63.82, z: -290.58, r: 70, desc: 'the high school, at the end of the road going north from the building' });
     R.addPlace({ id: 'cityB', name: 'city B', x: 790, z: 1800, r: 150, public: false, discoverable: false, desc: 'library, police, prison; only reachable by train' });
 
     R.addObject({ id: 'bedroom_door', name: 'bedroom door', place: 'bedroom', state: 'closed', actions: { open: { set: 'open' }, close: { set: 'closed' } } });
@@ -574,7 +575,7 @@ function create() {
 
    import('../places/monde.js').then(function (m) {
         const P = m.PLACES || {};
-        ['town', 'gas', 'station', 'port', 'cityB'].forEach(function (k) { if (P[k]) R.addPlace({ id: k, x: P[k].x, z: P[k].z, r: P[k].r }); });
+        ['town', 'gas', 'station', 'port', 'cityB', 'school'].forEach(function (k) { if (P[k]) R.addPlace({ id: k, x: P[k].x, z: P[k].z, r: P[k].r }); });
     }).catch(function () { /* valeurs par défaut */ });
     import('../places/monde.js').then(function (m) {
         if (m.WORK_SPOT) R.addPlace({ id: 'therapist_house', x: m.WORK_SPOT.x, z: m.WORK_SPOT.z });
@@ -586,7 +587,6 @@ function create() {
     R.addActor({ id: 'player', name: PLAYER_NAME, number: '555-0100', isPlayer: true, loc: 'bedroom', home: 'bedroom' });   // isPlayer = seulement « quel corps répond au clavier » : aucune décision d'avatar n'en dépend
     R.addActor({ id: 'evelyn', name: 'Evelyn', number: evelynNumber, thinks: true, loc: 'street_front' });   // comme Oliver et Pluie : corps de rue (avatar-body.js), téléphone, cerveau, mémoire
     R.addActor({ id: 'oliver', name: 'Oliver', number: '555-0102', canDrive: true, loc: 'street_front', job: 'taxi' });
-    R.addActor({ id: 'pluie', name: 'Pluie', number: '555-0103', loc: 'building' });
     // Ce qu'Evelyn OBSERVE du joueur (déplacements, retours, silences...) : du code pur, son cerveau n'est réveillé que pour les faits marquants
     const watch = createPlayerWatch(R, { onSignificant: function (id) { brains.wake(id, false, 'watch'); } });
     brains.setWatch(watch);

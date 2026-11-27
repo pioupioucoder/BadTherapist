@@ -191,6 +191,23 @@ export function buildTV(scene, o) {
         screen.position.set(0, 0.90, 0.39);
         top.add(screen);
 
+        // ════════════════════════════════════════════════════════════════════════════════════════
+        //  VIDÉO DE LA TÉLÉ : POURQUOI ELLE SE COUPAIT, ET CE QUI LA PROTÈGE  (NE PAS « SIMPLIFIER »)
+        //  Symptôme : la vidéo se figeait, sautait à une autre ou repartait du début (surtout au démarrage, et en ligne).
+        //  Causes probables, trouvées en lisant le code (pas reproduites à la main). CHACUNE est traitée plus bas :
+        //  si tu en retires une, le bug peut revenir.
+        //   1. SON. Un AudioContext créé SANS geste du joueur démarre « suspended ». Y brancher la vidéo
+        //      (createMediaElementSource) avant qu'il tourne peut figer la vidéo (le son pilote l'horloge de lecture).
+        //      -> attachAudioGraph() ne branche le graphe WebAudio QUE quand le contexte est « running ».
+        //         Avant, la télé utilise le volume simple de la vidéo (même rendu, sans le filtre « étouffé »).
+        //   2. GARDIEN (setInterval « lecture figée »). Il confondait « page occupée » et « vidéo cassée » (écran de chargement,
+        //      onglet masqué, son suspendu) et rechargeait ou remplaçait une vidéo saine.
+        //      -> il ne contrôle plus dans ces cas ; ensuite il essaie un coup de pouce (nudge), puis un rechargement au même
+        //         endroit (retryHere), et seulement après la vidéo suivante (skipBroken). stallInfo() écrit l'état exact dans la console.
+        //   3. FICHIERS. Les mp4 YouTube sont souvent en VP9/AV1 (lourds à décoder) ou avec l'index en fin de fichier (démarrage lent).
+        //      -> convertir en H.264 + AAC, 720p max, « faststart » : script convertir-videos.ps1. Plus léger sur XAMPP ET en ligne.
+        //  Ne remplace pas ce système par un simple video.src = ... ; video.play() : c'est ce qui coupait avant.
+        // ════════════════════════════════════════════════════════════════════════════════════════
         const video = document.createElement('video');
         video.loop = false;
         video.muted = false;
@@ -201,58 +218,42 @@ export function buildTV(scene, o) {
         let history = [];
         let historyIndex = -1;
 
-        // ── Anti-coupures : la vidéo SUIVANTE est téléchargée en mémoire pendant que l'actuelle joue.
-        //    Quand elle démarre, elle est lue depuis la mémoire : plus de chargement en cours de route. ──
-        const blobCache = new Map();    // chemin → blob: URL
-        const inflight = new Set();
-        function prefetch(path) {
-            if (!path || blobCache.has(path) || inflight.has(path)) return;
-            inflight.add(path);
-            fetch(path)
-                .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.blob(); })
-                .then(b => { blobCache.set(path, URL.createObjectURL(b)); prune(); })
-                .catch(() => {})
-                .then(() => { inflight.delete(path); });
-        }
-        function prune() {
-            // on garde : la vidéo actuelle, la précédente (bouton −) et la suivante
-            const keep = new Set([history[historyIndex], history[historyIndex - 1], TVTapes.peekPath()]);
-            blobCache.forEach((url, path) => {
-                if (!keep.has(path)) { URL.revokeObjectURL(url); blobCache.delete(path); }
-            });
-        }
-        function clearBlobs() {
-            blobCache.forEach(url => URL.revokeObjectURL(url));
-            blobCache.clear();
-        }
-        video.addEventListener('canplaythrough', function () {
-            if (window._isOn && window._tvHasDisk) prefetch(TVTapes.peekPath());
-        });
+        // ── Lecture simple et robuste ──
+        //    Avant : la vidéo suivante était téléchargée ENTIÈRE en mémoire (blob) pendant que l'actuelle jouait.
+        //    Ça pouvait saccader la lecture, saturer la mémoire et mélanger les vidéos. Le navigateur a déjà son
+        //    propre cache (et les mp4 sont en "faststart"), donc on lit directement le fichier. ──
+        let loadToken = 0;      // un chargement plus récent annule les précédents (évite les mélanges de vidéos)
+        let failStreak = 0;     // vidéos illisibles d'affilée (sécurité anti-boucle)
+        let stuck = 0;          // contrôles consécutifs où la vidéo n'avance pas
+        let reloads = 0;        // relances déjà tentées pour la vidéo en cours
+        let lastT = -1;
+
+        function cancelLoads() { loadToken++; }
 
         function setSource(path) {
-            video.src = blobCache.get(path) || path;
+            stuck = 0; reloads = 0; lastT = -1;
+            video.src = path;
             video.load();
-            if (window._isOn) {
+            if (window._isOn && window._tvHasDisk) {        // pas de son sans disquette dans le lecteur
                 video.preload = 'auto';
                 video.play().catch(() => {});
             }
         }
 
         function loadVideoAndAddToHistory(videoPath) {
-            const fullPath = videoPath;
-
             if (historyIndex < history.length - 1) {
                 history = history.slice(0, historyIndex + 1);
             }
-            history.push(fullPath);
+            history.push(videoPath);
             historyIndex = history.length - 1;
-
-            setSource(fullPath);
+            setSource(videoPath);
         }
 
         function loadRandomVideo() {
+            const my = ++loadToken;
             getNextVideoPath()
                 .then(videoPath => {
+                    if (my !== loadToken) return;           // un chargement plus récent a pris le relais
                     loadVideoAndAddToHistory(videoPath);
                 })
                 .catch(err => {
@@ -262,20 +263,13 @@ export function buildTV(scene, o) {
 
         function nextVideo() {
             if (!window._tvHasDisk) return;
-            getNextVideoPath()
-                .then(videoPath => {
-                    const fullPath = videoPath;
-                    if (historyIndex < history.length - 1) {
-                        history = history.slice(0, historyIndex + 1);
-                    }
-                    history.push(fullPath);
-                    historyIndex = history.length - 1;
-                    setSource(fullPath);
-                });
+            failStreak = 0;
+            loadRandomVideo();
         }
 
         function prevVideo() {
             if (!window._tvHasDisk) return;
+            cancelLoads();
             if (historyIndex <= 0) {                // pas de vidéo précédente : on relance celle en cours
                 try { video.currentTime = 0; if (window._isOn) video.play().catch(() => {}); } catch (e) {}
                 return;
@@ -283,6 +277,73 @@ export function buildTV(scene, o) {
             historyIndex--;
             setSource(history[historyIndex]);
         }
+
+        // ── Anti-bug : une vidéo cassée ou figée ne bloque plus jamais la télé ──
+        function skipBroken(why) {
+            if (!window._isOn || !window._tvHasDisk) return;
+            failStreak++;
+            console.warn('[TV] vidéo ignorée (' + why + ') :', video.currentSrc || video.src);
+            if (failStreak > 5) {                   // évite une boucle infinie (serveur coupé, dossier vide...)
+                console.error('[TV] trop d\'erreurs d\'affilée : lecture automatique arrêtée (bouton suivant pour réessayer)');
+                return;
+            }
+            loadRandomVideo();
+        }
+
+        video.addEventListener('error', function () {
+            if (video.getAttribute('src')) skipBroken('erreur de lecture');
+        });
+        video.addEventListener('playing', function () { failStreak = 0; stuck = 0; });
+
+        function retryHere() {
+            const t = video.currentTime;
+            console.warn('[TV] lecture figée, nouvelle tentative à', t.toFixed(1), 's');
+            video.addEventListener('loadedmetadata', function once() {
+                video.removeEventListener('loadedmetadata', once);
+                try { video.currentTime = t; } catch (e) {}
+                video.play().catch(() => {});
+            });
+            video.load();
+        }
+
+        // Petit coup de pouce avant de recharger : un décodeur qui s'endort repart souvent avec un tout petit saut en avant
+        function nudge() {
+            console.warn('[TV] coup de pouce à', video.currentTime.toFixed(1), 's');
+            try { video.currentTime = video.currentTime + 0.1; } catch (e) {}
+            video.play().catch(() => {});
+        }
+
+        // Écrit dans la console POURQUOI la vidéo est figée (état du lecteur, tampon, son, fichier)
+        function stallInfo() {
+            let buf = '0';
+            try { const b = video.buffered; if (b.length) buf = b.end(b.length - 1).toFixed(1); } catch (e) {}
+            return 'etat=' + video.readyState + ' reseau=' + video.networkState + ' temps=' + video.currentTime.toFixed(1) +
+                ' tampon=' + buf + ' son=' + (actx ? actx.state : 'simple') + ' fichier=' + (video.currentSrc || video.src);
+        }
+
+        // GARDIEN : toutes les 2 s, si la vidéo "joue" mais n'avance plus -> coup de pouce, puis rechargement au même endroit,
+        // puis vidéo suivante. NE CONTRÔLE PAS quand la page est occupée (écran de chargement, onglet masqué, son suspendu) :
+        // la vidéo y est figée sans être cassée, et la recharger la COUPERAIT. (Voir le bloc « VIDÉO DE LA TÉLÉ » plus haut.)
+        setInterval(function () {
+            const pageBusy = document.hidden ||
+                (window.BTLoad && window.BTLoad.active && window.BTLoad.active()) ||
+                (actx && graphReady && actx.state !== 'running');
+            if (pageBusy || !window._isOn || !window._tvHasDisk || !video.getAttribute('src') ||
+                video.paused || video.ended || video.seeking) {
+                stuck = 0; lastT = video.currentTime; return;
+            }
+            if (Math.abs(video.currentTime - lastT) > 0.05) {   // ça avance : tout va bien
+                stuck = 0; lastT = video.currentTime; return;
+            }
+            const limit = video.readyState < 3 ? 8 : 3;          // ~16 s si ça charge, ~6 s sinon
+            if (++stuck >= limit) {
+                stuck = 0;
+                console.warn('[TV] lecture figée : ' + stallInfo());
+                if (reloads === 0) { reloads++; nudge(); }
+                else if (reloads === 1) { reloads++; retryHere(); }
+                else skipBroken('lecture figée');
+            }
+        }, 2000);
 
         loadRandomVideo();
 
@@ -318,13 +379,13 @@ export function buildTV(scene, o) {
         }
 
         // ── Son réaliste : WebAudio (volume + filtre "étouffé" selon l'endroit où on se trouve) ──
-        let actx = null, lpNode = null, gainNode = null;
-        function initAudioGraph() {
-            if (actx) return;
+        // SON — NE PAS brancher la vidéo sur un AudioContext « suspended » : la vidéo se fige (voir le bloc « VIDÉO DE LA TÉLÉ »).
+        // Tant que le contexte ne tourne pas (pas encore de clic / touche), gainNode reste null et audioUpdate() règle video.volume.
+        let actx = null, lpNode = null, gainNode = null, graphReady = false;
+        function attachAudioGraph() {
+            if (graphReady || !actx || actx.state !== 'running') return;
             try {
-                const AC = window.AudioContext || window.webkitAudioContext;
-                actx = new AC();
-                const src = actx.createMediaElementSource(video);
+                const src = actx.createMediaElementSource(video);   // ne peut être fait qu'UNE fois par élément vidéo
                 lpNode = actx.createBiquadFilter();
                 lpNode.type = 'lowpass';
                 lpNode.frequency.value = 20000;
@@ -334,6 +395,21 @@ export function buildTV(scene, o) {
                 lpNode.connect(gainNode);
                 gainNode.connect(actx.destination);
                 video.volume = 1;
+                graphReady = true;
+            } catch (e) {
+                console.warn('[TV] WebAudio indisponible, volume simple utilisé.', e);
+                lpNode = null; gainNode = null;
+            }
+        }
+        function initAudioGraph() {
+            try {
+                if (!actx) {
+                    const AC = window.AudioContext || window.webkitAudioContext;
+                    actx = new AC();
+                    actx.onstatechange = attachAudioGraph;           // dès qu'il passe à « running » (après un geste), on branche
+                }
+                if (actx.state === 'suspended') actx.resume().catch(() => {});
+                attachAudioGraph();
             } catch (e) {
                 console.warn('[TV] WebAudio indisponible, volume simple utilisé.', e);
                 actx = null; lpNode = null; gainNode = null;
@@ -890,7 +966,7 @@ export function buildTV(scene, o) {
                 video.pause();
                 video.removeAttribute('src');
                 video.load();
-                clearBlobs();
+                cancelLoads();
                 applyScreen();
                 saveTVState();
                 await tween(g, frontPos, flatQuat, 300);

@@ -50,7 +50,7 @@ export default {
 //
 // À venir (pas dans ce fichier) : amendes et prison, rapport quotidien de 18 h, missions de la semaine, la prison de la ville B.
 
-const PLACE_OF = { home: 'street_front', work: 'therapist_house', town: 'town', gas: 'gas', station: 'station', port: 'port' };
+const PLACE_OF = { home: 'street_front', work: 'therapist_house', town: 'town', gas: 'gas', station: 'station', port: 'port', school: 'school' };
 const JOBS = { oliver: 'chauffeur de taxi', violet: 'chauffeuse de bus', pluie: 'journaliste (un enfant)', evelyn: 'thérapeute', player: 'livreur' };
 const CFG = { dwellMin: 18, dwellMax: 45, footChance: 0.2, footSecs: [50, 100], footRadius: 22, vmax: 24, timeScale: 1 };
 
