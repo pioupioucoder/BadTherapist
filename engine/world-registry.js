@@ -166,14 +166,26 @@ export function createRegistry() {
     };
 
     // ─── Sauvegarde ───
+    // Écrit TOUT DE SUITE (appelé aussi quand on ferme / quitte la page : avant, un changement de lieu des 0,4 dernières secondes se perdait).
+    // En plein trajet : si elle a fait plus de la moitié du chemin on la sauve à l'ARRIVÉE, sinon au DÉPART (elle ne revient pas en arrière).
+    R.flush = function () {
+        clearTimeout(saveTimer);
+        const out = { actors: {} };
+        R.actors().forEach(function (a) {
+            const tr = a.travel;
+            const loc = (tr && tr.toId && Date.now() > tr.t0 + (tr.t1 - tr.t0) / 2) ? tr.toId : a.loc;
+            out.actors[a.id] = { loc: loc, home: a.home, job: a.job, known: a.known, contacts: a.contacts, memory: a.memory.slice(-12) };
+        });
+        lsSet(SAVE_KEY, out);
+    };
     R.save = function () {
         clearTimeout(saveTimer);
-        saveTimer = setTimeout(function () {
-            const out = { actors: {} };
-            R.actors().forEach(function (a) { out.actors[a.id] = { loc: a.loc, home: a.home, job: a.job, known: a.known, contacts: a.contacts, memory: a.memory.slice(-12) }; });
-            lsSet(SAVE_KEY, out);
-        }, 400);
+        saveTimer = setTimeout(R.flush, 400);
     };
+    if (typeof window !== 'undefined') {
+        window.addEventListener('pagehide', function () { R.flush(); });
+        document.addEventListener('visibilitychange', function () { if (document.hidden) R.flush(); });
+    }
 
     return R;
 }

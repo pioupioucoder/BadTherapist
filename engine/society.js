@@ -559,9 +559,9 @@ function create() {
     R.addPlace({ id: 'corridor', name: 'the 6th floor corridor', kind: 'room', indoor: true, parent: 'building', floor: 6, x: 0, z: -29 });
     R.addPlace({ id: 'elevator', name: 'the elevator', kind: 'room', indoor: true, parent: 'building', x: 0, z: -29 });
     R.addPlace({ id: 'lobby', name: 'the lobby', kind: 'room', indoor: true, parent: 'building', floor: 0, x: 0, z: -29, desc: 'ground floor, mailboxes, glass front door' });
-    R.addPlace({ id: 'street_front', name: 'the street in front of the building', kind: 'street', x: 0, z: -10, r: 60, desc: 'snow, the road starts here, the taxi is usually parked here' });
+    R.addPlace({ id: 'street_front', name: 'the street in front of the building', kind: 'street', x: 0, z: -10, r: 60, desc: 'the road starts here, the taxi is usually parked here' });
     R.addPlace({ id: 'road', name: 'somewhere on the roads', kind: 'street', x: 0, z: 200, public: false, discoverable: false });
-    R.addPlace({ id: 'therapist_house', name: 'the small house at the end of the road', kind: 'building', x: 245.87, z: 498.38, desc: 'a quiet house with a lit window' });
+    R.addPlace({ id: 'therapist_house', name: "Evelyn's house", kind: 'building', x: 245.87, z: 498.38, desc: 'her own house, at the end of the road, with a lit window' });   // l'id est technique (ancien nom) ; ce que voit l'IA, c'est « Evelyn's house »
     R.addPlace({ id: 'town', name: 'the mountain town', x: 0, z: 1565, r: 150 });
     R.addPlace({ id: 'gas', name: 'the gas station', x: 345, z: 335, r: 60 });
     R.addPlace({ id: 'station', name: 'the train station', x: 925, z: 905, r: 75, desc: 'trains to city B' });
@@ -600,7 +600,11 @@ function create() {
 
     // Une vieille sauvegarde pouvait la mettre « dans l'immeuble » ou nulle part : elle repart de chez elle
     const evelynActor = R.actor('evelyn');
-    if (evelynActor && (!R.place(evelynActor.loc) || evelynActor.loc === 'building' || evelynActor.loc === 'therapist_house')) evelynActor.loc = 'street_front';   // plus coincée chez elle : elle repart de la rue devant l'immeuble
+    // ⚠ Elle REPREND là où elle était (sa maison comprise). On ne la replace devant l'immeuble que si son lieu sauvegardé n'existe plus
+    // ou si c'est « l'immeuble » (elle n'a pas de corps à l'intérieur). Avant, « therapist_house » était aussi remis à « street_front » :
+    // c'est pour ça qu'elle réapparaissait TOUJOURS devant l'immeuble à chaque chargement. Ne pas le remettre.
+    if (evelynActor && (!R.place(evelynActor.loc) || evelynActor.loc === 'building')) evelynActor.loc = 'street_front';
+    if (evelynActor) evelynActor.home = 'therapist_house';      // sa maison, pas l'immeuble (l'id garde son ancien nom pour ne rien casser ; son NOM, lui, est « Evelyn's house »)
 
     // ─── Rencontres : deux personnages au même endroit se connaissent (ils échangent leur numéro) ───
     //     'building' (tout l'immeuble) et 'road' (n'importe où sur les routes) ne comptent pas comme « au même endroit ».

@@ -38,7 +38,8 @@
         computer:  'bt_computer_state',   // l'ordinateur (computer.js) : compte YouTube, chaînes, dernière vidéo vue, activités récentes
         phones:    'bt_phones_v1',        // les téléphones (engine/phones.js) : contacts de chaque téléphone + journal d'appels
         messages:  'bt_society_msgs_v1',  // les SMS entre tous les personnages (engine/phones.js)
-        blocks:    'bt_blocks_v1'         // qui a bloqué qui (engine/society.js)
+        blocks:    'bt_blocks_v1',        // qui a bloqué qui (engine/society.js)
+        society:   'bt_society_v1'        // où SONT les personnages (Evelyn, Oliver...), ce qu'ils connaissent, leurs contacts : engine/world-registry.js. Evelyn reprend là où elle était.
     };
 
     // valeurs écrites dans l'export quand il n'y a encore rien
@@ -77,6 +78,7 @@
         housePos:    function (o) { return !!(o && typeof o === 'object' && !Array.isArray(o)); },
         houseDoors:  function (o) { return !!(o && typeof o === 'object' && !Array.isArray(o)); },
         evelynPos:   function (o) { return !!(o && typeof o === 'object' && !Array.isArray(o)); },
+        society:     function (o) { return !!(o && typeof o === 'object' && o.actors && typeof o.actors === 'object'); },
         evelyn: function (o) { return !!(o && typeof o === 'object' && !Array.isArray(o) && o.v); },
         tv:     function (o) { return !!(o && typeof o === 'object' && !Array.isArray(o)); },
         computer: function (o) { return !!(o && typeof o === 'object' && !Array.isArray(o) && o.v); }

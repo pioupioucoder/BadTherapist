@@ -9,19 +9,30 @@ import { buildPhone } from '../objects/phone.js';
 import { createJournal } from '../objects/journal.js';
 import { makeSleepable } from '../objects/sleepable.js';
 
-// Plus de therapist-ai.js : la discussion en séance de l'ancien thérapeute n'existe plus (Evelyn parle comme les autres avatars :
-// cerveau et bulles communs, voir engine/evelyn-core.js et engine/speech-bubbles.js). Ce petit objet garde les mêmes méthodes
-// que le reste de ce fichier appelle (talk.open(), talk.isOpen()...) mais elles ne font rien.
-function createTherapistTalk() {
+// La séance de thérapie vit maintenant dans engine/evelyn-core.js (window.EvelynTherapy) : elle ne s'ouvre que si Evelyn a ACCEPTÉ le
+// « jeu thérapeute » (elle est libre de refuser) ; elle y retrouve alors son ancienne mémoire de thérapeute. Cet objet garde les mêmes
+// méthodes que le reste de ce fichier appelle (talk.open(), talk.isOpen()...) et les passe à EvelynTherapy ; sans lui, elles ne font rien.
+function createTherapistTalk(o) {
+  o = o || {};
   const none = function () {};
+  function T() {
+    const t = (typeof window !== 'undefined' && window.EvelynTherapy) || null;
+    if (t && !T.hooked) { T.hooked = true; t.setHooks({ onSpeak: o.onSpeak, getWorld: o.getWorld, canStart: o.canStart }); }
+    return t;
+  }
+  T();
   return {
-    open: none, openCall: none, close: none, endSession: none, reset: none,
+    open: function () { const t = T(); return t ? t.open() : false; },
+    endSession: function () { const t = T(); if (t) t.endSession(); },
+    close: function () { const t = T(); if (t) t.endSession(); },
+    setSeated: function (v) { const t = T(); if (t) t.setSeated(v); },
+    isOpen: function () { const t = T(); return !!(t && t.isOpen()); },
+    openCall: none, reset: none,
     greetStanding: none, nudge: none, farewell: none, hideBubble: none, updateBubble: none,
     openDial: function () { return Promise.resolve({ answered: false }); },
     getSyncPayload: function () { return Promise.resolve({ context: '', memory: '', playerName: '' }); },
     callMissed: none,
-    considerCall: function () { return Promise.resolve(null); },
-    isOpen: function () { return false; }
+    considerCall: function () { return Promise.resolve(null); }
   };
 }
 
@@ -1588,7 +1599,7 @@ export function buildWork(parent, opts) {
       solid(SEAT.x - 0.32, SEAT.x + 0.32, SEAT.z - 0.32, SEAT.z + 0.32);
       addSit('seat', {
         x: SEAT.x, z: SEAT.z, dir: [0, -1], eye: 1.15, rooms: ['session'], stand: { x: 0.8, z: 0 }, talk: true,
-        enabled: function () { return evelynHome(); },
+        enabled: function () { return true; },                         // on peut toujours s'y asseoir ; la séance, elle, dépend d'Evelyn (EvelynTherapy)
         hit: { w: 0.7, h: 1.1, d: 0.7, x: SEAT.x, z: SEAT.z }
       });
     })();
@@ -1672,6 +1683,9 @@ export function buildWork(parent, opts) {
     function loadBooks() {
       if (booksPromise) return booksPromise;
       booksPromise = manifestFiles().then(function (set) {
+        // ⚠ Si assets-manifest.json ne contient AUCUN livre de ce dossier (manifeste pas régénéré après un déplacement de dossier, ex. json/livredetherapeute
+        // -> json/books/evelyn), on l'ignore pour les livres : sinon TOUS les livres étaient pris pour « pas encore écrits » et l'étagère restait vide.
+        if (set) { let any = false; set.forEach(function (p) { if (p.indexOf(BOOK_DIR) === 0) any = true; }); if (!any) set = null; }
         const jobs = [];
         for (let i = 0; i < BOOK_COUNT; i++) {
           const name = BOOK_DIR + 'book' + (i < 9 ? '0' : '') + (i + 1) + '.json';
@@ -2102,6 +2116,7 @@ export function buildWork(parent, opts) {
     // Livres : on les charge en même temps (loadBooks est défini avec l'étagère)
     reader = createBookReader({ id: 'evelyn' });
     talk = createTherapistTalk({
+      canStart: function () { return evelynHome() && EV.mode === 'sit' && EV.node === 'armchair'; },
       onSpeak: function (on) { if (evAvatar && EV.mode === 'sit' && evAvatar.actions.sit_talk) { evAvatar.play(on ? 'sit_talk' : 'sit'); EV.anim = on ? 'sit_talk' : 'sit'; } },
       getWorld: function () {
         return [
@@ -2143,13 +2158,15 @@ export function buildWork(parent, opts) {
       b1: { x: 3.2, z: -1.15 }, b2: { x: 3.2, z: -2.3 }, bedside: { x: 3.3, z: -3.2 }, write: { x: 3.0, z: -3.8 }, bed: { x: BED.x, z: BED.z },
       p1c: { x: 0, z: 0.85 }, p1w: { x: 0, z: 1.95 }, w2: { x: 0, z: 3.2 },
       wN: { x: -3.8, z: 1.95 }, wS: { x: -3.8, z: 3.6 },
+      outside: { x: 0, z: ZF + 1.4 },                     // sur le perron, devant la porte d'entrée : c'est par là qu'elle entre et sort
       swSession: { x: -1.9, z: -1.05 }, swBedroom: { x: 4.2, z: -1.05 }, swCorridor: { x: 0.95, z: 0.85 }, swWaiting: { x: 1.3, z: 4.15 }
     };
     const EDGES = [
       ['armchair', 's1'], ['s1', 's2'], ['s2', 'sdoor'], ['s2', 'swSession'], ['sdoor', 'c1', 'door:session'],
       ['c1', 'c2'], ['c2', 'c3'], ['c3', 'b1', 'door:bedroom'], ['b1', 'b2'], ['b2', 'bedside'], ['bedside', 'bed'], ['b2', 'write'], ['b1', 'swBedroom'],
-      ['c2', 'p1c'], ['p1c', 'swCorridor'], ['p1c', 'p1w', 'door:p1'], ['p1w', 'w2'], ['w2', 'swWaiting'], ['w2', 'wN'], ['w2', 'wS']
+      ['c2', 'p1c'], ['p1c', 'swCorridor'], ['p1c', 'p1w', 'door:p1'], ['p1w', 'w2'], ['w2', 'swWaiting'], ['w2', 'wN'], ['w2', 'wS'], ['w2', 'outside', 'door:front']
     ];
+    let evDeparting = false;
     const EV = { node: 'armchair', mode: 'sit', x: CHAIR.x, z: CHAIR.z, y: F, yaw: AVATAR_YAW, anim: '', steps: [] };
     evState = function () { return EV; };
     const WALK_SPEED = 1.15;
@@ -2158,7 +2175,7 @@ export function buildWork(parent, opts) {
       try {
         const sv = JSON.parse(localStorage.getItem('bt_evelyn_pos') || 'null');
         if (!sv || typeof sv !== 'object' || !isFinite(sv.x) || !isFinite(sv.z)) return;
-        if (Math.abs(sv.x) > W / 2 || Math.abs(sv.z) > D / 2) return;
+        if (Math.abs(sv.x) > W / 2 || sv.z > D / 2 + 3 || sv.z < -D / 2) return;
         let best = 'armchair', bd = 1e9;
         Object.keys(EVN).forEach(function (n) { const d = Math.hypot(EVN[n].x - sv.x, EVN[n].z - sv.z); if (d < bd) { bd = d; best = n; } });
         EV.x = sv.x; EV.z = sv.z; EV.y = isFinite(sv.y) ? sv.y : F; EV.yaw = isFinite(sv.yaw) ? sv.yaw : EV.yaw;
@@ -2278,6 +2295,38 @@ export function buildWork(parent, opts) {
       });
     }
 
+    // ── UN SEUL CORPS : elle entre et sort à pied par la porte, sans disparaître ni réapparaître ──
+    // Dehors c'est le corps de evelyn-core.js qui marche (routes, trajets) ; dedans c'est celui-ci. Le passage de relais se fait sur le perron :
+    //   • ARRIVÉE  : le corps du dehors s'arrête devant la porte et se cache, celui-ci apparaît au même endroit, ouvre la porte et entre ;
+    //   • DÉPART   : celui-ci sort par la porte (se lève, ouvre, marche jusqu'au perron), puis le corps du dehors reprend là, sans saut.
+    // Sa dernière position (même sur le perron) est sauvegardée comme le reste (bt_evelyn_pos).
+    const HB = window.BadTherapistHouseBody = window.BadTherapistHouseBody || {};
+    HB.departing = false; HB.handoffAt = 0;
+    HB.feet = function (v) { if (!avatar || !avatar.visible) return false; avatar.getWorldPosition(v); return true; };     // pour le bouton « Talk » et la bulle (evelyn-core.js)
+    let evPrevHome = null, evDepartAt = 0;
+    function evHandoff() { if (evDeparting) { evDeparting = false; HB.departing = false; HB.handoffAt = Date.now(); } }
+    function evFlow() {
+      const home = evelynHome();
+      if (evPrevHome === null) {                                         // premier passage : elle reprend où elle était (sur le perron : elle rentre)
+        evPrevHome = home;
+        if (home && EV.node === 'outside') evPush(stepGoto('w2'));
+        return;
+      }
+      if (home && !evPrevHome) {                                         // elle vient d'arriver devant sa porte
+        evHandoff();
+        EV.steps.length = 0;
+        EV.x = EVN.outside.x; EV.z = EVN.outside.z; EV.y = F; EV.yaw = Math.PI; EV.mode = 'stand'; EV.node = 'outside'; EV.seatId = null;
+        evAnim('stand');
+        evPush(stepGoto('w2'));
+      } else if (!home && evPrevHome) {                                  // elle vient de partir : d'abord elle sort par la porte
+        EV.steps.length = 0;
+        if (evAvatar) { evDeparting = true; HB.departing = true; evDepartAt = Date.now(); evPush(stepGoto('outside'), stepSet(evHandoff)); }
+        else { EV.x = EVN.outside.x; EV.z = EVN.outside.z; EV.mode = 'stand'; EV.node = 'outside'; EV.seatId = null; }
+      }
+      if (evDeparting && Date.now() - evDepartAt > 45000) evHandoff();   // sécurité : le corps du dehors ne reste jamais caché
+      evPrevHome = home;
+    }
+
     const evelynApi = {
       goTo: function (place) { if (!EVN[place]) return false; return evPush(stepGoto(place)); },
       sit: function () {
@@ -2366,7 +2415,7 @@ export function buildWork(parent, opts) {
       const room = it.rooms && it.rooms[0] !== 'outside' ? it.rooms[0] : null;
       let best = null, bd = 1e9;
       Object.keys(EVN).forEach(function (n) {
-        if (n.indexOf('it:') === 0) return;
+        if (n.indexOf('it:') === 0 || n === 'outside') return;
         if (room && roomAt(EVN[n].x, EVN[n].z) !== room) return;
         const d = Math.hypot(EVN[n].x - ex, EVN[n].z - ez);
         if (d < bd) { bd = d; best = n; }
@@ -2384,7 +2433,14 @@ export function buildWork(parent, opts) {
     }
     function evBusy() { return EV.steps.length > 0; }
 
+    function evResolve(id) {
+      if (ITEMS[id]) return id;
+      const low = String(id).toLowerCase();
+      const ks = Object.keys(ITEMS).filter(function (k) { return k.toLowerCase() === low || k.split(':').pop().toLowerCase() === low; });
+      return ks.length === 1 ? ks[0] : id;
+    }
     function evUse(id) {
+      id = evResolve(id);
       const it = ITEMS[id];
       if (!it || NOT_FOR_HER[id]) return 'Unknown object: ' + id + '. Use one of the ids listed under "Things you can use".';
       if (!evelynHome()) return 'You cannot do that: you are not in your house.';
@@ -2560,6 +2616,7 @@ export function buildWork(parent, opts) {
     });
 
     function evActorUpdate(dt) {
+      evFlow();
       evSavePos(dt);
       if (EV.steps.length) {
         // plusieurs étapes instantanées d'affilée sont jouées dans la même image
@@ -2583,9 +2640,10 @@ export function buildWork(parent, opts) {
       seatSpot = sp;
       talk.hideBubble(true);
       if (opts.view) opts.view.set(Math.atan2(sp.dir[0], sp.dir[1]), -0.08);
-      if (sp.talk && EV.mode === 'sit') {
+      if (sp.talk) {
+        talk.setSeated(true);                                                     // EvelynTherapy sait que tu es en face d'elle ; la séance s'ouvre seulement si elle a accepté
         setTimeout(function () {
-          if (seated && seatSpot === sp && !talk.isOpen() && !reader.isOpen()) talk.open();   // la séance commence : Evelyn ouvre la discussion
+          if (seated && seatSpot === sp && !talk.isOpen() && !reader.isOpen()) talk.open();
         }, 900);
       }
     }
@@ -2600,7 +2658,8 @@ export function buildWork(parent, opts) {
       camera.position.z = origin.z + p.z;
       camera.position.y = (baseEye === null ? origin.y + gy + 1.7 : baseEye) + F;
       if (sp.talk) {
-        talk.endSession();                                                        // ferme la boîte, Evelyn fait son bilan (mémoire)
+        talk.endSession();                                                        // ferme la boîte, Evelyn fait son bilan (mémoire de thérapeute)
+        talk.setSeated(false);
         if (!silent) talk.farewell();
       }
     }
@@ -2877,7 +2936,7 @@ export function buildWork(parent, opts) {
 
       // Evelyn, livres, téléphone
       if (dH < 40) {
-        if (avatar) avatar.visible = evelynHome();           // absente : son fauteuil est vide
+        if (avatar) avatar.visible = evelynHome() || evDeparting;           // absente : son fauteuil est vide
         if (mixer && dH < 25) mixer.update(dt);
         for (let i = 0; i < slots.length; i++) {
           const s = slots[i];

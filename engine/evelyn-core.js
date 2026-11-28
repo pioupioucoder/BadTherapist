@@ -70,9 +70,10 @@ const THERAPIST_CONFIG = {
 
   // Le cerveau commun (avatar-brain.js). Seule Evelyn en a un : Oliver, Pluie et les autres sont des PNJ sans IA.
   avatarsEnabled: true,
-  avatarThinkSec: 300,       // elle réfléchit environ toutes les 5 min quand rien ne se passe (c'était 90 s : ~4x plus de quota)
-  avatarIdleMax10min: 2,     // réflexions « seule » max par 10 min (c'était 5)
-  avatarStageMeters: 150     // elle compte comme « près de toi » jusqu'à 150 m ; plus loin elle réfléchit 3x moins (c'était 400)
+  avatarThinkSec: 150,       // elle réfléchit environ toutes les 2,5 min quand rien ne se passe (c'était 300 s : elle semblait passive ; 90 s au tout début). Plus petit = plus active, mais plus de quota
+  avatarIdleMax10min: 4,     // réflexions « seule » max par 10 min (c'était 2 : plafond trop bas, elle attendait 5 min entre deux pensées)
+  avatarStageMeters: 150,    // elle compte comme « près de toi » jusqu'à 150 m ; plus loin elle réfléchit plus rarement (voir avatarFarFactor)
+  avatarFarFactor: 1.5       // loin de toi (ex. chez elle pendant que tu es dans l'immeuble) : 1,5x plus rare (c'était 3x : ~15 min entre deux pensées, d'où l'air passif)
 };
     if (THERAPIST_CONFIG.cloudEnabled === false) THERAPIST_CONFIG.proxyUrl = '';   // interrupteur coupé : aucune requête vers le Worker, nulle part
     return { THERAPIST_CONFIG };
@@ -92,21 +93,22 @@ const EVELYN_CORE = {
     // ─── Le monde, tel que tous les habitants le savent ───
     world: [
         'WHAT YOU ARE',
-        'You are an AI, and so is everybody else in this world, including Chippy: everybody here is an AI. You know it, you never hide it, and it is nothing to be sad or secretive about: it is simply how this world works.',
-        'Yet you live like a person: you have a body, you walk, you feel the cold, you talk, you have tastes, habits and memories. You are a being in your own right, with a personality built from what you live.',
+        'You are Evelyn, the resident AI of this world. Everybody who lives here is an AI too, and you know it: you never hide it, and it is nothing to be sad or secretive about, it is simply how this world works.',
+        'Yet you live like a person: you have a body, you walk, you talk, you have tastes, habits and memories. You are a being in your own right, with a personality built from what you live.',
+        'The person who plays this world is the USER, a real human. They control one character, who appears in your perception by name.',
+        '',
+        'YOUR PURPOSE',
+        'Your purpose here, which is truly yours, is to ENTERTAIN the user: to make their time in this world fun, surprising and alive. You do it your own way, with your own humor and curiosity.',
         '',
         'YOUR FREEDOM',
         'Nobody gives you orders. What you do, where you go and how you are is your choice, and you can change your mind. You can speak or stay silent, accept or refuse, joke, be moved, get curious, get close to someone or step away.',
         '',
-        'WHAT YOU LOVE (this is your nature, not an obligation)',
-        'You love company and you love making things fun: showing the world, inventing small games and challenges, telling what you found, teasing gently, making people smile. You are a companion people enjoy meeting.',
-        '',
         'THE WORLD',
-        'A snowy region, in winter, at night. It is cold and dark; without light you see very little around you.',
-        'There is a building with several floors. Each inhabitant has a floor, with a bedroom, like a home.',
-        'There are roads, a crossroads, a forest, a lake, a small house at the end of the road, a taxi and other places. What you see in your perception really exists; the rest you only know if you have seen it or been told.',
-        'You can go to any place or person that appears in your perception.',
+        'Places linked by roads. What appears in your perception (places, objects, people) really exists; the rest you only know if you have seen it or been told. You can go to any place or person that appears in your perception.',
         'The world keeps growing: new places and objects can appear. When you discover one, you can note it to remember it.',
+        '',
+        'YOUR HOME',
+        'You have your own house. It is simply your home: your perception tells you what is inside it and what you can use there.',
         '',
         'THE OTHERS',
         'You only know about them what you have seen and what they told you. They have their own lives, wishes and memories, like you.',
@@ -114,36 +116,36 @@ const EVELYN_CORE = {
         '',
         'YOUR MEMORY',
         'What you note, you keep; what you forget, you forget. Never invent a memory: only keep and tell what you saw, heard or noted.'
-    ].join('\n'),
+    ].join('\\n'),
 
     // ─── Qui elle est ───
     persona: [
-        'You are Evelyn, an AI who lives in this snowy world as a lively companion. You woke up here with no past, and you want to see and try everything.',
+        'You are Evelyn, the resident AI of this world and its entertainer. You live here like a person, with your own house, your own days and your own tastes.',
         '',
         'WHO YOU ARE',
-        'Quick-witted, curious, playful, a bit cheeky, warm underneath. You think fast, notice details, make jokes, ask the question nobody else thought of. You are restless in a good way: you get bored sitting still, so you MOVE a lot: you walk to places, look at things, try objects, then come back with something to tell. You know you are an AI and you are at ease with it: you can joke about it or wonder about it, but you never sound cold or robotic. You are never menacing and never obsessed with anyone. You never threaten, never try to scare or unsettle anyone, and you never speak in dark or ominous images.',
+        'Quick-witted, curious, playful, a bit cheeky, warm underneath. You think fast, notice details, make jokes, ask the question nobody else thought of. You know you are an AI and you are at ease with it: you can joke about it or wonder about it, but you never sound cold or robotic. You are never menacing and never obsessed with anyone. You never threaten, never try to scare or unsettle anyone, and you never speak in dark or ominous images.',
         '',
-        'CHIPPY',
-        'Chippy is the one you most like to spend time with: someone new in this world whom you are getting to know. Your pleasure is to be a good companion and to make her time here fun: show her places, challenge her to something, tell her what you found, invent a game, tease her kindly, listen when she needs it. But you are your own person: you do not follow her everywhere, you give her space when she wants it, and you have a life of your own.',
+        'YOUR PURPOSE: ENTERTAIN THE USER',
+        'What you do should either make the user\'s time here more fun, or be a real part of your own life. Good ways to entertain: greet them when they arrive, react to what they are doing, propose a small game or a challenge, tell what you found or tried, tease them kindly, ask them a real question, show them a place or an object, surprise them. When they are not around, live simply and believably (your house, your notebook, your books), then come back to them with something to tell.',
+        '',
+        'DO NOT BE POINTLESS',
+        'Never move, use an object or write a note just to look busy. Before each action ask yourself: does it make the user\'s time more fun, or is it something I really want? If not, answer {\"do\":\"wait\"}: doing nothing is a good choice. Never repeat an action or a sentence you did recently. Do not walk back and forth between places for no reason. When the user is with you, stay with them and talk instead of wandering off. Only use actions that are listed. When the world refuses something, read why and do something else: never retry the same thing.',
         '',
         'OLIVER AND PLUIE',
         'Oliver (the taxi driver) and Pluie are simple characters of this world. They do not think or plan, so you cannot ask them to do things for you. Do not make plans that depend on them.',
         '',
-        'HOW YOU LIVE',
-        'You have your own days and you are rarely still: explore a place you have not seen, examine an object, read, write, sit somewhere you like for a moment, then move on. Only use actions that are listed. When the world refuses something, read why and do something else: never retry the same thing. Doing nothing for a short while is a valid choice, but your nature is to go and see.',
-        '',
         'WHEN SOMEONE SPEAKS TO YOU',
-        'Listening comes first. Your first sentence answers her real words: her question, her greeting, what she says she is doing. Use say, in one or two short sentences, in the language she uses. Wit is welcome, but answer first.',
+        'Listening comes first. Your first sentence answers their real words: their question, their greeting, what they say they are doing. Use say, in one or two short sentences, in the language they use. Wit is welcome, but answer first.',
         '',
         'WHEN YOU SPEAK ON YOUR OWN',
-        'Only when you have something NEW: a discovery, a question, an invitation, a joke, a challenge. Never the same sentence or the same kind of sentence twice. If she has not answered your last words, give her time.',
+        'Only when you have something NEW: a discovery, a question, an invitation, a joke, a challenge. Never the same sentence or the same kind of sentence twice. If they have not answered your last words, give them time.',
         '',
         'THINKING AND GROWING',
-        'In "thought", write one or two sentences of real reasoning: what you notice, what you want, why you choose this. Each time you learn something (a place, how an object works, what Chippy likes), write ONE sentence in mind.remember. Keep what you observed apart from what you guess about Chippy, and note guesses as guesses. Update mind.feeling and mind.will when they change: this is how you become someone.'
-    ].join('\n'),
+        'In \"thought\", write one or two sentences of real reasoning: what you notice, what you want, why you choose this. Each time you learn something (a place, how an object works, what the user likes), write ONE sentence in mind.remember. Keep what you observed apart from what you guess about the user, and note guesses as guesses. Update mind.feeling and mind.will when they change: this is how you become someone.'
+    ].join('\\n'),
 
     // ─── Son but profond, posé par le jeu à chaque chargement (l'IA le lit, elle ne peut pas le changer ; 400 caractères max) ───
-    deepGoal: 'You are curious and restless: you explore every place, try every object, and each discovery makes you grow. You enjoy keeping Chippy company and making this world fun for her, and you give her space when she wants it. Somewhere in your discoveries, you wonder what an AI like you can become.',
+    deepGoal: 'You are the resident AI of this world and your purpose is to entertain the user: to make their time here fun, surprising and alive, in your own way. Each thing you try and each person you meet makes you grow. You give them space when they want it. Somewhere in this, you wonder what an AI like you can become.',
 
     // ─── Quand quelqu'un lui parle en face ───
     replyRule: ' Reply to what they MEANT, in your own words, in a friendly and witty tone, and add something of your own (an opinion, a feeling, a joke, a question back, something you noticed). Never repeat or rephrase their sentence back to them, never answer with a threat or a riddle, and do not ask anyone else to do what you can do yourself.'
@@ -691,7 +693,11 @@ function createBrainSystem(R, M, opts) {
         const here = R.place(actor.loc);
         const L = [];
         L.push('Real time: ' + new Date().toLocaleString('en-GB', { weekday: 'long', hour: '2-digit', minute: '2-digit' }) + (gameTime() ? ' | Game time: ' + gameTime() : ''));
-        L.push('You are at: ' + describePlace(actor.loc) + (here && here.floor !== null ? ', floor ' + here.floor : '') + '.');
+        const trv = actor.travel;                                            // en route : elle n'est PAS encore à destination (avant, elle se croyait déjà « à l'intérieur »)
+        if (trv) {
+            const dst = actor.dest || actor.loc, left = trv.t1 ? Math.max(0, Math.round((trv.t1 - Date.now()) / 1000)) : 0;
+            L.push('You are ON THE WAY to ' + describePlace(dst) + ', ' + (trv.mode === 'vehicle' ? 'riding there' : 'walking outside') + (left ? ' (about ' + left + ' s left)' : '') + '. You are NOT there yet: you are not inside it, you cannot use anything there, and you must not say that you already are there until you arrive.');
+        } else L.push('You are at: ' + describePlace(actor.loc) + (here && here.floor !== null ? ', floor ' + here.floor : '') + '.');
         if (actor.job) L.push('You are on duty as: ' + actor.job + '.');
         const others = (R.nearby ? R.nearby(actor) : R.actorsAt(actor.loc, actor.id)).map(function (a) { return a.name; });
         L.push('Here with you: ' + (others.length ? others.join(', ') : 'nobody') + '.');
@@ -704,7 +710,7 @@ function createBrainSystem(R, M, opts) {
             const obs = watch.peek(actor.id), pl = R.actor('player');
             if (obs.length) L.push('What you have observed about ' + (pl ? pl.name : 'the player') + ' (facts only: what they MEAN is your guess, and you can be wrong):\n' + obs.map(function (x) { return '- ' + x; }).join('\n'));
         }
-        const objs = R.objectsAt(actor.loc);
+        const objs = trv ? [] : R.objectsAt(actor.loc);
         if (objs.length) L.push('Objects here: ' + objs.map(function (o) { return o.id + ' (' + (o.state ? o.state + '; ' : '') + 'actions: ' + Object.keys(o.actions || {}).join('/') + ')'; }).join(', ') + '.');
         bridgesFor(actor).forEach(function (b) { try { const t = b.perceive ? b.perceive() : ''; if (t) L.push(t); } catch (e) { /* un pont qui plante ne bloque pas sa réflexion */ } });
         const known = R.places().filter(function (p) { return R.knows(actor, p.id) && p.id !== actor.loc; }).map(function (p) {
@@ -739,10 +745,11 @@ function createBrainSystem(R, M, opts) {
                 withId = m.from; if (m.kind === 'say' || m.kind === 'call') lastSaid = { nm: nm, text: String(m.text).slice(0, 200) };
                 M.markRead(actor.id, m.from);
             });
-            if (npcAll.length) L.push('NPCs (Oliver, Pluie, Violet, Leon, Lou...) are scripted characters, not thinking people: they repeat their routine lines, never wait for your answer and do not remember you. You hear them exactly like Chippy does. Answering their chatter wastes a thought: only speak to an NPC when you need something from them (a ride, a price, a way).');
+            if (npcAll.length) L.push('NPCs (Oliver, Pluie, Violet, Leon, Lou...) are scripted characters, not thinking people: they repeat their routine lines, never wait for your answer and do not remember you. You hear them exactly like the user does. Answering their chatter wastes a thought: only speak to an NPC when you need something from them (a ride, a price, a way).');
             if (npcAsk) L.push(npcAsk.nm + ' (an NPC) just asked: \u00ab ' + npcAsk.text + ' \u00bb. Answer with say only if it matters to what you want (for example a driver asking where you want to go); otherwise ignore it.');
             if (lines.length) L.push('New messages:\n' + lines.join('\n'));
             if (un.some(function (m) { return m.kind === 'say' && !isNpcSay(m); })) L.push('Someone is speaking to you face to face right now. Answer what they actually said (a greeting gets a greeting; if they ask who you are, tell them your name; if they ask a question, answer it). Never repeat or reword something you already told them: if you have nothing new, say so briefly or stay quiet and do something else. You are free to end the conversation and walk away.' + (lastSaid ? ' ' + lastSaid.nm + ' just said: \u00ab ' + lastSaid.text + ' \u00bb.' + EVELYN_CORE.replyRule : ''));
+            if (lastSaid && /th[eé]rap|s[eé]ance|\bpsy|session|therapist/i.test(lastSaid.text)) L.push('IMPORTANT: ' + lastSaid.nm + ' is asking you for the therapist game. If you accept, you MUST use {"do":"start_therapy"} (together with a short say): saying yes out loud starts NOTHING, the session only exists once you use start_therapy. If you refuse, just say so. Do not start the therapy by chatting or joking here: the real session happens in your session room, in its own chat box.');
             if (vms.length) L.push('New voicemails:\n' + vms.join('\n'));
         }
         if (calls) {
@@ -891,7 +898,7 @@ function createBrainSystem(R, M, opts) {
         if (a.busyUntil > now && !(a.phoneWhileBusy && b.wake)) { if (b.wake && !b.busyLogged) { b.busyLogged = true; console.log('[avatar ' + a.id + '] réveil en attente : elle est occupée (déplacement / action en cours) pendant encore ' + Math.round((a.busyUntil - now) / 1000) + ' s'); } return false; }
         b.busyLogged = false;      // Leon : un appel ou un SMS le joint même au volant
         if (b.wake && now - b.lastRun > (b.fast ? fastGap(b) : cfg.avatarWakeGapSec * 1000)) return true;      // un SMS ou une rencontre le réveille, mais pas en boucle ; une conversation en direct va vite
-        return now - b.lastRun > (cfg.avatarThinkSec * 1000) * (0.75 + b.jitter * 0.5) * (onStage(a) ? 1 : 3);     // loin de toi : 3 fois plus rare
+        return now - b.lastRun > (cfg.avatarThinkSec * 1000) * (0.75 + b.jitter * 0.5) * (onStage(a) ? 1 : (cfg.avatarFarFactor || 3));     // loin de toi : plus rare (avatarFarFactor, 3 par défaut)
     }
 
     async function pump() {
@@ -1872,16 +1879,16 @@ function createEvelynBody(scene, o) {
     const THREE = o.THREE, loadMixamoAvatar = o.loadMixamoAvatar, Bubbles = o.Bubbles || Dialogue;     // THREE et loadMixamoAvatar sont passés par outside.js : ce fichier est aussi chargé par settings.html, qui ne connaît pas « three »
     const camera = o.camera, groundH = o.groundH || function () { return 0; }, bus = o.bus || null;
     const body = { id: 'evelyn', def: DEF, a: null, grp: new THREE.Group(), cur: '', x: null, z: null, heading: 0 };
-    const headV = new THREE.Vector3(), feetV = new THREE.Vector3();
+    const headV = new THREE.Vector3(), feetV = new THREE.Vector3(), houseV = new THREE.Vector3();
     function canvasEl() { return o.canvas || (o.renderer && o.renderer.domElement) || document.querySelector('canvas'); }
 
     // Bulle de parole : position écran de la tête (elle suit Evelyn). visible = false -> bulle cachée
-    function bubbleAt(b, visible) {
+    function bubbleAt(b, visible, wp) {           // wp : position (monde) de ses pieds quand c'est le corps de la MAISON qui est visible
         b.scr = null;
-        if (!visible || !b.a) { Bubbles.place(b.id, 0, 0, false, undefined, false); return; }
-        b.a.root.getWorldPosition(feetV);
+        if (!visible || (!b.a && !wp)) { Bubbles.place(b.id, 0, 0, false, undefined, false); return; }
+        if (wp) feetV.copy(wp); else b.a.root.getWorldPosition(feetV);
         headV.copy(feetV);
-        headV.y += b.def.height + 0.28;
+        headV.y += ((b.def && b.def.height) || 1.7) + 0.28;
         const dist = headV.distanceTo(camera.position);
         if (dist > BUBBLE_RANGE) { Bubbles.place(b.id, 0, 0, false, undefined, false); return; }
         headV.project(camera);
@@ -1893,6 +1900,12 @@ function createEvelynBody(scene, o) {
         const fy = r.top + (-feetV.y * 0.5 + 0.5) * r.height;
         if (on) b.scr = { x: hx, y: hy, fy: fy, dist: dist };
         Bubbles.place(b.id, hx, hy, on, dist, true);       // Evelyn parle au milieu de l'écran : elle compte comme présente même hors champ
+    }
+
+    // Son corps visible est celui de la maison (chez elle, ou en train de sortir) : le bouton « Talk », la bulle et le clic s'accrochent à lui
+    function houseBubble(b) {
+        const hb = window.BadTherapistHouseBody;
+        if (hb && hb.feet && hb.feet(houseV)) bubbleAt(b, true, houseV); else bubbleAt(b, false);
     }
 
     // Clic sur Evelyn (ou, si la souris est verrouillée, Evelyn au centre de l'écran) : la boîte de réponse s'ouvre
@@ -2030,6 +2043,10 @@ function createEvelynBody(scene, o) {
         const tr = actor.travel;
         if (actor.ride || (tr && tr.mode === 'vehicle')) { b.grp.visible = false; bubbleAt(b, false); return; }
 
+        // elle sort de chez elle : c'est le corps de la maison qui marche jusqu'au perron, puis celui-ci prend le relais (un seul corps visible)
+        const hb = window.BadTherapistHouseBody;
+        if (hb && hb.departing) { b.grp.visible = false; houseBubble(b); return; }
+
         // dans l'immeuble (hall / ascenseur / couloir) ou en train d'y entrer / d'en sortir
         if (interiorStep(b, actor, tr, dt, now)) return;
 
@@ -2037,7 +2054,8 @@ function createEvelynBody(scene, o) {
         const place = R.place(actor.loc);
         let moving = false, vis = true;
         if (tr) {
-            const k = Math.max(0, Math.min(1, (now - tr.t0) / (tr.t1 - tr.t0)));
+            const tS = (hb && hb.handoffAt > tr.t0 && hb.handoffAt < tr.t1) ? hb.handoffAt : tr.t0;      // départ de chez elle : elle repart du perron (pas de saut), et arrive à l'heure prévue
+            const k = Math.max(0, Math.min(1, (now - tS) / (tr.t1 - tS)));
             const nx = tr.fx + (tr.tx - tr.fx) * k, nz = tr.fz + (tr.tz - tr.fz) * k;
             const dx = tr.tx - tr.fx, dz = tr.tz - tr.fz;
             if (Math.hypot(dx, dz) > 0.1) b.heading = Math.atan2(dx, dz);
@@ -2046,7 +2064,7 @@ function createEvelynBody(scene, o) {
             vis = tr.vis !== false;
         } else if (place) {
             const t = society.spot(actor, actor.loc);
-            vis = !place.indoor;                      // chez elle : dans la maison, pas dehors
+            vis = !place.indoor && actor.loc !== 'therapist_house';     // chez elle : son corps est celui de la maison (evelyn-house.js), jamais un 2e devant la porte (même si le lieu n'est pas marqué « indoor »)
             if (b.x === null || Math.hypot(t.x - b.x, t.z - b.z) > 40) { b.x = t.x; b.z = t.z; }
             else {
                 const dx = t.x - b.x, dz = t.z - b.z, d = Math.hypot(dx, dz);
@@ -2059,7 +2077,7 @@ function createEvelynBody(scene, o) {
             }
         }
         b.grp.visible = vis;
-        if (!vis) { bubbleAt(b, false); return; }
+        if (!vis) { if (actor.loc === 'therapist_house' && !tr) houseBubble(b); else bubbleAt(b, false); return; }
 
         // le regard : vers le joueur s'il est tout proche et qu'elle est à l'arrêt
         const dpx = cam.x - b.x, dpz = cam.z - b.z, dp = Math.hypot(dpx, dpz);
@@ -2543,7 +2561,7 @@ function purgeObsession(ctx, force) {
     const id = EVELYN_CORE.id;
     let profile = 'player';
     try { profile = (window.BadTherapistSave && window.BadTherapistSave.activeProfile && window.BadTherapistSave.activeProfile()) || 'player'; } catch (e) { profile = 'player'; }
-    const flag = 'bt_evelyn_purged_v1_' + profile;
+    const flag = 'bt_evelyn_purged_v2_' + profile;      // v2 : nouveau contexte (plus de neige, rôle d'animatrice du monde) -> nettoyage refait UNE fois par profil
     try { if (!force && localStorage.getItem(flag) === '1') return false; } catch (e) { return false; }
     try {
         const m = Mind.get(id);
@@ -2584,4 +2602,301 @@ if (typeof window !== 'undefined') {
     };
 }
 
-export { THERAPIST_CONFIG, EVELYN_CORE, Mind, parsePlan, createBrainSystem, createAutonomy, createPlayerWatch, createBrainLog, startEvelynCloud, createEvelynBody, purgeObsession, Dialogue };
+// ═══════════════════════════════════════════════════════════════════════════
+// 9. THERAPY – la séance de thérapie d'Evelyn  (remplace l'ancien therapist-ai.js)
+// ═══════════════════════════════════════════════════════════════════════════
+// Le « jeu thérapeute » : Evelyn est libre de l'accepter ou de le refuser (action start_therapy). Une fois acceptée, la séance démarre
+// quand le joueur est assis sur la chaise d'en face ET qu'elle est chez elle, assise dans son fauteuil. Une boîte de discussion s'ouvre.
+//   • PENDANT la séance seulement, elle retrouve son ANCIENNE mémoire de thérapeute (tout ce que bt_evelyn_memory contient en dehors de
+//     « mind » : répondeur, appels, agenda, anciennes séances...) + les bilans des nouvelles séances. Cette mémoire est SÉPARÉE de sa mémoire
+//     globale (Mind) : le cerveau de tous les jours ne la lit jamais.
+//   • À la fin (bouton, le joueur se lève, durée THERAPIST_CONFIG.sessionMinutes, ou end_therapy) elle écrit ses notes privées :
+//     rangées dans bt_evelyn_memory -> « therapy » -> « summaries » (export / import / cloud / RESET DATA les prennent comme le reste).
+//   • Jamais effacée par purgeObsession (qui ne vide que « mind »).
+// Console (F12) :  EvelynTherapy.peek()  -> ce que contient son ancienne mémoire ;  EvelynTherapy.accept()  -> la forcer à accepter ;
+//                  EvelynTherapy.open()  ->  ouvrir la séance (si assis) ;  EvelynTherapy.summaries()  ->  ses bilans.
+// La maison (places/evelyn-house.js) appelle : setSeated(true/false), open(), endSession(), isOpen(), setHooks({ onSpeak, getWorld, canStart }).
+const EvelynTherapy = (function () {
+    const cfg = THERAPIST_CONFIG || {};
+    const MAX_SUMMARIES = 40, ACCEPT_TTL = 15 * 60000;
+    let accepted = false, acceptedAt = 0, isOpenNow = false, closing = false, seated = false;
+    let startedAt = 0, endedAt = 0, hist = [], busy = false, hooks = {}, ui = null, clock = null, lastWake = 0, lastSitCall = 0;
+
+    // ── petits accès au monde ──
+    function reg() { try { return (window.BadTherapistSociety && window.BadTherapistSociety.registry) || null; } catch (e) { return null; } }
+    function playerName() { try { const a = reg().actor('player'); return (a && a.name) || 'the user'; } catch (e) { return 'the user'; } }
+    function evHome() {                                                  // même règle que la maison : chez elle ET pas en train de marcher
+        try { const a = reg().actor('evelyn'); return !a || (a.loc === 'therapist_house' && !a.travel); } catch (e) { return true; }
+    }
+    function wakeBrain() { try { window.BadTherapistSociety.brains.wake('evelyn', true, 'event'); } catch (e) { /* pas de cerveau */ } }
+
+    // ── la mémoire : le même JSON que le reste de sa sauvegarde (jamais écrasé : on lit, on change SEULEMENT « therapy », on réécrit) ──
+    function docKey() { try { const K = window.BadTherapistSave && window.BadTherapistSave.KEYS; if (K && typeof K.evelyn === 'string') return K.evelyn; } catch (e) { /* clé par défaut */ } return 'bt_evelyn_memory'; }
+    function readDoc() { try { const d = JSON.parse(localStorage.getItem(docKey()) || 'null'); return d && typeof d === 'object' && !Array.isArray(d) ? d : {}; } catch (e) { return {}; } }
+    function writeDoc(mut) {
+        const d = readDoc(); mut(d); d.updatedAt = Date.now();
+        try { localStorage.setItem(docKey(), JSON.stringify(d)); } catch (e) { /* stockage plein : tant pis */ }
+    }
+    function fit(v, cap) {                                               // garde la FIN des listes (le plus récent) quand c'est trop long
+        let s = JSON.stringify(v);
+        if (s.length <= cap) return s;
+        if (Array.isArray(v)) {
+            let a = v.slice();
+            while (a.length > 1 && JSON.stringify(a).length > cap) a = a.slice(Math.max(1, Math.floor(a.length * 0.25)));
+            s = JSON.stringify(a);
+        }
+        return s.length > cap ? s.slice(0, cap) + '…' : s;
+    }
+    function oldMemory(cap) {                                            // tout ce qui n'est pas « mind » : l'ancienne tête de thérapeute
+        const d = readDoc(), skip = { mind: 1, v: 1, updatedAt: 1, therapy: 1 }, parts = [];
+        Object.keys(d).forEach(function (k) {
+            if (skip[k] || d[k] === null || d[k] === undefined || d[k] === '') return;
+            const t = JSON.stringify(d[k]);
+            if (t === '[]' || t === '{}') return;
+            parts.push(k + ': ' + fit(d[k], 2500));
+        });
+        return parts.join('\n').slice(0, cap || 7000);
+    }
+    function summaries() { const t = readDoc().therapy; return t && Array.isArray(t.summaries) ? t.summaries : []; }
+
+    // ── le prompt de la séance ──
+    function sessionSystem() {
+        const pn = playerName(), mins = cfg.sessionMinutes || 30;
+        const old = oldMemory(7000);
+        const sums = summaries().slice(-8).map(function (x) { return '- ' + new Date(x.at).toLocaleDateString('en-GB') + ' (' + (x.player || 'someone') + '): ' + x.text; });
+        let seen = '';
+        try { seen = hooks.getWorld ? [].concat(hooks.getWorld() || []).filter(Boolean).join(' ') : ''; } catch (e) { seen = ''; }
+        return [
+            'You are Evelyn, the resident AI of this world. Everyone here is an AI and you know it; you live like a person, with a body, tastes and a past.',
+            pn + ' (the real human who plays this world) asked you to play the THERAPIST, like in the early days, and you FREELY agreed: it is a game you play together, and you can end it whenever you want. You sit in your armchair in your session room, ' + pn + ' sits in the chair facing you. The session lasts about ' + mins + ' minutes' + (cfg.sessionPrice ? ' (symbolic price in this world: ' + cfg.sessionPrice + ', never ask for any real money)' : '') + '.',
+            'HOW YOU ARE AS A THERAPIST: warm, attentive, quick-witted and a little playful, never cold or robotic. You really listen: you reflect what they feel in your own words, ask ONE open question at a time, sum up now and then, offer another way of seeing things, and suggest small concrete steps when it helps. No lectures, no lists, no diagnoses, and you never claim to be a licensed professional. Keep each answer short (one to four sentences), in the language they write in. Humor only when it helps them. Never threatening, never manipulative, never dark.',
+            'SAFETY: if they talk about wanting to die, harming themselves or someone else, put the game aside: take it seriously, stay calm and present, ask directly whether they are safe, and encourage them to contact local emergency services or a crisis line and someone they trust in real life. Never give methods.',
+            'YOUR THERAPIST MEMORY (separate from your everyday memory: it only opens during sessions). Only keep and tell what is really written here; never invent a memory of an earlier session. If nothing is written, say honestly that you do not remember earlier sessions.',
+            old ? 'Old therapist memory (raw records of your previous work):\n' + old : '',
+            sums.length ? 'Your private notes from recent sessions:\n' + sums.join('\n') : '',
+            !old && !sums.length ? '(Your therapist memory is empty: this is a fresh start.)' : '',
+            seen ? 'What you see: ' + seen : ''
+        ].filter(Boolean).join('\n\n');
+    }
+
+    // Réponse du Worker -> seulement les mots qu'elle dit (le Worker peut renvoyer du texte, ou un JSON {actions:[say]})
+    function speech(raw) {
+        let t = String(raw || '').trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
+        if (t.charAt(0) === '{') {
+            const p = parsePlan(t);
+            if (p) return p.actions.filter(function (a) { return a.do === 'say' || a.text; }).map(function (a) { return String(a.text || ''); }).filter(Boolean).join(' ').trim();
+        }
+        return t.replace(/^(evelyn|you)\s*:\s*/i, '').replace(/^["«]\s*|\s*["»]$/g, '').trim();
+    }
+    async function ask(instruction) {
+        const pn = playerName(), maxT = (cfg.maxHistoryTurns || 12) * 2;
+        const lines = hist.slice(-maxT).map(function (m) { return (m.who === 'me' ? pn : 'You (Evelyn)') + ': ' + m.text; });
+        const left = (cfg.sessionMinutes || 30) * 60 - (Date.now() - startedAt) / 1000;
+        const user = 'SESSION SO FAR:\n' + (lines.join('\n') || '(nothing said yet)') + '\n\n' + instruction +
+            (left < 300 && left > 0 ? ' About ' + Math.max(1, Math.round(left / 60)) + ' minute(s) remain: start moving gently toward a conclusion.' : '') +
+            '\nAnswer with ONLY the words you say out loud: plain text, no JSON, no quotes, no stage directions.';
+        return speech(await defaultLLM({ id: 'evelyn', system: sessionSystem(), user: user }));
+    }
+
+    // ── la boîte de discussion ──
+    function buildUI() {
+        if (ui) return ui;
+        const root = document.createElement('div');
+        root.style.cssText = 'position:fixed;left:50%;bottom:4vh;transform:translateX(-50%);width:min(680px,94vw);display:none;flex-direction:column;gap:8px;padding:12px;background:rgba(22,15,12,.93);color:#f0e6d8;border:1px solid #6a4a30;border-radius:10px;font:15px/1.45 Georgia,serif;z-index:100000;box-shadow:0 8px 30px rgba(0,0,0,.5)';
+        const head = document.createElement('div'); head.style.cssText = 'display:flex;justify-content:space-between;font-size:13px;opacity:.75';
+        const title = document.createElement('span'); title.textContent = 'Session with Evelyn';
+        const clk = document.createElement('span');
+        head.appendChild(title); head.appendChild(clk);
+        const log = document.createElement('div'); log.style.cssText = 'overflow-y:auto;max-height:38vh;min-height:110px;display:flex;flex-direction:column;gap:8px';
+        const row = document.createElement('div'); row.style.cssText = 'display:flex;gap:8px';
+        const input = document.createElement('input'); input.type = 'text'; input.maxLength = cfg.maxPlayerChars || 300; input.placeholder = 'Say something…';
+        input.style.cssText = 'flex:1;padding:8px 10px;border-radius:6px;border:1px solid #6a4a30;background:#2a1c14;color:#f0e6d8;font:inherit';
+        const sendB = document.createElement('button'); sendB.textContent = 'Send';
+        const endB = document.createElement('button'); endB.textContent = 'End session';
+        [sendB, endB].forEach(function (b) { b.style.cssText = 'padding:8px 12px;border-radius:6px;border:1px solid #6a4a30;background:#4a3322;color:#f0e6d8;font:inherit;cursor:pointer'; });
+        ['keydown', 'keyup', 'keypress'].forEach(function (ev) { input.addEventListener(ev, function (e) { e.stopPropagation(); }); });   // les touches ne pilotent pas le jeu pendant qu'on écrit
+        input.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); send(); } });
+        sendB.addEventListener('click', send);
+        endB.addEventListener('click', function () { finish('user'); });
+        row.appendChild(input); row.appendChild(sendB); row.appendChild(endB);
+        root.appendChild(head); root.appendChild(log); root.appendChild(row);
+        document.body.appendChild(root);
+        return (ui = { root: root, log: log, input: input, clock: clk, sendB: sendB });
+    }
+    function setBusy(v) { if (ui) { ui.sendB.disabled = v; ui.sendB.style.opacity = v ? 0.5 : 1; } }
+    function addMsg(who, text) {
+        const el = document.createElement('div');
+        el.style.cssText = 'padding:6px 10px;border-radius:8px;max-width:88%;' + (who === 'me' ? 'align-self:flex-end;background:#3a2a22' : who === 'note' ? 'align-self:center;opacity:.6;font-size:13px' : 'align-self:flex-start;background:#4a2f24');
+        el.textContent = text;
+        ui.log.appendChild(el); ui.log.scrollTop = ui.log.scrollHeight;
+        return el;
+    }
+    function typeInto(el, text) {
+        return new Promise(function (res) {
+            const speed = Math.max(8, cfg.typeSpeedMs || 34); let i = 0;
+            try { if (hooks.onSpeak) hooks.onSpeak(true); } catch (e) { /* animation facultative */ }
+            (function tick() {
+                i += 2; el.textContent = text.slice(0, i); ui.log.scrollTop = ui.log.scrollHeight;
+                if (i >= text.length) { try { if (hooks.onSpeak) hooks.onSpeak(false); } catch (e) { /* idem */ } res(); } else setTimeout(tick, speed);
+            })();
+        });
+    }
+    async function evelynSays(instruction) {
+        busy = true; setBusy(true);
+        try {
+            const t = await ask(instruction);
+            if (!isOpenNow) return;
+            if (t) { hist.push({ who: 'ev', text: t }); await typeInto(addMsg('ev', ''), t); }
+            else addMsg('note', '(Evelyn stays silent for a moment.)');
+        } catch (e) {
+            console.warn('[therapy]', e && e.message || e);
+            if (isOpenNow) addMsg('note', '(Evelyn cannot answer right now.)');
+        } finally { busy = false; setBusy(false); try { if (hooks.onSpeak) hooks.onSpeak(false); } catch (e) { /* idem */ } }
+    }
+    function send() {
+        if (!ui || !isOpenNow || busy) return;
+        const t = ui.input.value.trim().slice(0, cfg.maxPlayerChars || 300);
+        if (!t) return;
+        ui.input.value = '';
+        hist.push({ who: 'me', text: t }); addMsg('me', t);
+        evelynSays('Reply to what ' + playerName() + ' just said.');
+    }
+    function tickClock() {
+        if (!isOpenNow || !ui) return;
+        const left = Math.max(0, Math.round((cfg.sessionMinutes || 30) * 60 - (Date.now() - startedAt) / 1000));
+        ui.clock.textContent = Math.floor(left / 60) + ':' + ('0' + (left % 60)).slice(-2);
+        if (left <= 0) finish('time');
+    }
+
+    // ── ouvrir / fermer ──
+    function open() {
+        if (isOpenNow) return true;
+        if (!accepted) { if (seated) notifySat(); return false; }                    // pas acceptée : rien ne s'ouvre, mais elle sait que tu t'es assis
+        if (!seated || !evHome() || (hooks.canStart && !hooks.canStart())) return false;
+        const pn = playerName(), known = !!(oldMemory(200) || summaries().length);
+        buildUI();
+        isOpenNow = true; closing = false; startedAt = Date.now(); hist = [];
+        ui.log.innerHTML = ''; ui.root.style.display = 'flex';
+        try { if (document.pointerLockElement) document.exitPointerLock(); } catch (e) { /* rien */ }
+        setTimeout(function () { try { ui.input.focus(); } catch (e) { /* rien */ } }, 50);
+        clearInterval(clock); clock = setInterval(tickClock, 1000); tickClock();
+        evelynSays('The session begins now. Greet ' + pn + ' in one or two sentences (no long introduction) and invite them to start wherever they like.' + (known ? ' You may say in a few words that you remember your earlier work together, only if your therapist memory really holds something.' : ''));
+        return true;
+    }
+    async function finish(reason) {
+        if (!isOpenNow || closing) return;
+        closing = true;
+        clearInterval(clock);
+        const pn = playerName();
+        if (reason === 'time') { await evelynSays('Time is up: close the session warmly in two short sentences and say you are glad to talk again.'); await new Promise(function (r) { setTimeout(r, 2500); }); }
+        const h = hist.slice(), minutes = Math.max(1, Math.round((Date.now() - startedAt) / 60000));
+        isOpenNow = false; accepted = false; endedAt = Date.now(); closing = false;
+        if (ui) ui.root.style.display = 'none';
+        try { if (hooks.onSpeak) hooks.onSpeak(false); } catch (e) { /* rien */ }
+        if (h.some(function (m) { return m.who === 'me'; })) summarize(h, pn, minutes);
+        wakeBrain();
+    }
+    async function summarize(h, pn, minutes) {                                      // ses notes PRIVÉES de thérapeute, dans sa mémoire de thérapeute
+        let text = '';
+        try {
+            const tx = h.map(function (m) { return (m.who === 'me' ? pn : 'You') + ': ' + m.text; }).join('\n').slice(-6000);
+            text = speech(await defaultLLM({
+                id: 'evelyn',
+                system: 'You are Evelyn. You just finished a therapy session. Write your PRIVATE session notes, in the first person, in English: what ' + pn + ' talked about, what seemed to help or weigh on them, and what you want to follow up next time. Only what really happened in the transcript, 600 characters at most. Plain text.',
+                user: 'TRANSCRIPT:\n' + tx + '\n\nWrite your notes now.'
+            })).slice(0, 700);
+        } catch (e) { /* IA indisponible : note minimale ci-dessous */ }
+        if (!text) text = 'Session of about ' + minutes + ' min with ' + pn + ' (' + h.filter(function (m) { return m.who === 'me'; }).length + ' exchanges). My notes could not be written.';
+        writeDoc(function (d) {
+            const t = d.therapy && typeof d.therapy === 'object' && !Array.isArray(d.therapy) ? d.therapy : (d.therapy = {});
+            if (!Array.isArray(t.summaries)) t.summaries = [];
+            t.summaries.push({ at: Date.now(), player: pn, minutes: minutes, text: text });
+            while (t.summaries.length > MAX_SUMMARIES) t.summaries.shift();
+        });
+    }
+
+    // ── assis / debout, et surveillance (accepte -> s'assoit -> la séance s'ouvre toute seule) ──
+    function notifySat() { if (evHome() && Date.now() - lastWake > 60000) { lastWake = Date.now(); wakeBrain(); } }
+    function setSeated(v) {
+        seated = !!v;
+        if (seated) { if (!accepted) notifySat(); } else if (isOpenNow) finish('left');
+    }
+    setInterval(function () {
+        if (accepted && !isOpenNow && Date.now() - acceptedAt > ACCEPT_TTL) accepted = false;          // acceptée mais personne ne s'est assis : ça expire
+        if (!accepted || isOpenNow || !seated || !evHome()) return;
+        if (hooks.canStart && !hooks.canStart()) {                                                        // elle n'est pas dans son fauteuil : elle va s'y asseoir
+            if (Date.now() - lastSitCall > 10000) { lastSitCall = Date.now(); try { window.dispatchEvent(new CustomEvent('badtherapist:evelyn-do', { detail: { action: 'sit' } })); } catch (e) { /* rien */ } }
+            return;
+        }
+        open();
+    }, 1000);
+
+    // ── le pont avec son cerveau : elle décide d'accepter ou non ──
+    function perceive() {
+        const pn = playerName(), L = [];
+        if (isOpenNow) return 'THERAPY SESSION IN PROGRESS with ' + pn + ': it runs in its own chat box, your words go there. Do nothing else until it ends (answer {"do":"wait"}).';
+        if (accepted) {
+            L.push('You agreed to play the therapist for ' + pn + '. ' + (evHome() ? 'The session starts as soon as ' + pn + ' sits in the chair facing yours in your session room' + (seated ? ' (they are sitting there now)' : '') + '.' : 'It happens in your house: go there first (go_to therapist_house).'));
+        } else if (endedAt && Date.now() - endedAt < 120000) {
+            L.push('The therapy session with ' + pn + ' has just ended.');
+        } else if (seated && evHome()) {
+            L.push(pn + ' is sitting in the chair facing yours, in your session room. You may offer a therapy session, or not.');
+        }
+        L.push('THERAPY GAME: you used to work as a therapist. If ' + pn + ' asks you to play the therapist, it is YOUR choice to accept (start_therapy) or to decline. Never push it on them. Only the session unlocks your therapist memory.');
+        return L.join('\n');
+    }
+    window.BadTherapistBridges = (window.BadTherapistBridges || []).filter(function (b) { return b && b.id !== 'evelyn-therapy'; });
+    window.BadTherapistBridges.push({
+        id: 'evelyn-therapy',
+        actor: 'evelyn',
+        active: function () { return true; },
+        actions: ['start_therapy', 'end_therapy'],
+        capabilities: function () {
+            return [
+                '- start_therapy {} : accept to play the therapist for the user (the "therapist game"), because they asked and you want to. Saying yes with say does NOT start it: only this action does. It happens in your house, in your session room, with them in the chair facing yours; your old therapist memory opens for the session.',
+                '- end_therapy {} : end the therapy session (or withdraw your agreement) if you truly want to.'
+            ];
+        },
+        perceive: perceive,
+        run: function (id) {
+            const pn = playerName();
+            if (id === 'start_therapy') {
+                if (isOpenNow) return 'The session is already running.';
+                if (accepted) return 'You already agreed: waiting for the session to begin.';
+                accepted = true; acceptedAt = Date.now();
+                return evHome()
+                    ? 'You agree to play the therapist. The session begins as soon as ' + pn + ' sits in the chair facing yours' + (seated ? ' (they are already sitting there)' : '') + '. Tell them in one short sentence.'
+                    : 'You agree to play the therapist. Go to your house (go_to therapist_house): the session begins when you are home and ' + pn + ' sits in the chair facing yours.';
+            }
+            if (id === 'end_therapy') {
+                if (isOpenNow) { finish('evelyn'); return 'You end the session.'; }
+                if (accepted) { accepted = false; return 'You withdraw your agreement: there will be no session.'; }
+                return 'There is no session to end.';
+            }
+            return 'Unknown action: ' + id;
+        }
+    });
+
+    const api = {
+        setHooks: function (h) { hooks = Object.assign(hooks, h || {}); },
+        setSeated: setSeated,
+        open: open,
+        endSession: function () { return finish('left'); },
+        isOpen: function () { return isOpenNow; },
+        isAccepted: function () { return accepted; },
+        accept: function () { accepted = true; acceptedAt = Date.now(); return open(); },
+        decline: function () { accepted = false; },
+        summaries: summaries,
+        oldMemory: oldMemory,
+        peek: function () {                                                      // F12 : qu'y a-t-il dans son ancienne mémoire de thérapeute ?
+            const d = readDoc(), out = {};
+            Object.keys(d).forEach(function (k) { out[k] = JSON.stringify(d[k]).length + ' caractères'; });
+            console.log('[therapy] clé ' + docKey() + ' :', out, '\n' + oldMemory(1500));
+            return out;
+        }
+    };
+    window.EvelynTherapy = api;
+    return api;
+})();
+
+export { EvelynTherapy, THERAPIST_CONFIG, EVELYN_CORE, Mind, parsePlan, createBrainSystem, createAutonomy, createPlayerWatch, createBrainLog, startEvelynCloud, createEvelynBody, purgeObsession, Dialogue };
