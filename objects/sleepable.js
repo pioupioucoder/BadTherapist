@@ -19,7 +19,8 @@ import * as THREE from 'three';
 //       onSleep: (wake) => { ... },  // si tu veux un rêve : appelle wake() au réveil. Sinon : réveil automatique après `autoWake` s
 //       autoWake: 6,                 // secondes passées les yeux fermés (sans rêve)
 //       canSleep: () => true,        // ex. () => !police.isArrested()
-//       label: 'lit d\'Evelyn'
+//       label: 'lit d\'Evelyn',
+//       keepHeight: true             // on se relève à la hauteur d'yeux d'avant (sinon 1,7 m : sol à y = 0)
 //   });
 //
 //   bed.update(dt)    // à appeler dans le update() du lieu
@@ -121,7 +122,8 @@ export function makeSleepable(o) {
 
     function wakeUp() {
         if (S.phase !== 'asleep' && S.phase !== 'closing') return;
-        standPos.copy(startPos); standPos.y = 1.7;
+        standPos.copy(startPos);
+        if (!o.keepHeight) standPos.y = 1.7;      // keepHeight: true = on se relève à la hauteur où on s'est couché (lieux surélevés : station-service...)
         standQ.copy(startQ);
         next('waking');
     }

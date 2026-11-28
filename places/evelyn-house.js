@@ -76,6 +76,7 @@ const AVATAR_ANIMS = {
   sit: 'Sitting.fbx', sit_talk: 'Sitting Talking.fbx',
   walk: 'Walking.fbx', sleep: 'Sleeping Idle.fbx',
   stand: 'Standing Idle.fbx',
+  off: 'off.fbx',                                  // quand son cerveau est coupé (plus d'API) : ignorée tant que le fichier n'existe pas
   openDoor: 'OpeningDoor.fbx', closeDoor: 'ClosingDoor.fbx'
 };
 const AVATAR_ANIMS_MIN = { sit: 'Sitting.fbx', sit_talk: 'Sitting Talking.fbx' };   // secours si une des autres ne se charge pas
@@ -1091,7 +1092,7 @@ export function buildWork(parent, opts) {
     h.add(hit);
     addItem('sit:' + id, {
       rooms: o.rooms, x: o.x, z: o.z, range: 1.9,
-      enabled: function () { return !o.enabled || o.enabled(); },
+      enabled: function () { const e = evState(); return (!o.enabled || o.enabled()) && !(e && e.seatId === id && evelynHome()); },
       label: function () { return 'SIT'; },
       fn: function () { if (sitHook) sitHook(id); }
     });
@@ -1185,6 +1186,7 @@ export function buildWork(parent, opts) {
   const extras = [];                // petites mises à jour à chaque image (horloge...)
   let ringBell = function () { };   // sonnette (définie avec l'intérieur)
   let evState = function () { return null; };   // état d'Evelyn (EV), branché plus bas
+  let bookInfo = function () { return []; };    // livres chargés de l'étagère (branché avec l'étagère)
   let bedSleep = null;              // le lit d'Evelyn, dormable (objects/sleepable.js)
   const LAMP_IDS = ['lampHall', 'lampDesk', 'lampSide', 'lampBed'];
   const LAMP_ROOM = { lampHall: 'waiting', lampDesk: 'session', lampSide: 'session', lampBed: 'bedroom' };
@@ -1694,6 +1696,11 @@ export function buildWork(parent, opts) {
       return booksPromise;
     }
     loadBooksFn = loadBooks;
+    bookInfo = function () {
+      const out = [];
+      slots.forEach(function (sl, i) { if (sl && sl.data) out.push({ n: i + 1, title: sl.data.title || ('Book ' + (i + 1)), author: sl.data.author || '', pages: sl.data.pages }); });
+      return out;
+    };
 
     // ── cheminée (mur du fond, sous le conduit) ──
     (function () {
@@ -2135,16 +2142,41 @@ export function buildWork(parent, opts) {
       c1: { x: -2.8, z: 0.4 }, c2: { x: 0, z: 0.4 }, c3: { x: 3.2, z: 0.4 },
       b1: { x: 3.2, z: -1.15 }, b2: { x: 3.2, z: -2.3 }, bedside: { x: 3.3, z: -3.2 }, write: { x: 3.0, z: -3.8 }, bed: { x: BED.x, z: BED.z },
       p1c: { x: 0, z: 0.85 }, p1w: { x: 0, z: 1.95 }, w2: { x: 0, z: 3.2 },
+      wN: { x: -3.8, z: 1.95 }, wS: { x: -3.8, z: 3.6 },
       swSession: { x: -1.9, z: -1.05 }, swBedroom: { x: 4.2, z: -1.05 }, swCorridor: { x: 0.95, z: 0.85 }, swWaiting: { x: 1.3, z: 4.15 }
     };
     const EDGES = [
       ['armchair', 's1'], ['s1', 's2'], ['s2', 'sdoor'], ['s2', 'swSession'], ['sdoor', 'c1', 'door:session'],
       ['c1', 'c2'], ['c2', 'c3'], ['c3', 'b1', 'door:bedroom'], ['b1', 'b2'], ['b2', 'bedside'], ['bedside', 'bed'], ['b2', 'write'], ['b1', 'swBedroom'],
-      ['c2', 'p1c'], ['p1c', 'swCorridor'], ['p1c', 'p1w', 'door:p1'], ['p1w', 'w2'], ['w2', 'swWaiting']
+      ['c2', 'p1c'], ['p1c', 'swCorridor'], ['p1c', 'p1w', 'door:p1'], ['p1w', 'w2'], ['w2', 'swWaiting'], ['w2', 'wN'], ['w2', 'wS']
     ];
     const EV = { node: 'armchair', mode: 'sit', x: CHAIR.x, z: CHAIR.z, y: F, yaw: AVATAR_YAW, anim: '', steps: [] };
     evState = function () { return EV; };
     const WALK_SPEED = 1.15;
+    // Elle reprend là où elle était quand tu as fermé le jeu (aucun point de départ imposé)
+    (function () {
+      try {
+        const sv = JSON.parse(localStorage.getItem('bt_evelyn_pos') || 'null');
+        if (!sv || typeof sv !== 'object' || !isFinite(sv.x) || !isFinite(sv.z)) return;
+        if (Math.abs(sv.x) > W / 2 || Math.abs(sv.z) > D / 2) return;
+        let best = 'armchair', bd = 1e9;
+        Object.keys(EVN).forEach(function (n) { const d = Math.hypot(EVN[n].x - sv.x, EVN[n].z - sv.z); if (d < bd) { bd = d; best = n; } });
+        EV.x = sv.x; EV.z = sv.z; EV.y = isFinite(sv.y) ? sv.y : F; EV.yaw = isFinite(sv.yaw) ? sv.yaw : EV.yaw;
+        EV.mode = sv.mode === 'sit' || sv.mode === 'sleep' ? sv.mode : 'stand';
+        EV.node = typeof sv.node === 'string' && EVN[sv.node] ? sv.node : best;
+        EV.seatId = typeof sv.seatId === 'string' ? sv.seatId : null;
+      } catch (e) { }
+    })();
+    let evSavedAt = 0, evSavedStr = '';
+    function evSavePos(dt) {
+      evSavedAt += dt;
+      if (evSavedAt < 1.5 || EV.steps.length) return;
+      evSavedAt = 0;
+      const str = JSON.stringify({ x: +EV.x.toFixed(2), z: +EV.z.toFixed(2), y: +EV.y.toFixed(2), yaw: +EV.yaw.toFixed(2), mode: EV.mode, node: EV.node, seatId: EV.seatId || null });
+      if (str === evSavedStr) return;
+      evSavedStr = str;
+      try { localStorage.setItem('bt_evelyn_pos', str); } catch (e) { }
+    }
 
     function evRoute(from, to) {
       const adj = {};
@@ -2215,7 +2247,7 @@ export function buildWork(parent, opts) {
           const wasSleep = EV.mode === 'sleep';
           out.push(stepSet(function () { if (wasSleep) { EV.x = EVN.bedside.x; EV.z = EVN.bedside.z; EV.y = F; EV.node = 'bedside'; } }));
           out.push(stepWait(wasSleep ? 1.1 : 0.7, 'stand'));
-          out.push(stepSet(function () { EV.mode = 'stand'; }));
+          out.push(stepSet(function () { EV.mode = 'stand'; EV.seatId = null; }));
         }
         route.forEach(function (e) {
           const door = e[2] && doors[e[2]];
@@ -2242,6 +2274,7 @@ export function buildWork(parent, opts) {
     function stepPlace(node, yaw, mode, anim, y) {
       return stepSet(function () {
         EV.x = EVN[node].x; EV.z = EVN[node].z; EV.y = y === undefined ? F : y; EV.yaw = yaw; EV.mode = mode; EV.node = node; evAnim(anim);
+        if (mode === 'sit' && node === 'armchair') EV.seatId = 'evChair';
       });
     }
 
@@ -2286,6 +2319,234 @@ export function buildWork(parent, opts) {
         return true;
       }
     };
+
+    // ═════════════════════════════════════════════════════════════════
+    // PONT GÉNÉRIQUE : Evelyn utilise N'IMPORTE QUEL objet de la maison, exactement comme toi
+    // ═════════════════════════════════════════════════════════════════
+    // Tout ce que tu peux cliquer est dans ITEMS (portes, tiroir, armoire, interrupteurs, lampes, sièges, lit, papiers, carnet, cheminée...).
+    // Evelyn en reçoit la liste AUTOMATIQUEMENT et utilise la MÊME fonction que toi (it.fn) après avoir marché jusqu'à l'objet.
+    // Un nouvel objet créé avec addItem(...) apparaît donc tout seul dans sa perception, sans rien changer dans ce bloc.
+    // Le jeu est branché sur son cerveau par window.BadTherapistBridges (evelyn-core.js lit ce tableau : capacités, perception, exécution).
+    const ROOM_NAME = { waiting: 'waiting room', corridor: 'corridor', session: 'session room', bedroom: 'bedroom', outside: 'outside' };
+    const NOT_FOR_HER = { 'bell': 1, 'sit:seat': 1 };           // la sonnette est dehors, la chaise d'en face est celle des patients
+    const evHeard = [];                                          // ce qu'elle a entendu depuis sa dernière réflexion
+    const evTouched = {};                                        // objets qu'elle vient d'utiliser elle-même (pas de « quelqu'un a changé... »)
+    let evSnap = null;
+
+    function evRoom() { return roomAt(EV.x, EV.z) || 'corridor'; }
+    function playerName() { try { const a = window.BadTherapistSociety.registry.actor('player'); return (a && a.name) || 'the player'; } catch (e) { return 'the player'; } }
+    function itemLabel(it) { try { return String(it.label ? it.label() : 'USE'); } catch (e) { return 'USE'; } }
+    function stateWord(l) {
+      if (l === 'OPEN') return 'closed';
+      if (l === 'CLOSE') return 'open';
+      if (/ON$/.test(l)) return 'off';
+      if (/OFF$/.test(l)) return 'on';
+      return l.toLowerCase();
+    }
+    function evItems() {
+      const out = [];
+      Object.keys(ITEMS).forEach(function (id) {
+        const it = ITEMS[id];
+        if (!it || NOT_FOR_HER[id]) return;
+        if (it.enabled && !it.enabled()) return;
+        out.push(it);
+      });
+      return out;
+    }
+    function evStates() {
+      const o = {};
+      evItems().forEach(function (it) { if (it.id.indexOf('paper:') !== 0 && it.id !== 'diary') o[it.id] = itemLabel(it); });
+      return o;
+    }
+
+    // Un point où elle peut se tenir devant l'objet : on le relie au nœud le plus proche DANS LA MÊME PIÈCE
+    function nodeFor(it, standDist, ex, ez) {
+      const key = 'it:' + it.id;
+      if (EVN[key]) return key;
+      const room = it.rooms && it.rooms[0] !== 'outside' ? it.rooms[0] : null;
+      let best = null, bd = 1e9;
+      Object.keys(EVN).forEach(function (n) {
+        if (n.indexOf('it:') === 0) return;
+        if (room && roomAt(EVN[n].x, EVN[n].z) !== room) return;
+        const d = Math.hypot(EVN[n].x - ex, EVN[n].z - ez);
+        if (d < bd) { bd = d; best = n; }
+      });
+      if (!best) { best = 'c2'; bd = Math.hypot(EVN.c2.x - ex, EVN.c2.z - ez); }
+      const nx = EVN[best].x, nz = EVN[best].z, d = Math.max(bd, 0.001);
+      if (d <= standDist) EVN[key] = { x: nx, z: nz };
+      else EVN[key] = { x: ex + (nx - ex) / d * standDist, z: ez + (nz - ez) / d * standDist };
+      EDGES.push([best, key]);
+      return key;
+    }
+    function stepFaceTo(x, z) {
+      let f = null;
+      return function (dt) { if (!f) f = stepFace(Math.atan2(x - EV.x, z - EV.z)); return f(dt); };
+    }
+    function evBusy() { return EV.steps.length > 0; }
+
+    function evUse(id) {
+      const it = ITEMS[id];
+      if (!it || NOT_FOR_HER[id]) return 'Unknown object: ' + id + '. Use one of the ids listed under "Things you can use".';
+      if (!evelynHome()) return 'You cannot do that: you are not in your house.';
+      if (it.enabled && !it.enabled()) return 'You cannot use ' + id + ' right now.';
+      if (evBusy()) return 'You cannot do that yet: you are still busy with what you were doing.';
+      const label = itemLabel(it);
+      evTouched[id] = 1;
+
+      // sièges
+      if (id.indexOf('sit:') === 0) {
+        const sid = id.slice(4), sp = SITS[sid];
+        if (!sp) return 'Unknown object: ' + id + '.';
+        if (EV.mode === 'sit' && EV.seatId === sid) {
+          const sx = sp.x + (sp.stand ? sp.stand.x : 0.8), sz = sp.z + (sp.stand ? sp.stand.z : 0);
+          evPush(stepWait(0.7, 'stand'), stepSet(function () { EV.mode = 'stand'; EV.seatId = null; EV.x = sx; EV.z = sz; }));
+          return 'You stand up from ' + sid + '.';
+        }
+        if (seated && seatSpot && seatSpot.id === sid) return 'You cannot sit there: ' + playerName() + ' is sitting there.';
+        const yaw = AVATAR_YAW + Math.atan2(sp.dir[0], sp.dir[1]);
+        if (sid === 'evChair') evPush(stepGoto('armchair'), stepFace(yaw), stepPlace('armchair', yaw, 'sit', 'sit'));
+        else {
+          const key = nodeFor(it, 0.001, sp.x, sp.z);
+          evPush(stepGoto(key), stepFace(yaw), stepPlace(key, yaw, 'sit', 'sit'), stepSet(function () { EV.seatId = sid; }));
+        }
+        return 'You walk to ' + sid + ' and sit down.';
+      }
+      // lit
+      if (id === 'bed') {
+        if (bedSleep && bedSleep.isSleeping()) return 'You cannot use the bed: ' + playerName() + ' is sleeping in it.';
+        if (EV.mode === 'sleep') { evelynApi.wake(); return 'You get out of bed.'; }
+        evelynApi.sleep();
+        return 'You go to bed and fall asleep. Wake up when you want (use bed again).';
+      }
+      // papiers : tu lis le texte tout de suite (elle le reçoit dans la réponse)
+      if (id.indexOf('paper:') === 0) {
+        const p = PAPERS[id.slice(6)];
+        if (!p) return 'Unknown object: ' + id + '.';
+        evPush(stepGoto(nodeFor(it, 0.7, it.x, it.z)), stepFaceTo(it.x, it.z), stepWait(3, 'stand'));
+        return 'You read "' + p.title + '" (' + p.author + '): ' + p.pages.join(' // ').replace(/\s+/g, ' ').slice(0, 900);
+      }
+      // carnet intime : elle relit ce qu'elle a écrit
+      if (id === 'diary') {
+        const pages = getEvelynJournal().getPages();
+        const txt = pages.filter(function (t) { return t && String(t).trim(); }).slice(-4).join(' // ').replace(/\s+/g, ' ').slice(0, 1200);
+        evPush(stepGoto('write'), stepFace(Math.PI), stepWait(2.5, 'stand'));
+        return txt ? 'You read your own notebook: ' + txt : 'Your notebook is empty.';
+      }
+      // tout le reste : elle marche jusqu'à l'objet et fait EXACTEMENT ce que fait ton clic
+      const key = nodeFor(it, 0.65, it.x, it.z);
+      const anim = (id.indexOf('door') === 0 || id.indexOf('light:') === 0 || id.indexOf('lamp:') === 0 || id === 'fire' || id === 'drawer' || id === 'wardrobe') ? 'openDoor' : 'stand';
+      evPush(stepGoto(key), stepFaceTo(it.x, it.z), stepWait(1.4, anim, function () { try { it.fn(); } catch (e) { console.warn('[Evelyn] ' + id, e); } }, 0.6));
+      return 'You walk to ' + id + ' and use it (' + label + ').';
+    }
+
+    function evShelf() { return bookInfo().map(function (b) { return b.n + ' "' + b.title + '"' + (b.author ? ' by ' + b.author : ''); }); }
+    function evReadBook(n) {
+      const b = bookInfo().filter(function (x) { return x.n === n; })[0];
+      if (!b) return 'Unknown book: ' + n + '. Your shelf has: ' + (evShelf().join(' ; ') || 'no readable book yet') + '.';
+      if (!evelynHome()) return 'You cannot do that: you are not in your house.';
+      if (evBusy()) return 'You cannot do that yet: you are still busy with what you were doing.';
+      evPush(stepGoto('s1'), stepFace(-Math.PI / 2), stepWait(4, 'stand'));
+      return 'You take "' + b.title + '" from the shelf and read it: ' + b.pages.join(' // ').replace(/\s+/g, ' ').slice(0, 1200);
+    }
+
+    function evPerceive() {
+      if (!evelynHome()) return '';
+      const L = [], room = evRoom(), asleep = EV.mode === 'sleep', pn = playerName();
+      L.push('YOUR HOUSE. You are in your ' + ROOM_NAME[room] + ', ' + (asleep ? 'lying asleep in your bed' : EV.mode === 'sit' ? 'sitting' + (EV.seatId ? ' (' + EV.seatId + ')' : '') : 'standing') + '.');
+
+      // tes sens : tu vois la personne seulement si elle est dans ta pièce ou derrière une porte ouverte
+      if (!asleep) {
+        if (zone === room) L.push(pn + ' is in the same room as you' + (seated && seatSpot ? ', sitting on ' + seatSpot.id : '') + '.');
+        else {
+          let through = false;
+          Object.keys(doors).forEach(function (did) {
+            const dd = doors[did], ir = ITEMS[did] && ITEMS[did].rooms;
+            if (ir && ir.indexOf(zone) !== -1 && ir.indexOf(room) !== -1 && (dd.goal || dd.openT > 0.5)) through = true;
+          });
+          if (through) L.push('You can see ' + pn + ' through an open door (they are in the ' + ROOM_NAME[zone] + ').');
+          else if (zone !== 'outside') L.push('You do not see ' + pn + ', but you hear footsteps in your house (the ' + ROOM_NAME[zone] + ').');
+        }
+        if (bedSleep && bedSleep.isSleeping()) L.push(pn + ' is asleep in your bed.');
+      } else L.push('You are asleep: you only notice loud sounds, like the doorbell.');
+
+      // ce qui a changé sans toi (une lumière allumée, une porte ouverte...) : seulement dans ta pièce
+      const now = evStates(), here = [];
+      if (evSnap) {
+        Object.keys(now).forEach(function (id) {
+          if (evSnap[id] !== undefined && evSnap[id] !== now[id] && !evTouched[id]) {
+            const ir = ITEMS[id] && ITEMS[id].rooms;
+            if (ir && ir.indexOf(room) !== -1) here.push(id + ' is now ' + stateWord(now[id]));
+          }
+        });
+      }
+      evSnap = now;
+      Object.keys(evTouched).forEach(function (k) { delete evTouched[k]; });
+      if (here.length) L.push('Someone else changed things near you: ' + here.join(', ') + '.');
+      if (evHeard.length) { L.push('You heard: ' + evHeard.join(' ') ); evHeard.length = 0; }
+
+      // ce qu'elle peut utiliser : le détail dans sa pièce, les noms ailleurs
+      const byRoom = {};
+      evItems().forEach(function (it) { const r = it.rooms && it.rooms[0] ? it.rooms[0] : 'waiting'; (byRoom[r] = byRoom[r] || []).push(it); });
+      const parts = [];
+      Object.keys(byRoom).forEach(function (r) {
+        const mine = r === room || byRoom[r].some(function (it) { return it.rooms.indexOf(room) !== -1; });
+        const txt = byRoom[r].filter(function (it) { return mine || r !== 'outside'; }).map(function (it) {
+          return mine ? it.id + ' [' + itemLabel(it) + ']' : it.id;
+        }).join(', ');
+        if (txt) parts.push((mine ? '* ' : '') + ROOM_NAME[r] + ': ' + txt);
+      });
+      L.push('Things you can use (use_here {"object":"id"}; the word in [brackets] is what happens when you use it; * = where you are):\n' + parts.join('\n'));
+      const shelf = evShelf();
+      if (shelf.length) L.push('Your bookshelf (read_book {"n":number}): ' + shelf.join(' ; ') + '.');
+      return L.join('\n');
+    }
+
+    window.BadTherapistBridges = (window.BadTherapistBridges || []).filter(function (b) { return b && b.id !== 'evelyn-house'; });
+    window.BadTherapistBridges.push({
+      id: 'evelyn-house',
+      actor: 'evelyn',
+      active: evelynHome,
+      actions: ['use_here', 'read_book', 'diary_write', 'diary_read'],
+      capabilities: function () {
+        return [
+          '- use_here {"object":"object_id"} : use one of the objects of YOUR HOUSE listed under "Things you can use", exactly like a person would: open or close a door, the drawer or the wardrobe; switch a light, a lamp or the fire on or off; sit down on a seat or stand up from it; go to bed or get up; read a paper. You walk there first (a few seconds).',
+          '- read_book {"n":3} : take book number n from your bookshelf and read it.',
+          '- diary_write {"text":"..."} : write in your private notebook (it is yours: nobody reads it unless they open it). Use it for what you do not want to forget.',
+          '- diary_read {} : read what you wrote in your notebook.'
+        ];
+      },
+      perceive: evPerceive,
+      run: function (id, a) {
+        a = a || {};
+        if (id === 'use_here') return evUse(String(a.object || ''));
+        if (id === 'read_book') return evReadBook(Number(a.n));
+        if (id === 'diary_write') {
+          if (!a.text) return 'You cannot write nothing.';
+          if (!evelynHome()) return 'You cannot do that: you are not in your house.';
+          if (evBusy()) return 'You cannot do that yet: you are still busy with what you were doing.';
+          evelynApi.write(String(a.text).slice(0, 600));
+          return 'You go to your desk and write in your notebook.';
+        }
+        if (id === 'diary_read') return evUse('diary');
+        return 'Unknown action: ' + id;
+      }
+    });
+
+    // Ce qu'elle entend : la sonnette (même si elle dort), puis son cerveau est réveillé
+    window.addEventListener('badtherapist:doorbell', function (ev) {
+      const by = ev && ev.detail && ev.detail.by;
+      if (by === 'evelyn' || !evelynHome()) return;
+      evHeard.push('The doorbell just rang: someone is at your front door.');
+      try { window.BadTherapistSociety.brains.wake('evelyn', true, 'event'); } catch (e) { }
+    });
+
+    // Son cerveau est coupé (plus d'API / quota) : elle s'arrête là où elle est, sans disparaître. L'animation « off » sert si le fichier existe.
+    window.addEventListener('badtherapist:brain-status', function (ev) {
+      const online = !(ev && ev.detail && ev.detail.online === false);
+      if (!online) { EV.steps.length = 0; if (EV.mode === 'stand') evAnim('off'); }
+      else if (EV.anim === 'off') evAnim('stand');
+    });
+
     window.addEventListener('badtherapist:evelyn-do', function (ev) {
       const d = (ev && ev.detail) || {};
       if (d.action === 'sleep') evelynApi.sleep();
@@ -2299,6 +2560,7 @@ export function buildWork(parent, opts) {
     });
 
     function evActorUpdate(dt) {
+      evSavePos(dt);
       if (EV.steps.length) {
         // plusieurs étapes instantanées d'affilée sont jouées dans la même image
         for (let guard = 0; guard < 8 && EV.steps.length; guard++) {

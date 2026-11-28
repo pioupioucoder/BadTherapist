@@ -158,7 +158,7 @@ function create() {
         if (taxiAt === placeId) return placeId;
         if (!t.driveTo(p.x, p.z)) { await travel(driver, placeId, 'vehicle'); return placeId; }
         await sleep(400);
-        await waitFor(function () { return t.getMode() !== 'driving'; }, 240000);
+        await waitFor(function () { return t.getMode() !== 'driving'; }, 900000);   // 15 min max (le lycée est à 5 km)
         api.syncTaxi();
         return taxiAt;
     }
@@ -566,7 +566,7 @@ function create() {
     R.addPlace({ id: 'gas', name: 'the gas station', x: 345, z: 335, r: 60 });
     R.addPlace({ id: 'station', name: 'the train station', x: 925, z: 905, r: 75, desc: 'trains to city B' });
     R.addPlace({ id: 'port', name: 'the port', x: 450, z: 1975, r: 100 });
-    R.addPlace({ id: 'school', name: 'Jean Dumont high school', x: -63.82, z: -290.58, r: 70, desc: 'the high school, at the end of the road going north from the building' });
+    R.addPlace({ id: 'school', name: 'Jean Dumont high school', x: -63.82, z: -5250.58, r: 70, desc: 'the high school, a long way north (about 5 km) at the end of a road leaving from the building' });
     R.addPlace({ id: 'cityB', name: 'city B', x: 790, z: 1800, r: 150, public: false, discoverable: false, desc: 'library, police, prison; only reachable by train' });
 
     R.addObject({ id: 'bedroom_door', name: 'bedroom door', place: 'bedroom', state: 'closed', actions: { open: { set: 'open' }, close: { set: 'closed' } } });

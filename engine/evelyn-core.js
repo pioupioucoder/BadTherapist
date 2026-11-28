@@ -43,7 +43,7 @@ const THERAPIST_CONFIG = {
   // ⚠ INTERRUPTEUR GÉNÉRAL DE L'IA EN LIGNE. false = AUCUN appel au Worker Cloudflare (plus d'erreurs CORS / « Failed to fetch » en boucle,
   // Evelyn ne réfléchit plus seule, le jeu marche comme sans IA). À mettre sur true quand les API du Worker sont réactivées.
   // (Ne pas supprimer : sans lui, le jeu appelle le Worker toutes les quelques secondes, même quand il est coupé.)
-  cloudEnabled: false,
+  cloudEnabled: true,      // ← c'était false : l'IA était COUPÉE (elle répondait « wait » sans jamais appeler le Worker, et la vie hors ligne ne démarrait pas)
   proxyUrl: 'https://evelyn-brain.kristenanjavidy.workers.dev',   // Worker Cloudflare : il garde la clé (aucun secret ici)
   model: 'llama-3.3-70b-versatile',          // le Worker ignore ce champ : le vrai modèle d'Evelyn se règle avec la variable EVELYN_MODEL dans Cloudflare
   reasoningEffort: 'low',
@@ -634,6 +634,25 @@ function createBrainSystem(R, M, opts) {
     const blog = createBrainLog();      // journal des réflexions : BadTherapistBrainLog.download() ou Ctrl+Alt+B
     if (typeof window !== 'undefined') window.BadTherapistBrainLog = blog;
     let watch = null;          // player-watch.js : ce que l'avatar observe du joueur (branché par society.js avec setWatch)
+    // ── PONTS : un lieu (la maison d'Evelyn, plus tard un magasin, un bureau...) s'inscrit dans window.BadTherapistBridges ──
+    // et l'avatar reçoit AUTOMATIQUEMENT ses capacités, sa perception et l'exécution de ses actions. Un pont = un objet :
+    //   { id, actor: 'evelyn', active(): bool, actions: ['use_here', ...], capabilities(): [lignes], perceive(): texte, run(id, args): texte | Promise<texte> }
+    // Un nouvel objet dans la maison n'exige donc AUCUNE modification ici.
+    function bridgesFor(actor) {
+        const all = (typeof window !== 'undefined' && window.BadTherapistBridges) || [];
+        return all.filter(function (b) { try { return b && (!b.actor || b.actor === actor.id) && (!b.active || b.active()); } catch (e) { return false; } });
+    }
+    function bridgeOwning(actor, id) {
+        const bs = bridgesFor(actor);
+        for (let i = 0; i < bs.length; i++) if (bs[i].actions && bs[i].actions.indexOf(id) !== -1) return bs[i];
+        return null;
+    }
+    let brainOnline = true;     // false quand l'API ne répond plus : son corps s'arrête là où il est (animation « off » si elle existe)
+    function setBrainOnline(v) {
+        if (brainOnline === v) return;
+        brainOnline = v;
+        try { window.__btBrainOnline = v; window.dispatchEvent(new CustomEvent('badtherapist:brain-status', { detail: { online: v } })); } catch (e) { }
+    }
     const providers = {};      // texte en plus pour un avatar (ex. les notes privées d'Evelyn sur le joueur)
     const gameTime = function () { try { return window.BadTherapistGameTime ? String(window.BadTherapistGameTime() || '') : ''; } catch (e) { return ''; } };
 
@@ -650,6 +669,7 @@ function createBrainSystem(R, M, opts) {
         try { extra = providers[actor.id] ? String(providers[actor.id]() || '') : ''; } catch (e) { extra = ''; }
         const OFFLINE_CAPS = ['wait', 'go_to', 'text', 'leave_voicemail'];
         const caps = R.capabilities(actor).filter(function (c) { return !offline || OFFLINE_CAPS.indexOf(c.id) !== -1; }).map(function (c) { return '- ' + c.id + (c.args ? ' ' + c.args : '') + ' : ' + c.desc; }).join('\n');
+        const bcaps = offline ? [] : bridgesFor(actor).reduce(function (acc, b) { return acc.concat(b.capabilities ? b.capabilities() : []); }, []);
         const dir = reachable(actor).map(function (d) {
             return '- ' + d.name + ' : ' + d.number;
         }).join('\n') || '(nobody: you have nobody\'s number yet. You get to know people by meeting them, in person.)';
@@ -658,7 +678,7 @@ function createBrainSystem(R, M, opts) {
             own.trim(),
             extra.trim(),
             'You are ' + (actor.selfName || actor.name) + '. Your phone number is ' + actor.number + '. You are a person like any other: you move, open doors, write, call, drive.',
-            'WHAT YOU CAN DO (the only actions that exist):\n' + caps,
+            'WHAT YOU CAN DO (the only actions that exist):\n' + caps + (bcaps.length ? '\n' + bcaps.join('\n') : ''),
             'PEOPLE YOU CAN WRITE TO OR CALL:\n' + dir,
             offline ? '' : 'PHONE: a call rings for a few seconds; the other person may answer or not (people only hear their phone when they are near it). If nobody answers, text them or try again much later: never call or text again and again. If the person is standing right next to you, use say, not text. You can block a number (block) and unblock it (unblock); someone you block is told, and if someone blocked you, your texts and calls to them fail.',
             'Answer with ONE JSON object and nothing else: {"thought":"short private thought","actions":[{"do":"action_id", ...args}]}. ' +
@@ -686,6 +706,7 @@ function createBrainSystem(R, M, opts) {
         }
         const objs = R.objectsAt(actor.loc);
         if (objs.length) L.push('Objects here: ' + objs.map(function (o) { return o.id + ' (' + (o.state ? o.state + '; ' : '') + 'actions: ' + Object.keys(o.actions || {}).join('/') + ')'; }).join(', ') + '.');
+        bridgesFor(actor).forEach(function (b) { try { const t = b.perceive ? b.perceive() : ''; if (t) L.push(t); } catch (e) { /* un pont qui plante ne bloque pas sa réflexion */ } });
         const known = R.places().filter(function (p) { return R.knows(actor, p.id) && p.id !== actor.loc; }).map(function (p) {
             return p.id + ' = ' + p.name + ' (' + Math.round(R.dist(actor.loc, p.id)) + ' m)';
         });
@@ -841,7 +862,9 @@ function createBrainSystem(R, M, opts) {
             if (OUT[id] && a.text && Mind.isRepeat(actor.id, a.text, dest ? dest.id : '')) {
                 res = 'You already said almost exactly that a moment ago: you stay silent.';          // pas d'envoi : on ne se répète pas
             } else {
-                res = await R.run(actor, id, a);
+                const br = bridgeOwning(actor, id);
+                if (br) { try { res = await br.run(id, a); } catch (e) { res = 'You cannot do that: ' + String(e && e.message || e).slice(0, 100); } }
+                else res = await R.run(actor, id, a);
                 if (id !== 'wait') acted = true;
                 if (FAILED.test(String(res))) {
                     const fk = id + ':' + (a.place || a.to || a.object || ''), f = (fails[actor.id] = fails[actor.id] || {});
@@ -894,10 +917,12 @@ function createBrainSystem(R, M, opts) {
         try {
             const plan = await think(ready.actor, readyKind);
             failures = 0;
+            setBrainOnline(true);
             Mind.afterThink(ready.actor.id, sig, plan.acted, plan.stale ? 20 : (plan.mind && plan.mind.next_think_min));
         } catch (e) {
             failures++;
             lastError = ready.actor.id + ' : ' + (e && e.message || e);
+            if (failures >= 2) setBrainOnline(false);
             backoffUntil = Date.now() + Math.min(600000, Math.max(/Toutes les cl/i.test(lastError) ? 180000 : 0, 20000 * Math.pow(2, failures - 1)));
             if (e && e.retryAfter) backoffUntil = Math.max(backoffUntil, Date.now() + e.retryAfter * 1000);     // quota Groq : on se tait le temps demandé
             console.warn('[avatar ' + ready.actor.id + ']', e && e.message || e);
@@ -920,7 +945,7 @@ function createBrainSystem(R, M, opts) {
         setContext: function (id, fn) { providers[id] = fn; },
         setWatch: function (w) { watch = w || null; },
         setAutonomy: function (a) { autonomy = a || null; },
-        setEnabled: function (v) { enabled = !!v; },
+        setEnabled: function (v) { enabled = !!v; setBrainOnline(!!v && failures < 2); },
         isEnabled: function () { return enabled; },
         thinkNow: function (actorId) { const a = R.actor(actorId); return a ? think(a) : Promise.reject(new Error('inconnu')); },
         // F12 : BadTherapistSociety.brains.usage(60)  ->  combien d'appels IA par avatar (60 dernières minutes), leur taille et leur durée moyenne

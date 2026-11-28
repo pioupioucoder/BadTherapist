@@ -32,14 +32,24 @@ export const PLACES = {
   station: { x: 925, z: 905, r: 75 },
   cityB: { x: 790, z: 1800, r: 150 },
   port: { x: 450, z: 1975, r: 100 },
-  school: { x: -63.82, z: -290.58, r: 70 }      // lycée Jean Dumont (portail), voir SCHOOL_Y et places/highschool.js
+  school: { x: -63.82, z: -5250.58, r: 70 },      // lycée Jean Dumont (portail), voir SCHOOL_Y et places/highschool.js
+  schoolground: { x: -63.82, z: -5250.58 - 78, r: 200 }   // plateau plat sous tout le lycée (centre de la pelouse) : pas un vrai lieu
 };
 
-// Lycée : le portail est à (336.18, -19.52, -281.78) dans le monde de la chambre ; la rue y est décalée de (400, -18.9, 8.8).
-// Repère de la rue : x = -63.82, z = -290.58, sol à y = -19.52 - 1.7 + 18.9 = -2.32
+// Lycée : le portail est à (336.18, -19.52, -5241.78) dans le monde de la chambre ; la rue y est décalée de (400, -18.9, 8.8).
+// Repère de la rue : x = -63.82, z = -5250.58, sol à y = -19.52 - 1.7 + 18.9 = -2.32
+// (20 fois plus loin que l'immeuble : le lycée est un MONDE À PART, avec son sol, sa flore et son ciel)
 export const SCHOOL_Y = -2.32;
-// Zone occupée par le lycée (cour, bâtiments, cour arrière) : pas d'arbres ni de rochers du monde dedans
-export const SCHOOL_BOX = { x0: -175, x1: 50, z0: -545, z1: -195 };
+// La pelouse du lycée (highschool.js : 200 × 330 m, centrée 78 m derrière le portail)
+export const SCHOOL_C = { x: -63.82, z: -5250.58 - 78 };
+export const SCHOOL_HALF = { x: 100, z: 165 };
+// Zone occupée par le lycée + 150 m autour : aucun arbre, buisson ni rocher du monde de l'immeuble dedans
+export const SCHOOL_BOX = { x0: SCHOOL_C.x - SCHOOL_HALF.x - 150, x1: SCHOOL_C.x + SCHOOL_HALF.x + 150, z0: SCHOOL_C.z - SCHOOL_HALF.z - 150, z1: SCHOOL_C.z + SCHOOL_HALF.z + 150 };
+// distance à la pelouse (0 dedans) : sert à baisser le terrain dessous et à le verdir autour
+function schoolDist(x, z) {
+  const dx = Math.max(0, Math.abs(x - SCHOOL_C.x) - SCHOOL_HALF.x), dz = Math.max(0, Math.abs(z - SCHOOL_C.z) - SCHOOL_HALF.z);
+  return Math.hypot(dx, dz);
+}
 
 // Massif de montagne (autour de la route de montagne)
 export const MASSIF = { x: -10, z: 980, rx: 280, rz: 520, height: 118 };
@@ -97,7 +107,16 @@ export const ROAD_DEFS = [
   // Route du lycée : part de l'allée devant l'immeuble, contourne l'immeuble par l'ouest et monte tout droit jusqu'au portail
   {
     name: 'school', kind: 'road', hw: 4.5, from: { road: 'drive', s: 30 },
-    ctrl: [[-38, -2], [-56, -55], [-62, -125], [-61, -200], [-64, -255], [-63.82, -286]],
+    ctrl: (function () {      // ~5,2 km vers le nord, en courbes douces, puis ligne droite jusqu'au portail
+      const c = [[-38, -2], [-56, -55], [-62, -125], [-61, -200], [-64, -255]];
+      const GZ = -5250.58;
+      for (let z = -400; z > GZ + 120; z -= 150) {
+        const amp = 34 * Math.min(1, (-z - 300) / 700) * Math.min(1, (z - GZ) / 900);
+        c.push([-62 + amp * Math.sin(z / 610) + amp * 0.5 * Math.sin(z / 233 + 1.3), z]);
+      }
+      c.push([-63.82, GZ + 90], [-63.82, GZ + 40], [-63.82, GZ + 4.58]);
+      return c;
+    })(),
     site: 'school'
   },
 
@@ -136,7 +155,8 @@ export const HOUSE_POS = { x: WORK_SPOT.x, z: WORK_SPOT.z + 10 };   // la maison
 // atteindre la chambre, le couloir et le hall (qui sont à x ≈ 0).
 // Terrain agrandi vers le sud et l'est pour les nouveaux lieux (montagne, gare, ville B, port)
 // x1 = 1060 : l'intérieur de la maison (x > 1100) reste en dehors du terrain.
-export const TER = { x0: -290, x1: 1060, z0: -560, z1: 2200, step: 6 };
+export const TER = { x0: -290, x1: 1060, z0: -5700, z1: 2200, step: 6 };   // z0 = -5700 : le lycée est à 5,2 km au nord
+const Z0_OLD = -280;      // limite nord de l'ancienne forêt (arbres, buissons, rochers du monde de l'immeuble)
 const LAKE = { x: 300, z: 200, r: 55, y: -1.6, bed: -4.5 };   // lac gelé (loin de toutes les routes)
 const FLAT_C = { x: 0, z: -10 };                            // zone plate autour de l'immeuble
 export const FAR_Y = -4;                                           // sol lointain (sous le terrain)
@@ -397,6 +417,8 @@ function buildShared() {
         h = nat * (1 - w) + rh * w;
       }
       h = X.sculpt(h, x, z);                     // falaises de la route de montagne
+      // Sous la pelouse du lycée (à y = SCHOOL_Y - 0.05) : le terrain neigeux descend de 20 cm, sinon il la recouvre
+      { const sd = schoolDist(x, z); if (sd < 26) { const k = 1 - smooth01(0, 26, sd); h = h + (Math.min(h, SCHOOL_Y - 0.2) - h) * k; } }
 
       // Bords de la carte : on redescend vers le sol lointain (invisible dans le brouillard)
       const db = Math.min(x - TER.x0, TER.x1 - x, z - TER.z0, TER.z1 - z);
@@ -440,6 +462,7 @@ function buildShared() {
     if (Math.hypot(x - LAKE.x, z - LAKE.z) < LAKE.r * 0.9) t = Math.max(t, LAKE.y + 0.02);
     const dk = deckHeight(x, z);
     if (dk !== null) return dk;
+    if (schoolDist(x, z) === 0 && t < SCHOOL_Y - 0.05) t = SCHOOL_Y - 0.05;     // on marche sur la pelouse du lycée
     const nr = nearestRoad(x, z, 12);
     if (!nr) return t;
     const surf = nr.p.y - 0.03 + nr.p.yoffR;
@@ -485,6 +508,14 @@ function buildShared() {
     const patch = 0.88 + 0.24 * fbm2(gx / 38 + 3.3, gz / 38 + 8.1, 2);
     const shade = (1 - 0.58 * steep) * patch;
     colArr[k * 3] = shade; colArr[k * 3 + 1] = shade * 1.01; colArr[k * 3 + 2] = shade * 1.03;
+    // Autour du lycée : le sol est de l'herbe (son monde à lui), la neige revient peu à peu en s'éloignant
+    const gk = 1 - smooth01(0, 130, schoolDist(gx, gz));
+    if (gk > 0) {
+      const gv = 0.8 + 0.4 * fbm2(gx / 25 + 1.7, gz / 25 + 6.4, 2);
+      colArr[k * 3] += (0.353 * gv - colArr[k * 3]) * gk;
+      colArr[k * 3 + 1] += (0.549 * gv - colArr[k * 3 + 1]) * gk;
+      colArr[k * 3 + 2] += (0.208 * gv - colArr[k * 3 + 2]) * gk;
+    }
   }
   terrainGeo.setAttribute('color', new THREE.BufferAttribute(colArr, 3));
 
@@ -596,7 +627,7 @@ function buildShared() {
   };
 
   const trees = scatterPoints(R, {
-    x0: TER.x0 + 40, x1: TER.x1 - 40, z0: TER.z0 + 40, z1: TER.z1 - 40,
+    x0: TER.x0 + 40, x1: TER.x1 - 40, z0: Z0_OLD, z1: TER.z1 - 40,
     count: 2300, tries: 70000, spacing: 7.5,
     scaleMin: 0.85, scaleMax: 1.3,
     height: (x, z) => terrainH(x, z) - 0.15,
@@ -635,7 +666,7 @@ function buildShared() {
   });
 
   const bushes = scatterPoints(R, {
-    x0: TER.x0 + 40, x1: TER.x1 - 40, z0: TER.z0 + 40, z1: TER.z1 - 40,
+    x0: TER.x0 + 40, x1: TER.x1 - 40, z0: Z0_OLD, z1: TER.z1 - 40,
     count: 1300, tries: 20000, spacing: 3.2, scaleMin: 0.8, scaleMax: 1.5,
     height: (x, z) => {
       let h = terrainH(x, z);
@@ -658,7 +689,7 @@ function buildShared() {
   });
 
   const rocks = scatterPoints(R, {
-    x0: TER.x0 + 40, x1: TER.x1 - 40, z0: TER.z0 + 40, z1: TER.z1 - 40,
+    x0: TER.x0 + 40, x1: TER.x1 - 40, z0: Z0_OLD, z1: TER.z1 - 40,
     count: 420, tries: 20000, spacing: 12, scaleMin: 0.8, scaleMax: 3.4,
     height: (x, z) => terrainH(x, z) - 0.25,
     pick: (x, z, rr) => (rr() < 0.5 ? 'rock1' : 'rock2'),
@@ -672,6 +703,45 @@ function buildShared() {
     }
   });
   rocks.forEach(r => { r.sy = r.s * (0.5 + R() * 0.5); });
+
+  // ---- Flore le long de la route du lycée (5 km vers le nord), plus clairsemée. Le lycée (SCHOOL_BOX) garde sa propre flore, sans celle de l'immeuble.
+  scatterPoints(R, {
+    x0: TER.x0 + 40, x1: TER.x1 - 40, z0: TER.z0 + 40, z1: Z0_OLD,
+    count: 1300, tries: 40000, spacing: 8,
+    scaleMin: 0.85, scaleMax: 1.3,
+    height: (x, z) => terrainH(x, z) - 0.15,
+    pick: pickSpecies,
+    density: (x, z) => {
+      if (inSchool(x, z)) return 0;
+      const y = terrainH(x, z);
+      if (y > 125 || y < -3) return 0;
+      if (distRoad(x, z) < 9 || slopeAt(x, z) > 6) return 0;
+      return 0.8 * forestDensity(x, z);
+    }
+  }).forEach(t => trees.push(t));
+  scatterPoints(R, {
+    x0: TER.x0 + 40, x1: TER.x1 - 40, z0: TER.z0 + 40, z1: Z0_OLD,
+    count: 450, tries: 12000, spacing: 3.2, scaleMin: 0.8, scaleMax: 1.5,
+    height: (x, z) => terrainH(x, z) - 0.12,
+    pick: () => 'bush',
+    density: (x, z) => {
+      if (inSchool(x, z) || slopeAt(x, z) > 6) return 0;
+      const y = terrainH(x, z);
+      if (y > 110 || y < -3 || distRoad(x, z) < 5) return 0;
+      return 0.12 + 0.88 * smooth01(0.38, 0.6, fbm2(x / 120 + 5.1, z / 120 + 2.3, 3));
+    }
+  }).forEach(b => bushes.push(b));
+  scatterPoints(R, {
+    x0: TER.x0 + 40, x1: TER.x1 - 40, z0: TER.z0 + 40, z1: Z0_OLD,
+    count: 140, tries: 8000, spacing: 12, scaleMin: 0.8, scaleMax: 3.4,
+    height: (x, z) => terrainH(x, z) - 0.25,
+    pick: (x, z, rr) => (rr() < 0.5 ? 'rock1' : 'rock2'),
+    density: (x, z) => {
+      if (inSchool(x, z) || distRoad(x, z) < 8) return 0;
+      const sl = Math.abs(terrainH(x + 3, z) - terrainH(x, z)) + Math.abs(terrainH(x, z + 3) - terrainH(x, z));
+      return 0.05 + 0.9 * smooth01(0.3, 1.4, sl);
+    }
+  }).forEach(r => { r.sy = r.s * (0.5 + R() * 0.5); rocks.push(r); });
 
   // Tracés simplifiés pour la carte
   const mapRoads = roads.map(r => ({
@@ -751,7 +821,7 @@ export function makeExtraRoads(H, base) {
   // ---------- 1. Voie ferrée en premier (la gare, la ville B et le pont en dépendent) ----------
   const defs = ROAD_DEFS.slice().sort(function (a, b) { return (a.kind === 'rail' ? 0 : 1) - (b.kind === 'rail' ? 0 : 1); });
 
-  const yoffs = { gas: 0.018, mount: 0.014, townx: 0.016, forest: 0.02, rail: 0.0, port: 0.022, school: 0.02, portx: 0.016, bmain: 0.016, bx: 0.02 };
+  const yoffs = { gas: 0.018, mount: 0.014, townx: 0.016, forest: 0.02, rail: 0.0, port: 0.022, school: 0.07, portx: 0.016, bmain: 0.016, bx: 0.02 };
 
   defs.forEach(function (d) {
     let ctrl = d.ctrl.slice();
@@ -841,7 +911,7 @@ export function makeExtraRoads(H, base) {
     if (k === 'station') y = nearestOf(byName.rail.samples, p.x - 40, p.z).y;
     else if (k === 'cityB') y = nearestOf(byName.rail.samples, p.x + 60, p.z - 40).y;
     else if (k === 'port') y = 0.7;
-    else if (k === 'school') y = SCHOOL_Y;
+    else if (k === 'school' || k === 'schoolground') y = SCHOOL_Y;
     else if (k === 'town') y = byName.mount.samples[byName.mount.samples.length - 1].y;
     else y = byName[k].samples[byName[k].samples.length - 1].y;     // gas : bout de la route
     sites[k] = { x: p.x, z: p.z, r: p.r, y: y };

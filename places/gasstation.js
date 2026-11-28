@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { PLACES } from './monde.js'
 import { mats, box, glow, lampPost, signMaterial } from './outils.js';
+import lou from '../npcs/lou.js';
+import { makeSleepable } from '../objects/sleepable.js';
 
 // ==========================================
 // BAD THERAPIST — STATION-SERVICE (places/gasstation.js)  v2
@@ -17,7 +19,11 @@ import { mats, box, glow, lampPost, signMaterial } from './outils.js';
 // Branchement : voir notes/INTEGRATION-4.md (window.BadTherapistGas : update, pose, controls, attach, setMode, ring, test).
 
 export const GAS_CONFIG = {
-    fuelPerLiter: 3.6,          // cher : c'est la seule station, ouverte même la nuit
+    fuelPerLiter: 1,            // 1 pièce le litre (l'argent du jeu est entier : une livraison rapporte 3 à 10)
+    creditLimit: 30,            // Lou laisse le joueur descendre jusqu'à -30 (dette) ; au-delà : « no more credit »
+    jerryLiters: 10,            // un bidon plein = 10 L (la même valeur est dans engine/items.js : CAN_LITERS)
+    jerryPrice: 12,             // bidon + 10 L ; le remplir quand on a un bidon vide coûte jerryLiters × fuelPerLiter = 10
+    bedQuality: 0.9,            // qualité du sommeil dans le lit de Lou (1 = lit normal)
     tankStock: 4000,            // litres en cuve
     flowLitersPerSec: 3,        // vitesse de la pompe
     defaultTank: 45,            // « plein » si le véhicule ne dit pas la taille de son réservoir
@@ -34,34 +40,34 @@ export const GAS_CONFIG = {
     sleepYOffset: 0             // + monte / − enfonce le corps dans le matelas
 };
 
-// ---------- rayons & catalogue (prix gonflés : seul magasin ouvert) ----------
+// ---------- rayons & catalogue (prix en pièces, entiers : le joueur gagne 3 à 10 pièces par livraison) ----------
 const RAYONS = {
-    food:    { label: 'FOOD',      colors: [0xb8452f, 0xd9b44a, 0x5a8a46, 0xc9b79a, 0x8a5a3a], hMin: 0.12, hMax: 0.22, items: [['canned soup', 8.5], ['canned beans', 7.5], ['pasta', 7.9], ['bread', 6.5], ['rice 1 kg', 9.5]] },
-    snacks:  { label: 'SNACKS',    colors: [0xd9382f, 0xf0c43a, 0x2f7fd9, 0x8a3ad9, 0xe86a1f], hMin: 0.18, hMax: 0.3,  items: [['chips', 6.5], ['chocolate bar', 4.8], ['biscuits', 5.9], ['peanuts', 7.2]] },
-    drinks:  { label: 'DRINKS',    colors: [0x2f8fd9, 0x3ab87a, 0xd9382f, 0xe8e8e8, 0xd9a02f], hMin: 0.2,  hMax: 0.32, items: [['water 0.5 L', 3.5], ['soda', 5], ['orange juice', 6.5], ['energy drink', 7]] },
-    car:     { label: 'CAR',       colors: [0x2a2a2a, 0xd9b42f, 0x2f5fd9, 0x9a9a9a, 0xd9382f], hMin: 0.2,  hMax: 0.34, items: [['engine oil 1 L', 24], ['washer fluid', 13], ['antifreeze', 19], ['ice scraper', 9], ['wiper blades', 29], ['snow chains', 95]] },
-    home:    { label: 'SUPPLIES',  colors: [0xe8e0c8, 0x3a7a3a, 0xd9382f, 0x6a6a8a, 0xc8c8c8], hMin: 0.14, hMax: 0.28, items: [['batteries (4)', 12], ['flashlight', 26], ['matches', 4], ['lighter', 5.5], ['candles (6)', 8], ['first aid kit', 32], ['wool blanket', 38]] },
-    counter: { label: 'COUNTER',   colors: [0xe8e0c8], hMin: 0.1, hMax: 0.2, items: [['coffee', 6.5], ['tea', 5.5], ['hot soup cup', 9]] },
-    cans:    { label: 'FUEL CANS', colors: [0xc0281c], hMin: 0.4, hMax: 0.46, items: [] }
+    food:    { label: 'FOOD',      colors: [0xb8452f, 0xd9b44a, 0x5a8a46, 0xc9b79a, 0x8a5a3a], hMin: 0.12, hMax: 0.22, items: [['canned soup', 3], ['canned beans', 3], ['pasta', 3], ['bread', 2], ['rice 1 kg', 4]] },
+    snacks:  { label: 'SNACKS',    colors: [0xd9382f, 0xf0c43a, 0x2f7fd9, 0x8a3ad9, 0xe86a1f], hMin: 0.18, hMax: 0.3,  items: [['chips', 2], ['chocolate bar', 2], ['biscuits', 2], ['peanuts', 3]] },
+    drinks:  { label: 'DRINKS',    colors: [0x2f8fd9, 0x3ab87a, 0xd9382f, 0xe8e8e8, 0xd9a02f], hMin: 0.2,  hMax: 0.32, items: [['water 0.5 L', 1], ['soda', 2], ['orange juice', 3], ['energy drink', 3]] },
+    car:     { label: 'CAR',       colors: [0x2a2a2a, 0xd9b42f, 0x2f5fd9, 0x9a9a9a, 0xd9382f], hMin: 0.2,  hMax: 0.34, items: [['engine oil 1 L', 8], ['washer fluid', 5], ['antifreeze', 7], ['ice scraper', 4], ['wiper blades', 10], ['snow chains', 30]] },
+    home:    { label: 'SUPPLIES',  colors: [0xe8e0c8, 0x3a7a3a, 0xd9382f, 0x6a6a8a, 0xc8c8c8], hMin: 0.14, hMax: 0.28, items: [['batteries (4)', 5], ['flashlight', 9], ['matches', 2], ['lighter', 2], ['candles (6)', 3], ['first aid kit', 12], ['wool blanket', 14]] },
+    counter: { label: 'COUNTER',   colors: [0xe8e0c8], hMin: 0.1, hMax: 0.2, items: [['coffee', 3], ['tea', 2], ['hot soup cup', 4]] },
+    cans:    { label: 'FUEL CANS', colors: [0xc0281c], hMin: 0.4,  hMax: 0.46, items: [] }
 };
 const RAYON_ORDER = ['food', 'snacks', 'drinks', 'car', 'home', 'counter', 'cans'];
 function slug(s) { return String(s).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, ''); }
-function fmt(n) { return (Math.round(n * 100) / 100).toFixed(2); }
+function fmt(n) { return String(Math.ceil(n - 1e-9)); }          // l'argent du jeu est entier : on arrondit toujours vers le haut
 
 // Catalogue lisible par society.js : window.BadTherapistGas.catalog
 export const GAS_CATALOG = [];
 RAYON_ORDER.forEach(function (k) { RAYONS[k].items.forEach(function (it) { GAS_CATALOG.push({ id: slug(it[0]), name: it[0], price: it[1], rayon: k }); }); });
-[[5, 12], [10, 18], [20, 30]].forEach(function (c) {      // bidon d'essence rempli = bidon + essence au prix pompe majoré, facturé au rayon
-    GAS_CATALOG.push({ id: 'jerrycan_' + c[0] + 'l', name: 'jerrycan ' + c[0] + ' L, filled', price: Math.round((c[1] + c[0] * GAS_CONFIG.fuelPerLiter * 1.2) * 2) / 2, rayon: 'cans', liters: c[0] });
-});
+// le bidon plein est un OBJET d'inventaire (engine/items.js : « jerrycan »)
+GAS_CATALOG.push({ id: 'jerrycan', name: 'jerrycan ' + GAS_CONFIG.jerryLiters + ' L, filled', price: GAS_CONFIG.jerryPrice, rayon: 'cans', liters: GAS_CONFIG.jerryLiters, item: 'jerrycan' });
 
-const LINES = {
-    car: ['Evening. How many liters?', 'Hey. How much do you need?', 'Fill it up, or just a few liters?'],
-    welcome: ['Welcome.', 'Hey there. Cold out, huh?', 'Take your time. I’m at the register.'],
-    bell: ['Mmh… coming.', 'Yeah, yeah… one second.', 'Coming!'],
-    engine: ['A car? Hold on…', 'I hear an engine… coming.'],
-    never: ['Never mind, then.', 'Alright.']
-};
+// Les phrases de Lou sont dans npcs/lou.js (lou.service) ; ces valeurs ne servent que si une liste manque.
+const SV = (lou && lou.service) || {};
+const FALLBACK = { pump: ['How many liters?'], greet: ['Welcome.'], bell: ['Coming!'], engine: ['I hear an engine…'], never: ['Never mind, then.'], menu: ['What do you need?'], browse: ['Look around.'],
+    confirm: ['That’s {total}. You sure?'], thanks: ['That’ll be {total}. Thanks.'], declined: ['Suit yourself.'], noCredit: ['No more credit.'], invFull: ['Your hands are full.'], fillOffer: ['Fill it for {total}?'],
+    filled: ['Filled. {total}.'], noEmpty: ['You have no empty can.'], pumpBroke: ['No cash, no fuel.'], full: ['It’s already full.'], canTip: ['Careful with it.'],
+    greetBroke: ['Pockets empty?'], greetDebt: ['You still owe me.'], greetCan: ['Nice, a can.'], greetEmpty: ['I can fill that.'], greetLow: ['Thirsty engine.'] };
+function lines(kind) { return (SV[kind] && SV[kind].length ? SV[kind] : FALLBACK[kind]) || ['...']; }
+const LINES = { get car() { return lines('pump'); }, get welcome() { return lines('greet'); }, get bell() { return lines('bell'); }, get engine() { return lines('engine'); }, get never() { return lines('never'); } };
 function pick(a) { return a[Math.floor(Math.random() * a.length)]; }
 function rngMaker(seed) { return function () { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 function normAng(a) { return Math.atan2(Math.sin(a), Math.cos(a)); }
@@ -73,6 +79,9 @@ const CSS = '.bt-gas-btn{position:fixed;left:50%;transform:translateX(-50%);bott
     '.bt-gas-r{margin:10px 0 3px;font-size:12px;letter-spacing:.08em;opacity:.7}.bt-gas-row{display:flex;align-items:center;gap:6px;padding:2px 0}.bt-gas-row span{flex:1}.bt-gas-row b{width:56px;text-align:right;font-weight:600}.bt-gas-row i{width:22px;text-align:center;font-style:normal}' +
     '.bt-gas-t{display:flex;align-items:center;justify-content:flex-end;gap:4px;margin-top:10px;flex-wrap:wrap}.bt-gas-t span{flex:1;font-weight:700}.bt-gas-t input{width:90px;padding:7px;border-radius:8px;border:1px solid #3f6d62;background:#0d1a1e;color:#d8efe6}' +
     '.bt-gas-cap{position:fixed;left:50%;transform:translateX(-50%);bottom:34vh;z-index:60;max-width:min(88vw,460px);padding:8px 14px;background:rgba(10,18,22,.88);border:1px solid #3a5a52;border-radius:10px;color:#e8f6ef;font:14px system-ui,sans-serif;display:none}';
+
+const CSS2 = '.bt-gas-say{font-style:italic;line-height:1.35;margin-bottom:2px}.bt-gas-ch{display:flex;flex-direction:column;align-items:stretch;gap:2px;margin-top:6px}.bt-gas-ch button{text-align:left}' +
+    '.bt-gas-panel button:disabled{opacity:.35;cursor:default}.bt-gas-yn{display:flex;gap:8px;margin-top:10px}.bt-gas-yn button{flex:1;text-align:center;padding:10px}';
 
 export function buildGasStation(scene, env) {
     const P = PLACES.gas, Y = env.sites.gas.y, M = mats();
@@ -181,10 +190,53 @@ export function buildGasStation(scene, env) {
         mFloor = tex ? new THREE.MeshStandardMaterial({ map: tex, roughness: 0.7 }) : std(0xb0ab9d, 0.7);
     })();
 
+    // ---------- LUMIÈRE : les murs arrêtent les phares ----------
+    // three.js n'a pas d'ombres ici : un phare éclaire donc l'intérieur À TRAVERS les murs. On apprend aux matériaux du magasin à ignorer
+    // toute lumière (phare, lampadaire, gyrophare, soleil) dont la source est HORS du magasin quand le point éclairé est DANS le magasin.
+    // Les lampes du plafond (dans le magasin) éclairent normalement ; la façade, vue de dehors, reste éclairée par les lampes de dehors.
+    // Si l'intérieur te paraît trop sombre : BadTherapistGas.shopMask(false) rend l'ancien comportement (et dis-moi, j'ajoute une lampe).
+    const MASK = { viewToShop: { value: new THREE.Matrix4() }, min: { value: new THREE.Vector3(-5.9, -0.15, -6.85) }, max: { value: new THREE.Vector3(5.9, WH + 0.05, 6.85) }, on: { value: 1 } };
+    const LIGHT_CHUNK = (function () {
+        const cut = function (call, pos) {
+            return call + (pos ? ' if ( btIn ) { vec3 btL = ( uViewToShop * vec4( ' + pos + ', 1.0 ) ).xyz; if ( any( lessThan( btL, uShopMin ) ) || any( greaterThan( btL, uShopMax ) ) ) directLight.color = vec3( 0.0 ); }' : ' if ( btIn ) directLight.color = vec3( 0.0 );');
+        };
+        let c = THREE.ShaderChunk.lights_fragment_begin;
+        c = c.replace('getPointDirectLightIrradiance( pointLight, geometry, directLight );', cut('getPointDirectLightIrradiance( pointLight, geometry, directLight );', 'pointLight.position'));
+        c = c.replace('getSpotDirectLightIrradiance( spotLight, geometry, directLight );', cut('getSpotDirectLightIrradiance( spotLight, geometry, directLight );', 'spotLight.position'));
+        c = c.replace('getDirectionalDirectLightIrradiance( directionalLight, geometry, directLight );', cut('getDirectionalDirectLightIrradiance( directionalLight, geometry, directLight );', null));
+        return 'vec3 btFp = ( uViewToShop * vec4( - vViewPosition, 1.0 ) ).xyz;\n' +
+            'bool btIn = uMaskOn > 0.5 && all( greaterThan( btFp, uShopMin ) ) && all( lessThan( btFp, uShopMax ) );\n' + c;
+    })();
+    function shopMask(mat) {
+        mat.onBeforeCompile = function (sh) {
+            sh.uniforms.uViewToShop = MASK.viewToShop; sh.uniforms.uShopMin = MASK.min; sh.uniforms.uShopMax = MASK.max; sh.uniforms.uMaskOn = MASK.on;
+            sh.fragmentShader = 'uniform mat4 uViewToShop;\nuniform vec3 uShopMin;\nuniform vec3 uShopMax;\nuniform float uMaskOn;\n' + sh.fragmentShader.replace('#include <lights_fragment_begin>', LIGHT_CHUNK);
+        };
+        mat.customProgramCacheKey = function () { return 'bt-shopmask'; };
+        return mat;
+    }
+    [mWall, mTrim, mWood, mWood2, mTop, mMetal, mRoof, mRug, mMat, mBlanket, mCrate, mFloor].forEach(shopMask);
+    // la matrice « vue -> magasin » est recalculée JUSTE avant chaque image avec la vraie caméra de rendu
+    const _sw = new THREE.Matrix4(), _st = new THREE.Matrix4(), _si = new THREE.Matrix4();
+    function updateMask(cam) {
+        if (!cam) return;
+        scene.updateMatrixWorld && scene.updateMatrixWorld();
+        _sw.copy(scene.matrixWorld || _sw.identity()).multiply(_st.makeTranslation(SX, FY, SZ));
+        _si.copy(_sw).invert();
+        MASK.viewToShop.value.copy(_si).multiply(cam.matrixWorld);
+    }
+    (function hookRoot() {
+        const root = typeof window !== 'undefined' ? window.BTScene : null;
+        if (!root || root.__btShopHook) return;
+        root.__btShopHook = true;
+        const prev = root.onBeforeRender;
+        root.onBeforeRender = function (r, sc, cam, rt) { if (prev) prev.call(this, r, sc, cam, rt); try { updateMask(cam); } catch (e) { /* ignore */ } };
+    })();
+
     // mk : boîte en repère LOCAL, y0 = bas de la boîte au-dessus du sol du magasin
-    function mk(w, h, d, mat, x, y0, z) {
+    function mk(w, h, d, mat, x, y0, z, par) {
         const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
-        m.position.set(lx(x), FY + y0 + h / 2, lz(z)); scene.add(m); return m;
+        m.position.set(lx(x), FY + y0 + h / 2, lz(z)); (par || scene).add(m); return m;
     }
     function solid(x0, x1, z0, z1) { env.rects.push({ x0: lx(x0), x1: lx(x1), z0: lz(z0), z1: lz(z1) }); }
 
@@ -271,7 +323,16 @@ export function buildGasStation(scene, env) {
     // comptoir + caisse (côté client au nord, côté Lou au sud ; passage côté ouest)
     mk(4.3, 1.0, 0.7, mWood2, 3.65, 0, 3.0); mk(4.5, 0.06, 0.82, mTop, 3.65, 1.0, 3.0); solid(1.5, 5.8, 2.65, 3.35);
     mk(0.5, 0.16, 0.42, mMetal, 3.0, 1.06, 3.05);
-    const regScreen = mk(0.34, 0.22, 0.04, mScreen, 3.0, 1.22, 2.9); regScreen.rotation.x = -0.35;
+    // écran de la caisse : il COMPTE l'achat en direct (rayon, quantités, total) ; une face vers le client (nord), une vers Lou (sud)
+    const reg = { ctx: null, tex: null, dirty: true, t: 0 };
+    mk(0.3, 0.18, 0.04, mTrim, 3.0, 1.24, 2.9);
+    if (typeof document !== 'undefined') {
+        const cv = document.createElement('canvas'); cv.width = 256; cv.height = 160;
+        reg.ctx = cv.getContext('2d'); reg.tex = new THREE.CanvasTexture(cv);
+        const sm = new THREE.MeshBasicMaterial({ map: reg.tex });
+        const pS = new THREE.Mesh(new THREE.PlaneGeometry(0.32, 0.2), sm); pS.position.set(lx(3.0), FY + 1.35, lz(2.9) + 0.03); pS.rotation.x = -0.3; scene.add(pS);
+        const pN = new THREE.Mesh(new THREE.PlaneGeometry(0.32, 0.2), sm); pN.position.set(lx(3.0), FY + 1.35, lz(2.9) - 0.03); pN.rotation.set(0.3, Math.PI, 0); scene.add(pN);
+    }
     mk(0.34, 0.4, 0.34, mTrim, 5.2, 1.06, 3.05); mk(0.05, 0.05, 0.05, new THREE.MeshBasicMaterial({ color: 0xff3a2a }), 5.2, 1.4, 2.87);   // machine à café
     glow(scene, lx(3.0), FY + 1.4, lz(2.7), 0x7fe0a0, 3, 0.25);
     // tabouret de Lou derrière le comptoir
@@ -284,7 +345,9 @@ export function buildGasStation(scene, env) {
     mk(0.15, WH, 3.2, mWall, 1.8, 0, -5.2); solid(1.725, 1.875, -6.8, -3.6);
     mk(2.6, WH, 0.15, mWall, 4.5, 0, -3.6); solid(3.2, 5.8, -3.675, -3.525);
     mk(1.8, 0.02, 1.2, mRug, 3.0, 0, -5.0);
-    mk(2.1, 0.3, 1.0, mWood, 4.75, 0, -6.3); mk(2.0, 0.2, 0.92, mMat, 4.75, 0.3, -6.3); mk(0.4, 0.1, 0.6, mMat, 5.45, 0.5, -6.3); mk(1.2, 0.06, 0.96, mBlanket, 4.2, 0.5, -6.3); solid(3.7, 5.8, -6.8, -5.8);
+    // le lit de Lou est un GROUPE : le joueur peut cliquer dessus pour dormir (objects/sleepable.js)
+    const bedG = new THREE.Group(); scene.add(bedG);
+    mk(2.1, 0.3, 1.0, mWood, 4.75, 0, -6.3, bedG); mk(2.0, 0.2, 0.92, mMat, 4.75, 0.3, -6.3, bedG); mk(0.4, 0.1, 0.6, mMat, 5.45, 0.5, -6.3, bedG); mk(1.2, 0.06, 0.96, mBlanket, 4.2, 0.5, -6.3, bedG); solid(3.7, 5.8, -6.8, -5.8);
     mk(0.45, 0.5, 0.45, mWood, 3.4, 0, -6.55); mk(0.2, 0.24, 0.2, mLamp, 3.4, 0.5, -6.55); solid(3.17, 3.63, -6.8, -6.3);
     glow(scene, lx(3.4), FY + 1.0, lz(-6.4), 0xffb36a, 7, 0.4);
     mk(0.6, 0.45, 0.6, mCrate, 2.4, 0, -6.4); mk(0.6, 0.45, 0.6, mCrate, 2.4, 0.45, -6.4); mk(0.6, 0.45, 0.6, mCrate, 2.4, 0, -5.7); solid(2.1, 2.7, -6.8, -5.4);
@@ -356,7 +419,7 @@ export function buildGasStation(scene, env) {
     // produits : un seul draw call
     (function () {
         if (!prodList.length) return;
-        const im = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.75, metalness: 0.05 }), prodList.length);
+        const im = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), shopMask(new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.75, metalness: 0.05 })), prodList.length);
         const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sv = new THREE.Vector3(), pv = new THREE.Vector3(), c = new THREE.Color();
         prodList.forEach(function (it, i) { pv.set(it[0], it[1], it[2]); sv.set(it[3], it[4], it[5]); m4.compose(pv, q, sv); im.setMatrixAt(i, m4); im.setColorAt(i, c.setHex(it[6])); });
         im.instanceMatrix.needsUpdate = true; if (im.instanceColor) im.instanceColor.needsUpdate = true;
@@ -412,12 +475,20 @@ export function buildGasStation(scene, env) {
         try { if (host.onSale) host.onSale(detail); } catch (e) { /* ignore */ }
         try { if (typeof window !== 'undefined' && window.dispatchEvent && typeof CustomEvent !== 'undefined') window.dispatchEvent(new CustomEvent('bt-gas-sale', { detail: detail })); } catch (e) { /* ignore */ }
     }
-    function charge(buyer, total, why) { try { return host.charge ? host.charge(buyer, total, why) : true; } catch (e) { return true; } }
+    // Le joueur paie avec la monnaie du jeu (BadTherapist.money.charge) : elle peut devenir NÉGATIVE (dette) jusqu'à creditLimit.
+    // Les autres (avatars) paient par host.charge (outside.js / society.js).
+    function charge(buyer, total, why, limit) {
+        if (buyer === 'player') {
+            const m = typeof window !== 'undefined' && window.BadTherapist ? window.BadTherapist.money : null;
+            if (m) return m.charge ? m.charge(total, why, limit == null ? cfg.creditLimit : limit) : m.spend(total, why);
+        }
+        try { return host.charge ? host.charge(buyer, total, why) : true; } catch (e) { return true; }
+    }
 
     // ----- modes (« comme il veut ») -----
     function pickMode() {
         const f = Math.max(0, L.fatigue);
-        const w = { register: 3, pumps: 2, tidy: 1.2, rest: 1.4, sleep: Math.max(0, (f - 0.5) * 8) };
+        const w = { register: 3, pumps: 2, tidy: 1.2, rest: 1.4, sleep: bedBusy() ? 0 : Math.max(0, (f - 0.5) * 8) };
         if (L.mode === 'away') return;
         delete w[L.mode];
         let tot = 0; Object.keys(w).forEach(function (k) { tot += w[k]; });
@@ -494,7 +565,7 @@ export function buildGasStation(scene, env) {
         c.port = portOf(v, c.pump); L.faceTo = Math.atan2(c.port.x - L.x, c.port.z - L.z);
         const p = pumpsW[c.pump];
         if (Math.hypot(p.hoseStart.x - c.port.x, p.hoseStart.z - c.port.z) > REACH) { say('Pull up closer to the pump.', 4000); c.step = 'close'; c.t0 = clock; L.state = 'cust'; L.anim = 'idle'; return; }
-        c.step = 'greet'; say(pick(LINES.car));
+        c.step = 'greet'; c.line = pick(LINES.car); say(c.line);
         act('greet', 1.6, function () { askLiters(c); });
     }
     function askLiters(c) {
@@ -509,7 +580,7 @@ export function buildGasStation(scene, env) {
         const v = vehMap[c.id]; if (!v) return finishCust();
         c.liters = Math.min(Math.floor(c.liters || 0), Math.floor(freeOf(v)), Math.floor(ledger.fuelStock));
         if (c.liters <= 0) { say(pick(LINES.never)); return finishCust(); }
-        c.step = 'toPump'; c.done = 0; c.price = cfg.fuelPerLiter;
+        c.step = 'toPump'; c.done = 0; c.price = cfg.fuelPerLiter; if (v.isPlayer) c.liters = Math.min(c.liters, Math.max(0, Math.floor((pMoney() + cfg.creditLimit) / c.price)));
         const ps = pumpStand(c.pump), pw = pumpsW[c.pump];
         goDirect(ps.x, ps.z, Math.atan2(pw.x - ps.x, pw.z - ps.z), function () {
             c.step = 'take'; drawPump(c.pump, '0.00', '0.00', fmt(c.price) + ' / L'); click(0.6);
@@ -537,9 +608,10 @@ export function buildGasStation(scene, env) {
     }
     function bill(c) {
         if (c.done < 0.05) return finishCust();
-        const ok = charge(c.buyer, c.total, 'fuel');
+        c.total = Math.ceil(c.total - 1e-9);
+        const ok = charge(c.buyer, c.total, 'fuel', 1e9);          // l'essence est déjà dans le réservoir : la dette peut dépasser la limite
         if (ok === false) { say('You can’t pay? Then you owe me ' + fmt(c.total) + '. I’ll remember that.', 5000); emit({ kind: 'fuel', buyer: c.buyer, liters: +c.done.toFixed(2), total: c.total, paid: false }); }
-        else { ledger.till += c.total; say(c.done.toFixed(1) + ' liters. That’s ' + fmt(c.total) + '. Drive safe.', 4500); emit({ kind: 'fuel', buyer: c.buyer, liters: +c.done.toFixed(2), total: c.total, paid: true }); }
+        else { ledger.till += c.total; say(c.done.toFixed(1) + ' liters. That’s ' + fmt(c.total) + '. Drive safe.', 4500); if (c.buyer === 'player') kaching(); emit({ kind: 'fuel', buyer: c.buyer, liters: +c.done.toFixed(2), total: c.total, paid: true }); }
         act('greet', 2.2, function () { finishCust(); });
     }
     function finishCust() {
@@ -558,7 +630,7 @@ export function buildGasStation(scene, env) {
             }
         } else if (c.step === 'order') {
             L.anim = 'idle'; if (L.faceTo != null) turnTo(L.faceTo, dt, 5);
-            if (c.chosen) { if (c.liters > 0) startFuel(c); else { say(pick(LINES.never)); finishCust(); } return; }
+            if (c.chosen) { if (c.liters > 0) startFuel(c); else { if (!c.noSay) say(pick(LINES.never)); finishCust(); } return; }
             if (!v || Math.hypot(v.x - pumpsW[c.pump].x, v.z - pumpsW[c.pump].z) > cfg.carRadius + 4) { say(pick(LINES.never)); finishCust(); return; }
             if (clock - c.t0 > cfg.orderTimeoutSec) { say('Alright, then.'); finishCust(); }
         } else if (c.step === 'fuel') {
@@ -571,8 +643,16 @@ export function buildGasStation(scene, env) {
             if (c.liters - c.done <= 0.005) { c.done = c.liters; endFuel(c); }
         }
     }
+    function registryVehicles() {                 // si outside.js ne branche pas host.vehicles : on lit le registre de objects/vehicle.js
+        const V = typeof window !== 'undefined' ? window.BadTherapistVehicles : null; if (!V) return [];
+        return V.list().filter(function (v) { return v.tank && v.getPose; }).map(function (v) {
+            const q = v.getPose(), fp = v.fuelPort || {};
+            return { id: v.id, x: q.x, z: q.z, heading: q.heading + Math.PI, speed: Math.abs(q.speed || 0), tank: v.tank, refuel: v.refuel, fuelPort: { x: fp.x, y: fp.y, z: fp.z != null ? -fp.z : undefined },
+                isPlayer: !!((v.isDriving && v.isDriving()) || (v.isRiding && v.isRiding())) };
+        });
+    }
     function vehicleTick(dt) {
-        let list = []; try { list = host.vehicles ? host.vehicles() || [] : []; } catch (e) { list = []; }
+        let list = []; try { list = host.vehicles ? host.vehicles() || [] : registryVehicles(); } catch (e) { list = []; }
         list = list.concat(fake); vehMap = {};
         list.forEach(function (v) {
             vehMap[v.id] = v;
@@ -619,6 +699,7 @@ export function buildGasStation(scene, env) {
         if (L.state === 'moving') { L.state = 'idle'; }
         // --- idle ---
         L.anim = L.talkUntil > clock ? 'talk' : 'idle';
+        if (shopBusy() && PL) { L.faceTo = Math.atan2(PL.x - L.x, PL.z - L.z); if (L.talkUntil <= clock) L.anim = 'work'; }   // il tape sur sa caisse
         if (L.faceTo != null) turnTo(L.faceTo, dt, 5);
         if (L.mode === 'away') { L.visible = false; return; }
         const wantsAction = queue.length > 0;
@@ -646,17 +727,45 @@ export function buildGasStation(scene, env) {
             if (clock > L.dwellUntil) { L.dwellUntil = 0; L.tidyI = (L.tidyI + 1) % 4; const t = ['jerry', 'shelfS', 'shelfAisle', 'fridge'][L.tidyI]; goTo(t); }
             else if (Math.hypot(L.x - NODE[['jerry', 'shelfS', 'shelfAisle', 'fridge'][L.tidyI]].x, L.z - NODE[['jerry', 'shelfS', 'shelfAisle', 'fridge'][L.tidyI]].z) > 1.0) goTo(['jerry', 'shelfS', 'shelfAisle', 'fridge'][L.tidyI]);
         }
+        else if (em === 'sleep' && bedBusy()) { setMode('rest'); }
         else if (em === 'sleep') { if (Math.hypot(L.x - NODE.bedside.x, L.z - NODE.bedside.z) > 0.5) goTo('bedside', function () { act('sit', 1.0, lieDown); }); else act('sit', 1.0, lieDown); }
     }
 
     // ==========================================
     // INTERFACE : légende, commande à la pompe, boutique à la caisse
     // ==========================================
-    let ui = null, pendingOrder = null, cart = {};
+    // ==========================================
+    // INTERFACE : Lou pose des questions, on répond avec des BOUTONS (pas de texte libre)
+    //   caisse  : accueil (selon notre argent / nos objets / notre essence) -> rayons -> « vous êtes sûr ? » oui / non -> paiement
+    //   pompe   : « combien de litres ? » (10 / 20 / 40 / plein), limité à ce qu'on peut payer (crédit compris)
+    // L'écran de la caisse compte l'achat en direct ; le lit de Lou est dormable (objects/sleepable.js).
+    // ==========================================
+    let ui = null, pendingOrder = null, cart = {}, panelLine = '', confirmFor = '', bed = null, bedTried = false;
+    const BTx = function () { return (typeof window !== 'undefined' && window.BadTherapist) || {}; };
+    function pMoney() { const m = BTx().money; return m ? m.get() : 0; }
+    function itemN(id) { const it = BTx().items; return it ? it.count(id) : 0; }
+    function canHold(id, n) { const it = BTx().items; return !!(it && it.canAdd(id, n)); }
+    function refillPrice() { return Math.ceil(cfg.jerryLiters * cfg.fuelPerLiter - 1e-9); }
+    function sline(kind, vars) { let t = pick(lines(kind)); if (vars) Object.keys(vars).forEach(function (k) { t = t.split('{' + k + '}').join(vars[k]); }); return t; }
+    function bedBusy() { return !!(bed && bed.isSleeping()); }
+    function shopBusy() { return !!(ui && (ui.mode === 'shop' || ui.mode === 'confirm' || ui.mode === 'greet')); }
+
+    // petits sons de caisse
+    function tone(f1, f2, dur, vol, type, delay) {
+        let A = null; try { A = audio(); } catch (e) { /* pas de son */ }
+        if (!A) return;
+        const t0 = A.currentTime + (delay || 0), o = A.createOscillator(), g = A.createGain();
+        o.type = type || 'square'; o.frequency.setValueAtTime(f1, t0); if (f2) o.frequency.exponentialRampToValueAtTime(f2, t0 + dur);
+        g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(vol || 0.05, t0 + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+        o.connect(g); g.connect(A.destination); o.start(t0); o.stop(t0 + dur + 0.02);
+    }
+    function beep() { tone(1180, 0, 0.06, 0.04, 'square'); }
+    function kaching() { tone(1320, 0, 0.09, 0.05, 'triangle'); tone(1760, 0, 0.35, 0.05, 'triangle', 0.09); tone(220, 90, 0.12, 0.06, 'sawtooth', 0); }
+
     function ensureUI() {
         if (ui) return ui;
         if (typeof document === 'undefined' || !document.body || !document.head) return null;
-        const st = document.createElement('style'); st.textContent = CSS; document.head.appendChild(st);
+        const st = document.createElement('style'); st.textContent = CSS + CSS2; document.head.appendChild(st);
         const btn = document.createElement('button'); btn.className = 'bt-gas-btn'; btn.textContent = 'Buy — Lou’s register';
         const panel = document.createElement('div'); panel.className = 'bt-gas-panel'; panel.style.display = 'none';
         const cap = document.createElement('div'); cap.className = 'bt-gas-cap';
@@ -668,61 +777,207 @@ export function buildGasStation(scene, env) {
     }
     function showCap(text) { const u = ensureUI(); if (!u) return; u.cap.textContent = 'Lou: ' + text; u.cap.style.display = 'block'; clearTimeout(u.capT); u.capT = setTimeout(function () { u.cap.style.display = 'none'; }, 4200); }
     function exitLock() { try { if (document.pointerLockElement && document.exitPointerLock) document.exitPointerLock(); } catch (e) { /* ignore */ } }
-    function closePanel() { if (!ui) return; ui.panel.style.display = 'none'; ui.mode = ''; pendingOrder = null; }
+    function closePanel() { if (!ui) return; ui.panel.style.display = 'none'; ui.mode = ''; pendingOrder = null; cart = {}; reg.dirty = true; }
+    function head(line, sub) { return '<div class="bt-gas-h"><div class="bt-gas-say">Lou: “' + line + '”</div>' + (sub ? '<span>' + sub + '</span>' : '') + '</div>'; }
+
+    // ---------- pompe : combien de litres ? ----------
     function openOrder(c) {
         const u = ensureUI(); if (!u) { c.liters = cfg.defaultTank; c.chosen = true; return; }
         exitLock(); pendingOrder = c; u.mode = 'order';
-        u.panel.innerHTML = '<div class="bt-gas-h">Lou: “How many liters?”<span>Fuel ' + fmt(cfg.fuelPerLiter) + ' / L</span></div>' +
-            '<div><button data-l="10">10 L</button><button data-l="20">20 L</button><button data-l="40">40 L</button><button data-l="full">Fill up</button></div>' +
-            '<div class="bt-gas-t"><input type="number" min="1" max="200" placeholder="liters"><button data-a="ok">OK</button><button data-a="no">No thanks</button></div>';
+        const price = cfg.fuelPerLiter, money = pMoney(), can = Math.floor((money + cfg.creditLimit) / price + 1e-9);
+        if (can < 1) {                                         // plus de quoi payer, même à crédit
+            c.liters = 0; c.chosen = true; c.noSay = true; say(sline('pumpBroke'), 4200); closePanel(); return;
+        }
+        const free = Math.max(1, Math.floor(c.free || cfg.defaultTank));
+        const full = Math.min(free, can);
+        const btn = function (l, label) { return '<button data-l="' + l + '"' + (l !== 'full' && l > can ? ' disabled' : '') + '>' + label + '</button>'; };
+        u.panel.innerHTML = head(c.line || sline('pump'), 'Fuel ' + fmt(price) + ' / L' + (money < 0 ? ' — your tab: ' + (-money) : '') + (can < free ? ' — you can pay for ' + can + ' L' : '')) +
+            '<div>' + btn(10, '10 L') + btn(20, '20 L') + btn(40, '40 L') + '<button data-l="full">Fill up (' + full + ' L · ' + fmt(full * price) + ')</button></div>' +
+            '<div class="bt-gas-t"><input type="number" min="1" max="' + can + '" placeholder="liters"><button data-a="ok">OK</button><button data-a="no">No thanks</button></div>';
         u.panel.style.display = 'block';
     }
+
+    // ---------- caisse ----------
+    function greetKind() {
+        const money = pMoney(), V = typeof window !== 'undefined' ? window.BadTherapistVehicles : null, tr = V && V.get ? V.get('truck') : null;
+        if (money < 0) return 'greetDebt';
+        if (itemN('jerrycan_empty') > 0) return 'greetEmpty';
+        if (itemN('jerrycan') > 0 && Math.random() < 0.7) return 'greetCan';
+        if (tr && tr.tank && tr.tank.level < tr.tank.cap * 0.2) return 'greetLow';
+        if (money <= 2) return 'greetBroke';
+        return 'greet';
+    }
     function openShop() {
-        const u = ensureUI(); if (!u || L.state === 'asleep') return;
-        exitLock(); cart = {}; u.mode = 'shop'; renderShop(); u.panel.style.display = 'block';
+        const u = ensureUI(); if (!u || L.state === 'asleep' || bedBusy()) return;
+        exitLock(); cart = {}; u.mode = 'greet'; panelLine = sline(greetKind()); renderGreet(); u.panel.style.display = 'block'; reg.dirty = true; beep();
+        say(panelLine, 3000);
+    }
+    function renderGreet() {
+        const money = pMoney(), hasEmpty = itemN('jerrycan_empty') > 0;
+        let h = head(panelLine, money < 0 ? 'Your tab: ' + (-money) : '');
+        h += '<div class="bt-gas-ch"><button data-a="browse">Look at the shelves</button>';
+        h += '<button data-a="buycan">Buy a jerrycan (' + cfg.jerryLiters + ' L) — ' + fmt(cfg.jerryPrice) + '</button>';
+        if (hasEmpty) h += '<button data-a="fillcan">Fill my empty jerrycan — ' + fmt(refillPrice()) + '</button>';
+        h += '<button data-a="close">Never mind</button></div>';
+        ui.panel.innerHTML = h;
     }
     function cartTotal() { let t = 0; GAS_CATALOG.forEach(function (i) { t += (cart[i.id] || 0) * i.price; }); return t; }
+    function cartLines() { return GAS_CATALOG.filter(function (i) { return cart[i.id] > 0; }).map(function (i) { return { id: i.id, name: i.name, qty: cart[i.id], price: i.price, item: i.item, liters: i.liters }; }); }
     function renderShop() {
-        let h = '<div class="bt-gas-h">Lou’s shop<span>Prices are high — nobody else is open around here</span></div>';
+        let h = head(panelLine, 'Credit: you can owe me up to ' + cfg.creditLimit + '. Your money: ' + pMoney());
         RAYON_ORDER.forEach(function (rk) {
             const items = GAS_CATALOG.filter(function (i) { return i.rayon === rk; }); if (!items.length) return;
             h += '<div class="bt-gas-r">' + RAYONS[rk].label + '</div>';
             items.forEach(function (i) { h += '<div class="bt-gas-row"><span>' + i.name + '</span><b>' + fmt(i.price) + '</b><button data-a="-" data-id="' + i.id + '">−</button><i>' + (cart[i.id] || 0) + '</i><button data-a="+" data-id="' + i.id + '">+</button></div>'; });
         });
-        h += '<div class="bt-gas-t"><span>Total ' + fmt(cartTotal()) + '</span><button data-a="pay">Pay</button><button data-a="close">Close</button></div>';
+        h += '<div class="bt-gas-t"><span>Total ' + fmt(cartTotal()) + '</span><button data-a="pay">Pay</button><button data-a="back">Back</button><button data-a="close">Close</button></div>';
         const keep = ui.panel.scrollTop; ui.panel.innerHTML = h; ui.panel.scrollTop = keep;
     }
+    // « vous êtes sûr ? » : oui / non
+    function goConfirm(what) {
+        confirmFor = what;
+        const total = what === 'fill' ? refillPrice() : cartTotal();
+        if (what === 'shop' && total <= 0) return;
+        ui.mode = 'confirm'; reg.dirty = true;
+        const after = pMoney() - total;
+        ui.panel.innerHTML = head(sline(what === 'fill' ? 'fillOffer' : 'confirm', { total: fmt(total) }), 'Total ' + fmt(total) + (after < 0 ? ' — you’ll owe ' + (-after) + ' after this' : '')) +
+            '<div class="bt-gas-yn"><button data-a="yes">Yes</button><button data-a="no">No</button></div>';
+        ui.panel.scrollTop = 0;
+        say(ui.panel.querySelector('.bt-gas-say').textContent.replace(/^Lou: “|”$/g, ''), 3000);
+    }
+    function denied(kind, back) {
+        panelLine = sline(kind); say(panelLine, 3500);
+        if (back === 'shop') { ui.mode = 'shop'; renderShop(); } else { ui.mode = 'greet'; renderGreet(); }
+        reg.dirty = true;
+    }
+    function payShop() {
+        const ls = cartLines(), total = cartTotal(); if (!ls.length) { denied('browse', 'shop'); return; }
+        const cans = ls.filter(function (l) { return l.item === 'jerrycan'; }).reduce(function (a, l) { return a + l.qty; }, 0);
+        if (cans && !canHold('jerrycan', cans)) { denied('invFull', 'shop'); return; }
+        if (charge('player', total, 'shop') === false) { denied('noCredit', 'shop'); return; }
+        ledger.till += total;
+        if (cans) BTx().items.add('jerrycan', cans);
+        const tip = cans ? sline('canTip') : null;
+        closePanel(); kaching(); say(sline('thanks', { total: fmt(total) }), 3200);
+        if (tip) setTimeout(function () { say(tip, 3800); }, 3300);
+        emit({ kind: 'shop', buyer: 'player', lines: ls, total: total, paid: true });
+        if (L.state === 'idle') act('work', 2.6, null);
+        reg.paid = clock; reg.dirty = true;
+    }
+    function fillCan() {
+        const total = refillPrice();
+        if (itemN('jerrycan_empty') < 1) { denied('noEmpty', 'greet'); return; }
+        if (charge('player', total, 'shop') === false) { denied('noCredit', 'greet'); return; }
+        const it = BTx().items; it.remove('jerrycan_empty', 1); it.add('jerrycan', 1);
+        ledger.till += total; ledger.fuelStock -= cfg.jerryLiters;
+        closePanel(); kaching(); say(sline('filled', { total: fmt(total) }), 3400);
+        emit({ kind: 'shop', buyer: 'player', lines: [{ id: 'jerrycan_refill', name: 'jerrycan refill ' + cfg.jerryLiters + ' L', qty: 1, price: total }], total: total, paid: true });
+        if (L.state === 'idle') act('work', 2.2, null);
+        reg.paid = clock; reg.dirty = true;
+    }
     function onPanelClick(e) {
-        const b = e.target && e.target.closest ? e.target.closest('button') : null; if (!b || !ui) return;
+        const b = e.target && e.target.closest ? e.target.closest('button') : null; if (!b || !ui || b.disabled) return;
         const a = b.getAttribute('data-a'), id = b.getAttribute('data-id'), l = b.getAttribute('data-l');
         if (ui.mode === 'order') {
             const c = pendingOrder; if (!c) return;
-            if (l) { c.liters = l === 'full' ? fullAmount(vehMap[c.id]) : +l; c.chosen = true; closePanel(); }
-            else if (a === 'ok') { const inp = ui.panel.querySelector('input'); const n = Math.floor(+(inp && inp.value)); if (n > 0) { c.liters = Math.min(n, 200); c.chosen = true; closePanel(); } }
+            const can = Math.floor((pMoney() + cfg.creditLimit) / cfg.fuelPerLiter + 1e-9);
+            if (l) { c.liters = l === 'full' ? Math.min(fullAmount(vehMap[c.id]), can) : Math.min(+l, can); c.chosen = true; closePanel(); }
+            else if (a === 'ok') { const inp = ui.panel.querySelector('input'); const n = Math.floor(+(inp && inp.value)); if (n > 0) { c.liters = Math.min(n, 200, can); c.chosen = true; closePanel(); } }
             else if (a === 'no') { c.liters = 0; c.chosen = true; closePanel(); }
+        } else if (ui.mode === 'greet') {
+            if (a === 'browse') { ui.mode = 'shop'; panelLine = sline('browse'); renderShop(); beep(); }
+            else if (a === 'buycan') { cart = { jerrycan: 1 }; beep(); goConfirm('shop'); }
+            else if (a === 'fillcan') { beep(); goConfirm('fill'); }
+            else if (a === 'close') { say(sline('never'), 2500); closePanel(); }
         } else if (ui.mode === 'shop') {
-            if (a === '+') cart[id] = (cart[id] || 0) + 1;
-            else if (a === '-') cart[id] = Math.max(0, (cart[id] || 0) - 1);
+            if (a === '+') { cart[id] = (cart[id] || 0) + 1; beep(); reg.dirty = true; }
+            else if (a === '-') { cart[id] = Math.max(0, (cart[id] || 0) - 1); beep(); reg.dirty = true; }
+            else if (a === 'back') { cart = {}; ui.mode = 'greet'; panelLine = sline('menu'); renderGreet(); reg.dirty = true; return; }
             else if (a === 'close') { closePanel(); return; }
-            else if (a === 'pay') { payShop(); return; }
+            else if (a === 'pay') { goConfirm('shop'); return; }
             renderShop();
+        } else if (ui.mode === 'confirm') {
+            if (a === 'yes') { if (confirmFor === 'fill') fillCan(); else payShop(); }
+            else if (a === 'no') { say(sline('declined'), 2500); if (confirmFor === 'fill') { ui.mode = 'greet'; panelLine = sline('menu'); renderGreet(); } else { ui.mode = 'shop'; renderShop(); } reg.dirty = true; }
         }
-    }
-    function payShop() {
-        const lines = GAS_CATALOG.filter(function (i) { return cart[i.id] > 0; }).map(function (i) { return { id: i.id, name: i.name, qty: cart[i.id], price: i.price }; });
-        const total = cartTotal(); closePanel(); if (!lines.length) return;
-        const ok = charge('player', total, 'shop');
-        if (ok === false) { say('You don’t have enough. Put something back.'); return; }
-        ledger.till += total; say('That’ll be ' + fmt(total) + '. Thanks.');
-        emit({ kind: 'shop', buyer: 'player', lines: lines, total: total, paid: true });
-        if (L.state === 'idle') act('work', 2.6, null);
     }
     function uiTick() {
         const u = ensureUI(); if (!u) return;
-        const near = PL && inShopXZ(PL.x, PL.z) && Math.hypot(PL.x - lx(3.0), PL.z - lz(2.0)) < 2.8 && L.state !== 'asleep' && L.mode !== 'away';
+        const near = PL && inShopXZ(PL.x, PL.z) && Math.hypot(PL.x - lx(3.0), PL.z - lz(2.0)) < 2.8 && L.state !== 'asleep' && L.mode !== 'away' && !bedBusy();
         const atReg = Math.hypot(L.x - NODE.reg.x, L.z - NODE.reg.z) < 1.6;
         u.btn.style.display = near && u.mode === '' && atReg ? 'block' : 'none';
-        if (u.mode === 'shop' && !near) closePanel();
+        if ((u.mode === 'shop' || u.mode === 'greet' || u.mode === 'confirm') && !near) closePanel();
+    }
+
+    // ---------- écran de la caisse (compte l'achat en direct) ----------
+    function regState() {
+        if (L.state === 'asleep') return { kind: 'closed' };
+        const c = L.cust;
+        if (c && c.step === 'fuel') return { kind: 'pump', litres: c.done || 0, total: Math.ceil((c.done || 0) * (c.price || cfg.fuelPerLiter) - 1e-9) };
+        if (ui && ui.mode === 'confirm' && confirmFor === 'fill') return { kind: 'rows', rows: [{ l: 'FILL JERRYCAN', r: fmt(refillPrice()) }], total: refillPrice(), pay: true };
+        if (ui && (ui.mode === 'shop' || ui.mode === 'confirm')) {
+            const ls = cartLines();
+            return { kind: 'rows', rows: ls.map(function (q) { return { l: q.qty + 'x ' + q.name.slice(0, 15), r: fmt(q.qty * q.price) }; }), total: cartTotal(), pay: ui.mode === 'confirm' };
+        }
+        if (reg.paid && clock - reg.paid < 3) return { kind: 'thanks' };
+        return { kind: 'idle' };
+    }
+    function drawReg() {
+        const g = reg.ctx; if (!g) return;
+        const W = 256, H = 160, st = regState();
+        g.fillStyle = '#06140d'; g.fillRect(0, 0, W, H);
+        g.strokeStyle = '#2f7a50'; g.lineWidth = 2; g.strokeRect(2, 2, W - 4, H - 4);
+        g.textBaseline = 'top'; g.textAlign = 'left'; g.fillStyle = '#8cf0b0'; g.font = 'bold 14px monospace'; g.fillText('LOU’S SHOP', 10, 8);
+        g.fillStyle = '#2f7a50'; g.fillRect(8, 27, W - 16, 1);
+        g.font = '13px monospace';
+        if (st.kind === 'closed') { g.textAlign = 'center'; g.font = 'bold 20px monospace'; g.fillStyle = '#e8b05a'; g.fillText('CLOSED', W / 2, 64); g.font = '12px monospace'; g.fillText('RING THE BELL', W / 2, 96); }
+        else if (st.kind === 'pump') {
+            g.fillStyle = '#8cf0b0'; g.fillText('FUEL', 10, 38); g.textAlign = 'right'; g.fillText(fmt(cfg.fuelPerLiter) + ' / L', W - 10, 38);
+            g.textAlign = 'center'; g.font = 'bold 26px monospace'; g.fillText(st.litres.toFixed(1) + ' L', W / 2, 66);
+            g.font = 'bold 20px monospace'; g.fillStyle = '#e8d27a'; g.fillText(String(st.total), W / 2, 106);
+        } else if (st.kind === 'rows') {
+            g.fillStyle = '#8cf0b0';
+            const rows = st.rows.slice(0, 5);
+            rows.forEach(function (q, i) { g.textAlign = 'left'; g.fillText(q.l, 10, 34 + i * 17); g.textAlign = 'right'; g.fillText(q.r, W - 10, 34 + i * 17); });
+            if (st.rows.length > 5) { g.textAlign = 'left'; g.fillStyle = '#5fae7e'; g.fillText('+' + (st.rows.length - 5) + ' more…', 10, 34 + 5 * 17); }
+            if (!st.rows.length) { g.textAlign = 'center'; g.fillStyle = '#5fae7e'; g.fillText('nothing yet', W / 2, 64); }
+            g.fillStyle = '#2f7a50'; g.fillRect(8, 122, W - 16, 1);
+            g.textAlign = 'left'; g.fillStyle = '#e8d27a'; g.font = 'bold 18px monospace'; g.fillText(st.pay ? 'PAY' : 'TOTAL', 10, 132); g.textAlign = 'right'; g.fillText(String(st.total), W - 10, 132);
+        } else if (st.kind === 'thanks') {
+            g.textAlign = 'center'; g.fillStyle = '#8cf0b0'; g.font = 'bold 22px monospace'; g.fillText('THANK YOU', W / 2, 62); g.font = '12px monospace'; g.fillText('drive safe', W / 2, 96);
+        } else {
+            g.textAlign = 'center'; g.fillStyle = '#8cf0b0'; g.font = 'bold 18px monospace'; g.fillText('WELCOME', W / 2, 64);
+            g.font = '12px monospace'; g.fillStyle = '#5fae7e'; g.fillText('fuel ' + fmt(cfg.fuelPerLiter) + ' / L', W / 2, 96);
+            if (Math.floor(clock * 1.4) % 2) { g.fillStyle = '#8cf0b0'; g.fillRect(W / 2 + 54, 66, 9, 14); }
+        }
+        reg.tex.needsUpdate = true;
+    }
+    function regTick(dt) {
+        if (!reg.ctx) return;
+        reg.t += dt;
+        if (!PL || Math.hypot(PL.x - lx(3.0), PL.z - lz(2.0)) > 30) return;          // inutile de redessiner de loin
+        const st = regState(), key = st.kind === 'pump' ? 'p' + Math.round(st.litres * 5) : st.kind === 'idle' ? 'i' + (Math.floor(clock * 1.4) % 2) : st.kind === 'thanks' ? 't' : '';
+        if (reg.dirty || key !== reg.key) { reg.key = key; reg.dirty = false; drawReg(); }
+    }
+
+    // ---------- le lit de Lou : le joueur peut y dormir ----------
+    function bedTick(dt, ctx) {
+        if (!bed && !bedTried) {
+            const cam = (ctx && ctx.camera) || env.camera, cv = (typeof document !== 'undefined' && document.getElementById('gc')) || env.canvas;
+            if (cam && cv) {
+                bedTried = true;
+                try {
+                    bed = makeSleepable({
+                        camera: cam, canvas: cv, target: bedG, headDir: new THREE.Vector3(1, 0, 0), maxDist: 4.2, hours: 8, quality: cfg.bedQuality, keepHeight: true, autoWake: 6,
+                        canSleep: function () { return L.state !== 'asleep' && !L.onBed; }, label: 'Lou’s bed'
+                    });
+                } catch (e) { console.warn('[gasstation] lit', e); }
+            }
+        }
+        if (!bed) return;
+        bed.update(dt);
+        const locks = typeof window !== 'undefined' ? window.BTLocks : null;
+        if (locks) { if (bed.isSleeping()) { locks.add('gasbed'); if (ui && ui.mode) closePanel(); } else locks.delete('gasbed'); }
     }
 
     // ==========================================
@@ -769,7 +1024,7 @@ export function buildGasStation(scene, env) {
     function tick(dt, ctx) {
         clock += dt;
         PL = playerPos(ctx);
-        doorTick(dt); vehicleTick(dt); louTick(dt); uiTick();
+        doorTick(dt); vehicleTick(dt); louTick(dt); uiTick(); regTick(dt); bedTick(dt, ctx);
         const asleep = L.state === 'asleep', away = L.mode === 'away';
         signOpen.visible = !asleep && !away; signRing.visible = asleep && !away; signClosed.visible = away;
     }
@@ -786,6 +1041,9 @@ export function buildGasStation(scene, env) {
         status: function () { return 'Lou (' + L.mode + ', ' + L.state + (L.cust ? ', serving a car' : '') + ', tired ' + Math.round(Math.min(1, L.fatigue) * 100) + '%).'; },
         setMode: setMode, wake: function () { wake('bell'); }, ring: ring,
         isAsleep: function () { return L.state === 'asleep'; },
+        isPlayerSleeping: function () { return !!(bed && bed.isSleeping()); },     // le joueur dort dans le lit de Lou
+        sleepInBed: function () { if (bed) bed.startSleep(); return !!bed; },        // test console : BadTherapistGas.sleepInBed()
+        shopMask: function (on) { MASK.on.value = on ? 1 : 0; return on ? 'interior ignores outside lights' : 'old lighting'; },
         bed: bedPos,
         test: {                                                                    // tests dans la console (F12)
             car: function (pump, isPlayer, heading) { const p = pumpsW[pump || 0]; const v = { id: 'test' + Math.floor(Math.random() * 1e6), x: p.x + 2.4, z: p.z, heading: heading == null ? 0 : heading, speed: 0, isPlayer: !!isPlayer, tank: { cap: 50, level: 8 } }; fake.push(v); return v.id; },

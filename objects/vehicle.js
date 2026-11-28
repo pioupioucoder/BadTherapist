@@ -15,6 +15,13 @@ import { loadMixamoAvatar } from '../avatar-loader.js';
 //
 // Chaque objet renvoyé par createTruck / createTaxi / createBus / createPoliceCar reçoit .id, .type et .owner depuis cette liste.
 //
+// ESSENCE (v2) : tous les véhicules consomment (RANGE_METERS), tombent en panne sèche et se remplissent de trois façons :
+//   • à la station de Lou (places/gasstation.js : v.refuel(litres)) ; • avec un bidon (engine/items.js : le joueur verse un bidon plein dans le véhicule le plus proche) ;
+//   • l'essence de chaque véhicule est SAUVEGARDÉE (BadTherapist.store -> bt_player_state.misc), donc dans l'export / l'import JSON.
+//   Le taxi refuse une course trop longue pour son réservoir ; le bus et la voiture de police s'arrêtent à sec (leur trajet se termine avec la valeur 'empty').
+// SOLIDITÉ : chaque véhicule a footprint() et collide(x, z, rayon) ; le registre window.BadTherapistVehicles (en bas de la section 0) les relie :
+//   le joueur à pied est repoussé (world_base.html appelle pushPlayer), le camion ne traverse plus les autres véhicules, et le bidon trouve le véhicule le plus proche.
+//
 // NOTE : tout le code de chaque véhicule est repris tel quel (même comportement qu'avant) dans un bloc à part,
 // pour que leurs constantes (L, W, DRIVER, WHEEL...) ne se mélangent pas.
 
@@ -25,7 +32,71 @@ export const VEHICLES = [
   { id: 'police', type: 'police', owner: 'leon' }
 ];
 export function vehicleInfo(id) { return VEHICLES.filter(function (v) { return v.id === id; })[0] || null; }
-function tag(v, id) { const i = vehicleInfo(id); if (v && i) { v.id = i.id; v.type = i.type; v.owner = i.owner; } return v; }
+function tag(v, id, o) { const i = vehicleInfo(id); if (v && i) { v.id = i.id; v.type = i.type; v.owner = i.owner; } if (v) registerVehicle(v, o); return v; }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 0. REGISTRE + SOLIDITÉ (partagé par tous les véhicules)
+// ═══════════════════════════════════════════════════════════════════════════
+const _reg = [];                                        // { v, origin }
+function _toast(t) { try { if (window.BadTherapist && window.BadTherapist.toast) window.BadTherapist.toast(t); } catch (e) { /* ignore */ } }
+function _inside(v) { return !!((v.isDriving && v.isDriving()) || (v.isRiding && v.isRiding()) || (v.isInside && v.isInside()) || (v.isCarrying && v.isCarrying())); }
+// cercle (px, pz, rad) contre un rectangle orienté fp = { x, z, heading, hl (demi-longueur), hw (demi-largeur) } : renvoie [x, z] repoussé hors du rectangle
+function obbPush(fp, px, pz, rad) {
+    const fx = -Math.sin(fp.heading), fz = -Math.cos(fp.heading), rx = Math.cos(fp.heading), rz = -Math.sin(fp.heading);
+    const dx = px - fp.x, dz = pz - fp.z, a = dx * fx + dz * fz, b = dx * rx + dz * rz;
+    const hl = fp.hl + rad, hw = fp.hw + rad;
+    if (Math.abs(a) >= hl || Math.abs(b) >= hw) return [px, pz];
+    let na = a, nb = b;
+    if (hl - Math.abs(a) < hw - Math.abs(b)) na = (a < 0 ? -1 : 1) * hl; else nb = (b < 0 ? -1 : 1) * hw;
+    return [fp.x + fx * na + rx * nb, fp.z + fz * na + rz * nb];
+}
+function obbDist(fp, px, pz) {                            // distance du point au rectangle (0 si dedans)
+    const fx = -Math.sin(fp.heading), fz = -Math.cos(fp.heading), rx = Math.cos(fp.heading), rz = -Math.sin(fp.heading);
+    const dx = px - fp.x, dz = pz - fp.z, a = dx * fx + dz * fz, b = dx * rx + dz * rz;
+    return Math.hypot(Math.max(0, Math.abs(a) - fp.hl), Math.max(0, Math.abs(b) - fp.hw));
+}
+function registerVehicle(v, o) {
+    const origin = (o && o.origin) || { x: 0, y: 0, z: 0 };
+    for (let i = _reg.length - 1; i >= 0; i--) if (_reg[i].v.id === v.id) _reg.splice(i, 1);     // recréé (changement de lieu)
+    _reg.push({ v: v, origin: origin });
+}
+if (typeof window !== 'undefined') window.BadTherapistVehicles = {
+    list: function () { return _reg.map(function (e) { return e.v; }); },
+    get: function (id) { const e = _reg.filter(function (q) { return q.v.id === id; })[0]; return e ? e.v : null; },
+    // le véhicule le plus proche d'une position MONDE (distance au rectangle du véhicule) ; filter(v) facultatif
+    nearest: function (pos, maxDist, filter) {
+        let best = null, bd = maxDist == null ? 6 : maxDist;
+        _reg.forEach(function (e) {
+            if (!e.v.footprint || (filter && !filter(e.v))) return;
+            const d = obbDist(e.v.footprint(), pos.x - e.origin.x, pos.z - e.origin.z);
+            if (d <= bd) { bd = d; best = e.v; }
+        });
+        return best;
+    },
+    // repousse un cercle (position MONDE) hors de tous les véhicules sauf `except` ; renvoie [x, z] MONDE
+    collideWorld: function (wx, wz, rad, except) {
+        let x = wx, z = wz;
+        _reg.forEach(function (e) {
+            if (!e.v.collide || e.v.id === except || _inside(e.v)) return;
+            const r = e.v.collide(x - e.origin.x, z - e.origin.z, rad, false);
+            x = r[0] + e.origin.x; z = r[1] + e.origin.z;
+        });
+        return [x, z];
+    },
+    // le joueur à pied (pos = camera.position) : repoussé hors des véhicules (les portes ouvertes du bus restent franchissables)
+    pushPlayer: function (pos, rad) {
+        rad = rad || 0.35;
+        let x = pos.x, z = pos.z, moved = false;
+        _reg.forEach(function (e) {
+            if (!e.v.collide || _inside(e.v)) return;
+            const vy = (e.v.group ? e.v.group.position.y : 0) + e.origin.y;
+            if (Math.abs(pos.y - 1.7 - vy) > 3.2) return;                      // pas à la même hauteur (pont, étage...)
+            const r = e.v.collide(x - e.origin.x, z - e.origin.z, rad, true);
+            if (r[0] !== x - e.origin.x || r[1] !== z - e.origin.z) { x = r[0] + e.origin.x; z = r[1] + e.origin.z; moved = true; }
+        });
+        if (moved) { pos.x = x; pos.z = z; }
+    }
+};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 1. CARBURANT : réservoir + jauge (communs à tous les véhicules)
@@ -38,16 +109,23 @@ export const FUEL_TYPES = {
     police: { cap: 60 },
     bus:    { cap: 150 }
 };
-// Autonomie du jeu (mètres pour un plein) : le monde est petit, 12 km = un plein dure assez longtemps pour jouer, assez court pour devoir passer à la station.
-export const RANGE_METERS = 12000;
+// Autonomie du jeu (mètres pour un plein) : un plein dure peu de temps, il faut vraiment repasser à la station de Lou (ou emporter un bidon) pour les longs trajets.
+// 6000 m = quelques allers-retours. Monte-le si c'est trop court, baisse-le si tu veux plus de pannes.
+export const RANGE_METERS = 6000;
 
 export function createTank(o) {
     o = o || {};
     const base = FUEL_TYPES[o.type] || FUEL_TYPES.car;
     const cap = o.cap || base.cap, range = o.rangeMeters || RANGE_METERS;
+    let saved = null;                                      // o.key = nom pour la sauvegarde (le niveau est retrouvé au rechargement)
+    if (o.key) {
+        try { const st = window.BadTherapist && window.BadTherapist.store; const v = st ? st.get('fuel_' + o.key, null) : null; if (Number.isFinite(v)) saved = v; } catch (e) { /* rien */ }
+        if (saved == null) { try { const v = parseFloat(localStorage.getItem('bt_fuel_' + o.key)); if (Number.isFinite(v)) saved = v; } catch (e) { /* rien */ } }
+    }
     const t = {
         cap: cap,
-        level: o.level != null ? o.level : cap * (0.5 + Math.random() * 0.4),
+        level: o.level != null ? o.level : (saved != null ? Math.min(cap, Math.max(0, saved)) : cap * (0.5 + Math.random() * 0.4)),
+        get full() { return t.level >= t.cap - 0.05; },
         perMeter: cap / range,
         get empty() { return t.level <= 0.001; },
         get fraction() { return t.level / t.cap; },
@@ -55,6 +133,14 @@ export function createTank(o) {
         consume: function (meters) { t.level = Math.max(0, t.level - Math.abs(meters) * t.perMeter); return t.level; },
         add: function (liters) { t.level = Math.min(t.cap, t.level + liters); return t.level; }
     };
+    if (o.key) {                                           // sauvegarde toutes les 2 s si le niveau a bougé
+        let last = t.level;
+        setInterval(function () {
+            if (Math.abs(t.level - last) < 0.01) return;
+            last = t.level;
+            try { const st = window.BadTherapist && window.BadTherapist.store; if (st) st.set('fuel_' + o.key, +t.level.toFixed(2)); } catch (e) { /* rien */ }
+        }, 2000);
+    }
     return t;
 }
 const createFuelGauge = (function () {
@@ -337,22 +423,11 @@ const _truck = (function () {
     // ==========================================
     // RÉSERVOIR + JAUGE D'ESSENCE (tableau de bord)
     // ==========================================
-    // Le niveau est sauvegardé (localStorage 'bt_fuel_truck') : on retrouve le camion avec la même essence.
-    const FUEL_KEY = 'bt_fuel_truck';
-    let savedFuel;
-    try { const v = parseFloat(localStorage.getItem(FUEL_KEY)); if (Number.isFinite(v)) savedFuel = v; } catch (e) { /* rien */ }
-    const tank = createTank({ type: 'truck', level: savedFuel });
+    // Le niveau est sauvegardé par createTank (key) : on retrouve le camion avec la même essence.
+    const tank = createTank({ type: 'truck', key: 'truck' });
     const fuelPort = { x: 1.05, y: 0.8, z: 0.8 };        // trappe : côté droit, derrière la cabine (la station choisit le côté de la pompe)
     const gauge = createFuelGauge(g, tank, { x: -0.5, y: 1.535, z: -1.5, tilt: -1.0, w: 0.26, hud: true });
-    let fuelSaveT = 0, lastSavedFuel = -1;
-    function saveFuel(dt) {
-      fuelSaveT += dt;
-      if (fuelSaveT < 2) return;
-      fuelSaveT = 0;
-      if (Math.abs(tank.level - lastSavedFuel) < 0.01) return;
-      lastSavedFuel = tank.level;
-      try { localStorage.setItem(FUEL_KEY, String(tank.level)); } catch (e) { /* rien */ }
-    }
+    function saveFuel() { /* la sauvegarde est faite par createTank (key) */ }
 
     // Roues
     const wheels = [];
@@ -402,6 +477,8 @@ const _truck = (function () {
       const R = 0.55;
       const t = o.collide ? o.collide(px, pz, R) : [px, pz];
       px = t[0]; pz = t[1];
+      const VV = window.BadTherapistVehicles;                       // les autres véhicules sont solides
+      if (VV) { const w = VV.collideWorld(origin.x + px, origin.z + pz, R, 'truck'); px = w[0] - origin.x; pz = w[1] - origin.z; }
       for (let it = 0; it < 2; it++) {
         for (let i = 0; i < rects.length; i++) {
           const c = rects[i];
@@ -615,7 +692,9 @@ const _truck = (function () {
       enter: enter,
       exit: exit,
       update: update,
-      getPose: function () { return { x: x, z: z, heading: heading, speed: speed }; }
+      getPose: function () { return { x: x, z: z, heading: heading, speed: speed }; },
+      footprint: function () { return { x: x, z: z, heading: heading, hl: 2.95, hw: 1.05 }; },
+      collide: function (px, pz, rad) { return obbPush({ x: x, z: z, heading: heading, hl: 2.95, hw: 1.05 }, px, pz, rad); }
     };
   }
   return { createTruck };
@@ -782,7 +861,7 @@ const _taxi = (function () {
     g.add(wheelSteer);
 
     // Réservoir + jauge d'essence sur le tableau de bord (côté conducteur)
-    const tank = createTank({ type: 'taxi' });
+    const tank = createTank({ type: 'taxi', key: 'taxi' });
     const fuelPort = { x: 0.95, y: 0.7, z: 1.3 };
     const gauge = createFuelGauge(g, tank, { x: WHEEL.x, y: 1.135, z: CAB_Z0 + 0.27, tilt: -0.9, w: 0.2 });
     function seat(x, z) {
@@ -1144,6 +1223,12 @@ const _taxi = (function () {
       if (!pts) { mode = 'parked'; cool = 0.8; return false; }
       P = makePath(pts);
       s = 0;
+      if (tank.level < P.len * tank.perMeter * 1.04) {            // pas assez d'essence pour aller jusque là
+        P = null; mode = 'parked'; cool = 0.8;
+        if (!isAuto) _toast('Not enough fuel for that trip.');
+        try { window.dispatchEvent(new CustomEvent('bt-vehicle-fuel', { detail: { vehicle: 'taxi', need: stop && stop.id, level: tank.level } })); } catch (e) { /* ignore */ }
+        return false;
+      }
       auto = !!isAuto;
       riding = !auto;
       mode = 'driving';
@@ -1169,6 +1254,7 @@ const _taxi = (function () {
     function enter() {
       if (mode !== 'parked') return;
       if (!stops.length || !driverIn) return;
+      if (tank.empty) { _toast('The taxi is out of fuel.'); return; }
       openMenu();
     }
 
@@ -1217,10 +1303,23 @@ const _taxi = (function () {
       ev.update(dt);
     }
 
+    // Panne sèche : le taxi s'arrête là où il est (le passager peut descendre ; un bidon ou la station le remet en marche)
+    function stall() {
+      speed = 0; dimHeadlight();
+      wheels.forEach(function (w) { w.g.rotation.y = 0; });
+      P = null;
+      if (auto) {
+        auto = false; mode = 'parked'; cool = 1;
+        if (o.onArrive) o.onArrive({ x: x, z: z, empty: true });
+      } else { mode = 'arrived'; arrivedT = 0; }
+      _toast('The taxi is out of fuel.');
+    }
+
     function drive(dt) {
+      if (tank.empty || !P) { stall(); return; }
       const q0 = sampleAt(P, s);
       s += q0.v * dt;
-      tank.consume(Math.abs(q0.v) * dt);     // (pour l'instant le taxi continue même à sec : la panne + le détour par la station viendront avec gasstation.js)
+      tank.consume(Math.abs(q0.v) * dt);
       let arrived = false;
       if (s >= P.len - 0.12) { s = P.len; arrived = true; }
       const q = sampleAt(P, s);
@@ -1331,6 +1430,8 @@ const _taxi = (function () {
       },
       getMode: function () { return mode; },
       getPose: function () { return { x: x, z: z, heading: heading, speed: speed }; },
+      footprint: function () { return { x: x, z: z, heading: heading, hl: 2.35, hw: 0.98 }; },
+      collide: function (px, pz, rad) { return riding ? [px, pz] : obbPush({ x: x, z: z, heading: heading, hl: 2.35, hw: 0.98 }, px, pz, rad); },
 
       // ----- pour un conducteur libre (avatar-brain.js : def.vehicle = taxi) -----
       slot: driverSlot,                                              // groupe où s'assoit l'avatar
@@ -1699,7 +1800,7 @@ const _bus = (function () {
     g.add(wheelSteer);
 
     // Réservoir + jauge d'essence sur le tableau de bord du conducteur
-    const tank = createTank({ type: 'bus' });
+    const tank = createTank({ type: 'bus', key: 'bus' });
     const fuelPort = { x: 1.3, y: 0.7, z: 2.0 };
     const gauge = createFuelGauge(g, tank, { x: -1.02, y: 1.105, z: -5.0, tilt: -0.9, w: 0.2 });
 
@@ -2110,13 +2211,21 @@ const _bus = (function () {
 
     function followStep(dt) {
       const q0 = net.sampleAt(P, s);
-      const vT = dynCap(q0.v);
+      const vT = tank.empty ? 0 : dynCap(q0.v);                          // panne sèche : il freine et s'arrête là où il est
       const prev = speed;
       if (speed < vT) speed = Math.min(vT, speed + ACC * dt);
       else speed = Math.max(vT, speed - BRK_E * dt);
       braking = speed < prev - 0.02;
       s += speed * dt;
-      tank.consume(Math.abs(speed) * dt);    // (le bus continue même à sec pour l'instant : la panne viendra avec gasstation.js)
+      tank.consume(Math.abs(speed) * dt);
+      if (tank.empty && speed < 0.05) {                                  // arrêt définitif : la leg se termine avec 'empty' (comme la voiture de police)
+        speed = 0; braking = true; indicator = null; mode = 'parked';
+        wheels.forEach(function (w) { w.g.rotation.y = 0; });
+        place(dt, false);
+        const rr = legResolve; legResolve = null; P = null;
+        if (rr) rr('empty');
+        return;
+      }
       let arrived = false;
       if (s >= P.len - 0.12) { s = P.len; arrived = true; }
       const q = net.sampleAt(P, s);
@@ -2261,6 +2370,7 @@ const _bus = (function () {
       seatCount: SEATS.length,
       floorY: function () { return g.position.y + FLOOR; },              // hauteur du plancher (le jeu s'en sert pour la hauteur des yeux dans le bus)
       isInside: function () { return riding; },
+      footprint: function () { return { x: x, z: z, heading: heading, hl: L / 2, hw: W / 2 + 0.12 }; },
       playerAtDoor: function () {                                        // le joueur attend près d'une porte pour descendre
         return riding && pl.x > 0.2 && DOOR_Z.some(function (zc) { return Math.abs(pl.z - zc) < 1.4; });
       },
@@ -2529,7 +2639,7 @@ const _police = (function () {
     box(1.7, 0.7, 0.04, M.dark, 0, 1.05, 0.62);                           // grille de séparation
 
     // Réservoir + jauge d'essence (tableau de bord, côté conducteur ; visible aussi depuis la banquette arrière)
-    const tank = createTank({ type: 'police' });
+    const tank = createTank({ type: 'police', key: 'police' });
     const fuelPort = { x: 0.95, y: 0.7, z: 1.6 };
     const gauge = createFuelGauge(g, tank, { x: WHEEL.x, y: 1.115, z: -0.93, tilt: -0.9, w: 0.2 });
 
@@ -2823,6 +2933,8 @@ const _police = (function () {
       fuelPort: fuelPort,
       refuel: function (l) { return tank.add(l); },
       getTank: function () { return tank; },
+      footprint: function () { return { x: x, z: z, heading: heading, hl: 2.5, hw: 1.0 }; },
+      collide: function (px, pz, rad) { return carry ? [px, pz] : obbPush({ x: x, z: z, heading: heading, hl: 2.5, hw: 1.0 }, px, pz, rad); },
       isEmpty: function () { return tank.empty; },
       isLow: function () { return tank.low; },
       // ----- prisonnier -----
@@ -2849,8 +2961,8 @@ const _police = (function () {
 // ═══════════════════════════════════════════════════════════════════════════
 // 6. ENTRÉES PUBLIQUES (chaque véhicule créé reçoit son id / type / owner de la liste VEHICLES)
 // ═══════════════════════════════════════════════════════════════════════════
-export function createTruck(parent, o) { return tag(_truck.createTruck(parent, o), 'truck'); }
-export function createTaxi(parent, o) { return tag(_taxi.createTaxi(parent, o), 'taxi'); }
-export function createBus(parent, o) { return tag(_bus.createBus(parent, o), 'bus'); }
-export function createPoliceCar(parent, o) { return tag(_police.createPoliceCar(parent, o), 'police'); }
+export function createTruck(parent, o) { return tag(_truck.createTruck(parent, o), 'truck', o); }
+export function createTaxi(parent, o) { return tag(_taxi.createTaxi(parent, o), 'taxi', o); }
+export function createBus(parent, o) { return tag(_bus.createBus(parent, o), 'bus', o); }
+export function createPoliceCar(parent, o) { return tag(_police.createPoliceCar(parent, o), 'police', o); }
 export const createBusStops = _bus.createBusStops;

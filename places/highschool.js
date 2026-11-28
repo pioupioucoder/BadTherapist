@@ -24,16 +24,16 @@ import { createBrendard } from '../npcs/brendard.js';
 // Le lycée s'étend derrière le portail vers Z négatif (cour, bâtiment, cour arrière : ~170 m de long).
 // Y = hauteur de ta caméra (le sol est 1.7 plus bas).
 export const HIGHSCHOOL = {
-  gate: { x: 336.18, y: -19.52, z: -281.78 },
+  gate: { x: 336.18, y: -19.52, z: -5241.78 },      // 20 fois plus loin que l'immeuble (monde à part)
   eyeHeight: 1.7
 };
 
 // ── JOUR ─────────────────────────────────────────────────────────────────
-const DAY_NEAR = 110;       // à moins de 110 m du centre du lycée : plein jour (le portail est à ~80 m du centre)
-const DAY_FAR = 230;        // à plus de 230 m : nuit d'Illusion (fondu entre les deux)
+const DAY_NEAR = 200;       // à moins de 200 m du centre du lycée : plein « jour du lycée » (son propre ciel)
+const DAY_FAR = 400;        // à plus de 400 m : ciel d'Illusion (fondu entre les deux)
 const DAY_LIGHT = 0.6;      // force de la lumière du jour (le jeu sort en sRGB : on baisse un peu). Monte si trop sombre.
 const DAY_FOG_DENSITY = 0.0016;
-const ACTIVE_DIST = 300;    // au-delà : le lycée n'est ni dessiné ni simulé
+const ACTIVE_DIST = 450;    // au-delà : le lycée n'est ni dessiné ni simulé
 const CENTER = { x: 0, z: -60 };   // centre du lycée (repère local)
 
 export function attachHighSchool(parentScene, ctx, opts = {}) {
@@ -98,7 +98,7 @@ const hemiLight = new THREE.HemisphereLight(0xd0e4ff, 0x908060, 0); root.add(hem
 
 // pas de neige sur le terrain du lycée (zone en coordonnées du monde)
 try {
-  if(ctx.snow && ctx.snow.excludeBox) ctx.snow.excludeBox(ORIGIN.x - 200, ORIGIN.y - 40, ORIGIN.z - 380, ORIGIN.x + 200, ORIGIN.y + 120, ORIGIN.z + 120);
+  if(ctx.snow && ctx.snow.excludeBox) ctx.snow.excludeBox(ORIGIN.x - 330, ORIGIN.y - 40, ORIGIN.z - 420, ORIGIN.x + 330, ORIGIN.y + 120, ORIGIN.z + 260);
 } catch(e) {}
 
 // ── fondu nuit -> jour ──
@@ -120,7 +120,9 @@ function applyDay(dist){
   skySphere.visible = on;
   skyMat.opacity = f;
   const dl = DAY_LIGHT * f;
-  sun.intensity = 0.95 * dl; ambLight.intensity = 0.5 * dl; hemiLight.intensity = 0.3 * dl;
+  sun.intensity = _sky.lightI * dl; sun.color.copy(_sky.lightCol);
+  ambLight.intensity = _sky.ambI * dl; hemiLight.intensity = _sky.hemiI * dl;
+  _skyDraw(f, on);
 
   const fog = rootScene().fog;
   if(on){
@@ -130,10 +132,10 @@ function applyDay(dist){
       renderer.getClearColor(_saved.clear);
     }
     if(fog){
-      fog.color.copy(_saved.fog).lerp(DAY_FOG, f);
+      fog.color.copy(_saved.fog).lerp(_sky.fog, f);
       fog.density = _saved.density + (DAY_FOG_DENSITY - _saved.density) * f;
     }
-    renderer.setClearColor(fog ? fog.color : DAY_FOG);
+    renderer.setClearColor(fog ? fog.color : _sky.fog);
   } else if(_dayOn){
     restoreDay();
   }
@@ -1421,19 +1423,93 @@ const skySphere=new THREE.Mesh(new THREE.SphereGeometry(1700,24,16),skyMat);
 skySphere.renderOrder=-99; skySphere.frustumCulled=false; skySphere.visible=false;
 scene.add(skySphere);
 
-// Nuages blancs bien définis, bouffants
+// Nuages blancs bien définis, bouffants : ils DÉRIVENT dans le ciel (et foncent la nuit)
+const mCloud=new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:0.95});
+const mCloudSh=new THREE.MeshBasicMaterial({color:0xe0e8f0,transparent:true,opacity:0.7});
+const clouds=[];
 function cloud(x,y,z,scale=1){
-  const m=new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:0.95});
-  const mShadow=new THREE.MeshBasicMaterial({color:0xe0e8f0,transparent:true,opacity:0.7});
+  const g=new THREE.Group();
   [[0,0,0,4,1.4,3,'m'],[3.2,0.5,0,3,1.5,2.4,'m'],[-3,0.4,0,2.8,1.2,2.2,'m'],
    [1,-0.4,0,2.2,1,1.8,'s'],[-1.5,-0.3,0,2,0.9,1.6,'s'],[0,0.8,0,2.5,1,2,'m']].forEach(([dx,dy,dz,w,h,d,shade])=>{
-    const c=new THREE.Mesh(new THREE.SphereGeometry(1,7,5),shade==='s'?mShadow:m);
-    c.scale.set(w*scale,h*scale,d*scale); c.position.set(x+dx*scale,y+dy*scale,z+dz*scale); scene.add(c);
+    const c=new THREE.Mesh(new THREE.SphereGeometry(1,7,5),shade==='s'?mCloudSh:mCloud);
+    c.scale.set(w*scale,h*scale,d*scale); c.position.set(dx*scale,dy*scale,dz*scale); g.add(c);
   });
+  g.position.set(x,y,z); scene.add(g);
+  clouds.push({g, vx:0.5+Math.random()*0.9});     // vitesse de dérive (m/s)
 }
 cloud(-40,30,-65,1.5); cloud(25,35,-72,1.3); cloud(55,28,-58,1.2);
 cloud(-20,33,-85,1.0); cloud(65,30,-42,1.4); cloud(-65,28,-48,1.1);
 cloud(-35,38,-52,1.7); cloud(40,32,-68,1.1); cloud(10,36,-90,1.0);
+for(let i=0;i<14;i++) cloud(-280+Math.random()*560, 36+Math.random()*26, -260+Math.random()*340, 1.0+Math.random()*1.4);   // ciel plus large
+
+// ─── CYCLE JOUR / NUIT DU LYCÉE (soleil, lune, étoiles, nuages) ──────────────
+// Visuel seulement : l'horloge du lycée (gameHour) et l'emploi du temps ne changent pas.
+// 0 = minuit · 6-8 aube · 8-17 jour · 17-20 coucher · 20-6 nuit
+const SKY_CYCLE_SEC = 900;       // durée d'un jour complet en secondes réelles (900 = 15 min ; 600 = 10 min ; 1200 = 20 min)
+const SKY_START_HOUR = 9;        // heure du ciel au chargement
+let _skyHour = SKY_START_HOUR;
+const _sky = { top:new THREE.Color(), hor:new THREE.Color(), fog:new THREE.Color(), lightCol:new THREE.Color(), lightI:0.95, ambI:0.5, hemiI:0.3, dayK:1,
+               sunDir:new THREE.Vector3(0,1,0), moonDir:new THREE.Vector3(0,-1,0) };
+const _C = { dTop:new THREE.Color(0.23,0.50,0.76), dHor:new THREE.Color(0.86,0.93,0.97), dFog:new THREE.Color(0.54,0.69,0.80),
+             nTop:new THREE.Color(0.02,0.03,0.13), nHor:new THREE.Color(0.06,0.08,0.20), nFog:new THREE.Color(0.04,0.05,0.12),
+             warm:new THREE.Color(0.98,0.58,0.30), sunL:new THREE.Color(1.0,0.94,0.75), moonL:new THREE.Color(0.55,0.66,0.98) };
+const _lerp = (a,b,t)=> a+(b-a)*Math.max(0,Math.min(1,t));
+function _skyStep(dt){
+  _skyHour = (_skyHour + dt * 24 / SKY_CYCLE_SEC) % 24;
+  const h = _skyHour;
+  let k;
+  if(h>=6 && h<8) k=(h-6)/2; else if(h>=8 && h<17) k=1; else if(h>=17 && h<20) k=1-(h-17)/3; else k=0;
+  k = _smooth(k);
+  _sky.dayK = k;
+  _sky.top.copy(_C.nTop).lerp(_C.dTop,k); _sky.hor.copy(_C.nHor).lerp(_C.dHor,k); _sky.fog.copy(_C.nFog).lerp(_C.dFog,k);
+  const warm = Math.max(0, 1-Math.abs(h-6.8)/1.4) + Math.max(0, 1-Math.abs(h-18.3)/1.6);      // lueur orangée à l'aube et au coucher
+  if(warm>0){ _sky.hor.lerp(_C.warm, Math.min(0.65,warm*0.6)); _sky.fog.lerp(_C.warm, Math.min(0.3,warm*0.25)); }
+  _sky.fog.convertSRGBToLinear();
+  // lumière : soleil le jour, lune la nuit
+  _sky.lightI = _lerp(0.42, 0.95, k); _sky.lightCol.copy(_C.moonL).lerp(_C.sunL,k);
+  _sky.ambI = _lerp(0.30, 0.5, k); _sky.hemiI = _lerp(0.2, 0.3, k);
+  const a = (h-6)/12*Math.PI;                                   // soleil : monte de 6 h à 18 h
+  _sky.sunDir.set(-Math.cos(a), Math.sin(a), -0.35).normalize();
+  const hh = h<6 ? h+24 : h, b = (hh-18)/12*Math.PI;            // lune : monte de 18 h à 6 h
+  _sky.moonDir.set(-Math.cos(b), Math.sin(b), -0.35).normalize();
+  const dir = (h>=5.5 && h<19) ? _sky.sunDir : _sky.moonDir;      // direction de la lumière (jamais sous l'horizon)
+  sun.position.set(dir.x*40, Math.max(6, dir.y*40), dir.z*40);
+  // nuages : dérive vers l'est, retour à l'ouest ; ils foncent la nuit
+  clouds.forEach(c=>{ c.g.position.x += c.vx*dt; if(c.g.position.x>320) c.g.position.x=-320; });
+  mCloud.color.setRGB(_lerp(0.22,1,k),_lerp(0.25,1,k),_lerp(0.38,1,k)); mCloudSh.color.setRGB(_lerp(0.16,0.88,k),_lerp(0.18,0.91,k),_lerp(0.30,0.94,k));
+}
+// astres (suivent le joueur comme le ciel)
+const skyDecor = new THREE.Group(); skyDecor.frustumCulled=false; scene.add(skyDecor);
+const _bm = (color)=>new THREE.MeshBasicMaterial({color, transparent:true, opacity:0, depthWrite:false, fog:false});
+const sunMat=_bm(0xfff3b0), sunHaloMat=_bm(0xffe090), moonMat=_bm(0xfffde8);
+const sunMesh=new THREE.Mesh(new THREE.SphereGeometry(40,16,12),sunMat), sunHalo=new THREE.Mesh(new THREE.SphereGeometry(95,16,12),sunHaloMat);
+const moonMesh=new THREE.Mesh(new THREE.SphereGeometry(46,16,12),moonMat);
+[sunMesh,sunHalo,moonMesh].forEach(m=>{ m.renderOrder=-98; m.frustumCulled=false; skyDecor.add(m); });
+const starMat=new THREE.PointsMaterial({color:0xffffff,size:2.4,sizeAttenuation:false,transparent:true,opacity:0,depthWrite:false,fog:false});
+const starsMesh=(function(){
+  const v=[]; for(let i=0;i<700;i++){ const th=Math.random()*Math.PI*2, ph=Math.random()*Math.PI*0.5, r=1550; v.push(r*Math.sin(ph)*Math.cos(th), r*Math.cos(ph), r*Math.sin(ph)*Math.sin(th)); }
+  const g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.BufferAttribute(new Float32Array(v),3));
+  const p=new THREE.Points(g,starMat); p.renderOrder=-98; p.frustumCulled=false; skyDecor.add(p); return p;
+})();
+let _skyPaint = 0;
+function _skyDraw(f, on){
+  skyDecor.visible = on; if(!on) return;
+  const k=_sky.dayK, night=1-k;
+  sunMesh.position.copy(_sky.sunDir).multiplyScalar(1450); sunHalo.position.copy(sunMesh.position);
+  moonMesh.position.copy(_sky.moonDir).multiplyScalar(1450);
+  const sunVis = _smooth((_sky.sunDir.y+0.05)/0.2), moonVis = _smooth((_sky.moonDir.y+0.05)/0.2);
+  sunMat.opacity = f*sunVis; sunHaloMat.opacity = f*sunVis*0.22; moonMat.opacity = f*moonVis*Math.min(1,night*1.6);
+  starMat.opacity = f*Math.max(0,night*1.25-0.25);
+  const now = performance.now();
+  if(now - _skyPaint > 300){          // la texture du ciel : dégradé (haut -> horizon), repeinte ~3 fois par seconde
+    _skyPaint = now;
+    const c=(col)=>`rgb(${Math.round(col.r*255)},${Math.round(col.g*255)},${Math.round(col.b*255)})`;
+    const mid=_sky.top.clone().lerp(_sky.hor,0.55);
+    const gr=skyCtx.createLinearGradient(0,0,0,256);
+    gr.addColorStop(0,c(_sky.top)); gr.addColorStop(0.5,c(mid)); gr.addColorStop(1,c(_sky.hor));
+    skyCtx.fillStyle=gr; skyCtx.fillRect(0,0,1,256); skyTex.needsUpdate=true;
+  }
+}
 
 // ─── SYSTÈME PORTES INTERACTIVES ────────────────────────────────
 
@@ -5646,6 +5722,7 @@ function update(dt, time){
   camera.position.copy(REALCAM.position).sub(ORIGIN);
   const dist = Math.hypot(camera.position.x - CENTER.x, camera.position.z - CENTER.z);
 
+  _skyStep(Math.min(dt || 0, 0.25));      // le ciel du lycée tourne même quand tu es loin
   applyDay(dist);
 
   // loin du lycée : on ne dessine ni ne simule rien
@@ -5682,6 +5759,7 @@ function update(dt, time){
 
   // ciel + oiseaux suivent le joueur
   skySphere.position.set(camera.position.x, 0, camera.position.z);
+  skyDecor.position.set(camera.position.x, 0, camera.position.z);
   {
     // Animation oiseaux
     birdFlock.forEach((b, i) => {

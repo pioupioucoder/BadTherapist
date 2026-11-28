@@ -32,6 +32,7 @@
         houseLights: 'bt_house_lights',   // interrupteurs de la maison d'Evelyn (therapist-house.js) : { pièce: allumée ? }
         housePos:  'bt_house_pos',        // où tu étais dans la maison d'Evelyn quand tu as quitté le jeu (therapist-house.js)
         houseDoors: 'bt_house_doors',     // portes, placard et tiroir de la maison d'Evelyn : { id: 1 = ouvert, 0 = fermé } (evelyn-house.js)
+        evelynPos:  'bt_evelyn_pos',      // où Evelyn s'est arrêtée dans sa maison (elle reprend là, aucun point de départ imposé) (evelyn-house.js)
         evelyn:    'bt_evelyn_memory',    // mémoire d'Evelyn (séances : therapist-memory.js + « mind » : avatar-mind.js)
         tv:        'bt_tv_state',         // la télé de la chambre (tv.js) : { isOn, volume, disk } = allumée ? + dernière disquette
         computer:  'bt_computer_state',   // l'ordinateur (computer.js) : compte YouTube, chaînes, dernière vidéo vue, activités récentes
@@ -75,6 +76,7 @@
         houseLights: function (o) { return !!(o && typeof o === 'object' && !Array.isArray(o)); },
         housePos:    function (o) { return !!(o && typeof o === 'object' && !Array.isArray(o)); },
         houseDoors:  function (o) { return !!(o && typeof o === 'object' && !Array.isArray(o)); },
+        evelynPos:   function (o) { return !!(o && typeof o === 'object' && !Array.isArray(o)); },
         evelyn: function (o) { return !!(o && typeof o === 'object' && !Array.isArray(o) && o.v); },
         tv:     function (o) { return !!(o && typeof o === 'object' && !Array.isArray(o)); },
         computer: function (o) { return !!(o && typeof o === 'object' && !Array.isArray(o) && o.v); }

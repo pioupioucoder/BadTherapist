@@ -129,14 +129,14 @@ html, body {
 
 /* VIE (le coeur) */
 
+/* Le coeur reste collé au bouton Home (position fixe en pixels, plus de centrage : sur téléphone ça bougeait) */
 #lifeHud {
   position: fixed;
-  top: 12px;
-  left: 50%;
-  transform: translateX(-50%);
+  top: 17px;
+  left: 64px;
   z-index: 30;
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   pointer-events: none;
   filter: drop-shadow(0 2px 5px rgba(0,0,0,0.7));
 }
@@ -144,9 +144,9 @@ html, body {
 #lifeHud.low { animation: heartBeat 0.8s infinite; }
 #lifeHud.crit { animation: heartBeat 0.45s infinite; }
 @keyframes heartBeat {
-  0%, 100% { transform: translateX(-50%) scale(1); }
-  20%      { transform: translateX(-50%) scale(1.18); }
-  40%      { transform: translateX(-50%) scale(1); }
+  0%, 100% { transform: scale(1); }
+  20%      { transform: scale(1.18); }
+  40%      { transform: scale(1); }
 }
 
 #hurtFlash {
@@ -368,7 +368,7 @@ html, body {
 
   #moneyDisplay svg { width: 22px; height: 22px; }
 
-  #lifeHud { width: 34px; height: 34px; top: 10px; }
+  #lifeHud { width: 30px; height: 30px; top: 13px; left: 50px; }
 
   .hud-panel {
     top: 58px;
@@ -525,6 +525,7 @@ html, body {
 <script type="module">
 
 import * as THREE from 'three';
+import { setupItems } from './engine/items.js';
 
 // ==========================================
 // 1. SCENE
@@ -1107,6 +1108,25 @@ try {
   console.warn('[BT] garde-fou FBX non installé :', e);
 }
 
+// ==========================================
+// STORE (petites sauvegardes des objets : essence des véhicules, inventaire, objets au sol)
+// + VERROUS (un lieu peut bloquer les commandes du joueur : window.BTLocks.add('nom') / .delete('nom'))
+// ==========================================
+// Tout est rangé dans bt_player_state.misc, donc dans ton export / import JSON.
+window.BadTherapist = window.BadTherapist || {};
+window.BTLocks = window.BTLocks || new Set();
+(function () {
+  const KEY = 'bt_player_state';
+  function rd() {
+    try { const o = JSON.parse(localStorage.getItem(KEY)); if (o && o.worlds && typeof o.worlds === 'object') return o; } catch (e) { /* illisible */ }
+    return { version: 1, last: null, worlds: {} };
+  }
+  window.BadTherapist.store = {
+    get(key, def) { const m = rd().misc; return m && key in m ? m[key] : def; },
+    set(key, val) { try { const s = rd(); s.misc = s.misc || {}; s.misc[key] = val; localStorage.setItem(KEY, JSON.stringify(s)); } catch (e) { /* plein ou refusé */ } }
+  };
+})();
+
 let world;
 
 try {
@@ -1467,6 +1487,7 @@ Object.assign(window.BadTherapist, {
     if (!state || !state.worlds) return;
     writeState(state);
     if (typeof loadEconomy === 'function') loadEconomy();
+    window.dispatchEvent(new Event('bt-state-loaded'));
     const saved = state.worlds[worldFile];
     if (applyPose(saved)) applyWorldState(saved);
   },
@@ -1511,7 +1532,7 @@ const PRICES = {
   DELIVERY_MAX: 10,         // livraison la plus longue
   DELIVERY_NEAR: 30,        // distance (unites du monde) <= a ca : prix mini
   DELIVERY_FAR: 400,        // distance >= a ca : prix maxi
-  FUEL_PER_LITRE: 2,
+  FUEL_PER_LITRE: 1,          // (la station de Lou : 1 pièce le litre)
   TAXI_BASE: 2,
   TAXI_PER_100: 2,          // + 2 monnaies par 100 unites
   TAXI_MAX: 25,
@@ -1542,7 +1563,7 @@ function loadEconomy() {
   const saved = readState().economy;
   eco = Object.assign({}, ECO_DEFAULT, saved && typeof saved === 'object' ? saved : {});
   ['money', 'life', 'hunger', 'fatigue'].forEach(k => { if (!Number.isFinite(eco[k])) eco[k] = ECO_DEFAULT[k]; });
-  eco.money = Math.max(0, Math.floor(eco.money));
+  eco.money = Math.floor(eco.money);          // peut être négatif (dette chez Lou...)
   eco.life = THREE.MathUtils.clamp(eco.life, 0, 100);
   renderMoney(false);
   renderLife();
@@ -1564,6 +1585,7 @@ let toastTimer = 0;
 
 function renderMoney(animate, delta) {
   moneyValue.textContent = eco.money;
+  moneyBox.classList.toggle('loss', eco.money < 0);
   if (!animate) return;
   moneyBox.classList.remove('pop'); void moneyBox.offsetWidth; moneyBox.classList.add('pop');
   setTimeout(() => moneyBox.classList.remove('pop'), 160);
@@ -1579,7 +1601,7 @@ const money = {
   canAfford(n) { return eco.money >= n; },
   add(n, reason) {
     n = Math.floor(n); if (!n) return eco.money;
-    eco.money = Math.max(0, eco.money + n);
+    eco.money = eco.money + n;
     ecoDirty = true; renderMoney(true, n);
     window.dispatchEvent(new CustomEvent('bt-money', { detail: { delta: n, total: eco.money, reason: reason || '' } }));
     return eco.money;
@@ -1592,9 +1614,19 @@ const money = {
     money.add(-n, reason);
     return true;
   },
+  // Paiement À CRÉDIT : l'argent peut passer sous zéro, mais pas au-delà de -limit (ex. Lou accepte jusqu'à -30)
+  // Renvoie false (et ne retire rien) si ça dépasserait la limite.
+  charge(n, reason, limit) {
+    n = Math.ceil(n);
+    if (n <= 0) return true;
+    if (eco.money - n < -(limit || 0)) return false;
+    money.add(-n, reason);
+    return true;
+  },
+  debt() { return Math.max(0, -eco.money); },
   // Pour les pieces trouvees dans un tiroir, un manteau, par terre... (donne un petit plaisir cache)
   find(n, reason) { money.add(n, reason || 'found'); life.fun(Math.min(6, 1 + n)); return eco.money; },
-  set(n) { eco.money = Math.max(0, Math.floor(n)); ecoDirty = true; renderMoney(true); }
+  set(n) { eco.money = Math.floor(n); ecoDirty = true; renderMoney(true); }
 };
 
 // ----- VIE -----
@@ -1687,7 +1719,8 @@ function onLifeZero(cause) {
   window.dispatchEvent(new CustomEvent('bt-life-zero', { detail: { cause: cause || '' } }));
   // Comportement par defaut (a remplacer par ton ecran "hopital" / game over / reveil dans la chambre) :
   // on perd la moitie de la monnaie et on repart avec un peu de vie, fatigue/faim remises a un niveau moyen.
-  eco.money = Math.floor(eco.money / 2); renderMoney(true);
+  if (eco.money > 0) eco.money = Math.floor(eco.money / 2);   // (une dette reste une dette)
+  renderMoney(true);
   eco.hunger = 40; eco.fatigue = 40;
   setLife(35);
 }
@@ -1740,6 +1773,8 @@ function economyUpdate(dt) {
   } else { fallStartY = null; }
   prevY = y;
 
+  itemsApi.update(dt);
+
   ecoSaveClock += dt;
   if (ecoSaveClock > 2) { ecoSaveClock = 0; if (ecoDirty) saveEconomy(); }
 }
@@ -1751,6 +1786,16 @@ window.addEventListener('pagehide', () => { if (ecoDirty) saveEconomy(); });
 window.BadTherapist.money = money;
 window.BadTherapist.life = life;
 window.BadTherapist.prices = prices;
+
+// ----- OBJETS (inventaire + objets au sol : engine/items.js) -----
+const itemsApi = setupItems({
+  scene, camera, worldFile,
+  store: window.BadTherapist.store,
+  // pas de lancer / ramassage quand on conduit, qu'on dort ou que le lieu bloque les commandes
+  isBusy: () => !!(world && (world.controlsLocked || (typeof world.isDriving === 'function' && world.isDriving()))) || window.BTLocks.size > 0
+});
+window.BadTherapist.items = itemsApi;
+window.BadTherapist.toast = itemsApi.toast;
 
 // ==========================================
 // 8. HUD INTERACTIONS
@@ -2255,7 +2300,7 @@ function animate() {
 
   // CAMERA ROTATION (verrouillée pendant qu'on s'allonge / dort / se réveille)
 
-  const locked = !!(world && world.controlsLocked);
+  const locked = !!(world && world.controlsLocked) || window.BTLocks.size > 0;
   if (locked) {
     wasLocked = true;
   } else if (wasLocked) {
@@ -2352,6 +2397,11 @@ function animate() {
     world.update(dt, clock.elapsedTime);
   }
   const tWorld = performance.now() - tw0;
+
+  // LES VÉHICULES SONT SOLIDES : à pied, on est repoussé (objects/vehicle.js : BadTherapistVehicles)
+  if (!driving && !locked && window.BadTherapistVehicles) {
+    try { window.BadTherapistVehicles.pushPlayer(camera.position, 0.35); } catch (e) { /* ignore */ }
+  }
 
   // SAVE POSITION (après le monde, pour enregistrer la vraie hauteur)
 
